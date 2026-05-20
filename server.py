@@ -140,16 +140,17 @@ def flush_db_buffer(db_conn):
                     cursor.execute("INSERT OR IGNORE INTO movies (dvd, actress_ids, genres, makers) VALUES (?, '', '', '')", (dvd,))
                     
                 cursor.execute(f'''
-                    INSERT INTO {VIDEOS_TABLE} (id, title, cover, added_at, dvd)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO {VIDEOS_TABLE} (id, title, added_at, dvd)
+                    VALUES (?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         title = excluded.title,
-                        cover = excluded.cover,
                         added_at = excluded.added_at,
                         dvd = excluded.dvd
-                ''', (vid['id'], vid['title'], vid['cover'], vid['added_at'], dvd))
+                ''', (vid['id'], vid['title'], vid['added_at'], dvd))
                 
                 cursor.execute("INSERT INTO dvd_release (video_id, dvd, release_date, release_date_raw) VALUES (?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET dvd = excluded.dvd, release_date = CASE WHEN excluded.release_date != '' THEN excluded.release_date ELSE release_date END, release_date_raw = CASE WHEN excluded.release_date_raw != '' THEN excluded.release_date_raw ELSE release_date_raw END", (vid['id'], dvd, release_date, release_date_raw))
+                
+                cursor.execute("INSERT INTO dvd_cover (video_id, dvd, cover) VALUES (?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET dvd = excluded.dvd, cover = CASE WHEN excluded.cover != '' THEN excluded.cover ELSE cover END", (vid['id'], dvd, vid.get('cover', '')))
                 
             for vid_id, url in urls_to_save.items():
                 cursor.execute(f"UPDATE {VIDEOS_TABLE} SET url = ? WHERE id = ?", (url, vid_id))
@@ -206,7 +207,6 @@ def get_db_connection(db_path, limit_buffer='200M'):
         CREATE TABLE IF NOT EXISTS {VIDEOS_TABLE} (
             id TEXT PRIMARY KEY,
             title TEXT,
-            cover TEXT,
             url TEXT,
             added_at TEXT,
             details TEXT,
@@ -282,6 +282,22 @@ def get_db_connection(db_path, limit_buffer='200M'):
         custom_log("System", "⏳ Backfilling dvd_release table...")
         cursor.execute(f"INSERT OR IGNORE INTO dvd_release (video_id, dvd, release_date, release_date_raw) SELECT v.id, v.dvd, m.release_date, m.release_date_raw FROM {VIDEOS_TABLE} v JOIN movies m ON v.dvd = m.dvd")
     
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS dvd_cover (
+            video_id TEXT PRIMARY KEY,
+            dvd TEXT,
+            cover TEXT
+        )
+    ''')
+    cursor.execute("SELECT COUNT(*) FROM dvd_cover")
+    if cursor.fetchone()[0] == 0 and 'cover' in v_cols:
+        custom_log("System", "⏳ Backfilling dvd_cover table...")
+        cursor.execute(f"INSERT OR IGNORE INTO dvd_cover (video_id, dvd, cover) SELECT id, dvd, cover FROM {VIDEOS_TABLE}")
+        try:
+            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} DROP COLUMN cover")
+        except Exception:
+            pass
+
     if 'actress' in v_cols:
         cursor.execute("SELECT COUNT(*) FROM movies")
         if cursor.fetchone()[0] == 0:
@@ -797,7 +813,7 @@ def get_videos():
         cursor = db_conn_instance.cursor()
         where_clauses = []
         params = []
-        from_clause = f"{VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd LEFT JOIN dvd_release dr ON v.id = dr.video_id"
+        from_clause = f"{VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd LEFT JOIN dvd_release dr ON v.id = dr.video_id LEFT JOIN dvd_cover dc ON v.id = dc.video_id"
         
         if tab == 'favorites':
             if not identifier:
@@ -871,7 +887,7 @@ def get_videos():
         else:
             order_clause = "ORDER BY dr.release_date DESC, v.added_at DESC"
             
-        query = f"SELECT v.id, v.title, v.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), m.genres, m.makers, v.details, v.dvd, dr.release_date_raw FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
+        query = f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), m.genres, m.makers, v.details, v.dvd, dr.release_date_raw FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
         cursor.execute(query, params + [per_page, offset])
         rows = cursor.fetchall()
         
@@ -937,10 +953,11 @@ def get_related():
     with db_lock:
         cursor = db_conn_instance.cursor()
         sql = f'''
-            SELECT v.id, v.title, v.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), m.genres, m.makers, v.details, v.dvd, dr.release_date_raw
+            SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), m.genres, m.makers, v.details, v.dvd, dr.release_date_raw
             FROM {VIDEOS_TABLE} v
             LEFT JOIN movies m ON v.dvd = m.dvd
             LEFT JOIN dvd_release dr ON v.id = dr.video_id
+            LEFT JOIN dvd_cover dc ON v.id = dc.video_id
             JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid
             WHERE {VIDEOS_TABLE}_fts MATCH ? AND v.id != ?
             ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, dr.release_date DESC
@@ -990,7 +1007,7 @@ def get_media():
         cover_url = None
         with db_lock:
             cursor = db_conn_instance.cursor()
-            cursor.execute(f"SELECT cover FROM {VIDEOS_TABLE} WHERE id = ?", (vid_id,))
+            cursor.execute("SELECT cover FROM dvd_cover WHERE video_id = ?", (vid_id,))
             vrow = cursor.fetchone()
             
         if vrow and vrow[0]:
@@ -1227,7 +1244,7 @@ def video_details_api():
     
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT v.id, v.title, v.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), m.genres, m.makers, v.details, v.dvd, dr.release_date_raw FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd LEFT JOIN dvd_release dr ON v.id = dr.video_id WHERE v.id = ?", (vid_id,))
+        cursor.execute(f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), m.genres, m.makers, v.details, v.dvd, dr.release_date_raw FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd LEFT JOIN dvd_release dr ON v.id = dr.video_id LEFT JOIN dvd_cover dc ON v.id = dc.video_id WHERE v.id = ?", (vid_id,))
         row = cursor.fetchone()
         
     if row:
@@ -1707,7 +1724,7 @@ def migrate_old_database(db_conn, old_db_path):
         cursor.execute("ATTACH DATABASE ? AS old_db", (old_db_path,))
         
         tables_to_sync = [
-            VIDEOS_TABLE, 'movies', 'dvd_release', 'actresses', 'media', 'identities', 'user_sessions', 
+            VIDEOS_TABLE, 'movies', 'dvd_release', 'dvd_cover', 'actresses', 'media', 'identities', 'user_sessions', 
             'favorites', 'history', 'sync_tasks', 'history_logs', 'search_history'
         ]
         
