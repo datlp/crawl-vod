@@ -1461,6 +1461,12 @@ def serve_html(path):
             html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), html_path)
         with open(html_path, 'rb') as f:
             content = f.read()
+
+        if app_args and hasattr(app_args, 'source'):
+            source_name = app_args.source.capitalize()
+            new_title = f"{source_name} Player"
+            content = re.sub(b'<title>.*?</title>', f'<title>{new_title}</title>'.encode('utf-8'), content, count=1, flags=re.IGNORECASE)
+
         return Response(content, mimetype='text/html; charset=utf-8')
     except Exception as e:
         return Response(f"HTML not found: index.html ({e})", status=404)
