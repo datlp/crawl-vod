@@ -1475,7 +1475,7 @@ def search_suggestions():
                     FROM tags_fts
                     WHERE tags_fts MATCH ?
                     ORDER BY count DESC
-                    LIMIT 30
+                    LIMIT 100
                 ''', (safe_key_and,))
                 tag_rows = cursor.fetchall()
             except Exception as e:
@@ -1546,7 +1546,7 @@ def search_suggestions():
         for g in match_genre[:5]: chips.append({"text": g["text"], "type": "genre"})
         for m in match_maker[:5]: chips.append({"text": m["text"], "type": "maker"})
             
-        for c in chips[:10]:
+        for c in chips[:20]:
             suggestions.append(c)
             
         for t in match_title:
