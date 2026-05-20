@@ -235,7 +235,7 @@ class Scraper:
                     dvd = dvd_row[0] if dvd_row else ""
                     
                     if dvd:
-                        cursor.execute("SELECT actress_ids, genres, makers FROM movies WHERE dvd = ?", (dvd,))
+                        cursor.execute("SELECT actress_ids, genre_ids, makers FROM movies WHERE dvd = ?", (dvd,))
                         movie_row = cursor.fetchone()
                         
                         a_ids = []
@@ -245,16 +245,23 @@ class Scraper:
                             a_id = cursor.fetchone()
                             if a_id: a_ids.append(str(a_id[0]))
                             
+                        g_ids = []
+                        for g in genre_arr:
+                            cursor.execute("INSERT OR IGNORE INTO genres (name, source) VALUES (?, ?)", (g, self.source_name))
+                            cursor.execute("SELECT id FROM genres WHERE name = ? AND source = ?", (g, self.source_name))
+                            g_id = cursor.fetchone()
+                            if g_id: g_ids.append(str(g_id[0]))
+                            
                         if movie_row:
                             ex_a_ids = [x.strip() for x in (movie_row[0] or "").split(',') if x.strip()]
-                            ex_g = [x.strip() for x in (movie_row[1] or "").split(',') if x.strip()]
+                            ex_g_ids = [x.strip() for x in (movie_row[1] or "").split(',') if x.strip()]
                             ex_m = [x.strip() for x in (movie_row[2] or "").split(',') if x.strip()]
                             m_a_ids = list(set(a_ids + ex_a_ids))
-                            m_g = list(set([x for x in genre_arr + ex_g if x]))
+                            m_g_ids = list(set(g_ids + ex_g_ids))
                             m_m = list(set([x for x in ([maker] if maker else []) + ex_m if x]))
-                            cursor.execute("UPDATE movies SET actress_ids = ?, genres = ?, makers = ? WHERE dvd = ?", (",".join(m_a_ids), ", ".join(m_g), ", ".join(m_m), dvd))
+                            cursor.execute("UPDATE movies SET actress_ids = ?, genre_ids = ?, makers = ? WHERE dvd = ?", (",".join(m_a_ids), ",".join(m_g_ids), ", ".join(m_m), dvd))
                         else:
-                            cursor.execute("INSERT INTO movies (dvd, actress_ids, genres, makers) VALUES (?, ?, ?, ?)", (dvd, ",".join(set(a_ids)), ", ".join(set([x for x in genre_arr if x])), maker))
+                            cursor.execute("INSERT INTO movies (dvd, actress_ids, genre_ids, makers) VALUES (?, ?, ?, ?)", (dvd, ",".join(set(a_ids)), ",".join(set(g_ids)), maker))
 
                     if release_date or release_date_raw:
                         cursor.execute("INSERT INTO dvd_release (video_id, dvd, release_date, release_date_raw) VALUES (?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET release_date = CASE WHEN excluded.release_date != '' THEN excluded.release_date ELSE release_date END, release_date_raw = CASE WHEN excluded.release_date_raw != '' THEN excluded.release_date_raw ELSE release_date_raw END", (vid_id, dvd, release_date, release_date_raw))
