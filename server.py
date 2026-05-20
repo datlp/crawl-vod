@@ -559,6 +559,11 @@ def rebuild_tags_fts(db_conn):
     actress_counts = {}
     genre_counts = {}
     maker_counts = {}
+    dvd_counts = {}
+    
+    cursor.execute(f"SELECT dvd, COUNT(id) FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != '' GROUP BY dvd")
+    for r in cursor.fetchall():
+        dvd_counts[r[0]] = r[1]
     
     for row in rows:
         if row[0]:
@@ -587,6 +592,7 @@ def rebuild_tags_fts(db_conn):
     for k, c in actress_counts.items(): data.append((k, 'actress', c))
     for k, c in genre_counts.items(): data.append((k, 'genre', c))
     for k, c in maker_counts.items(): data.append((k, 'maker', c))
+    for k, c in dvd_counts.items(): data.append((k, 'dvd', c))
     
     cursor.executemany("INSERT INTO tags_summary (keyword, type, count) VALUES (?, ?, ?)", data)
     cursor.execute("INSERT INTO tags_fts(tags_fts) VALUES('rebuild')")
@@ -1439,6 +1445,9 @@ def search_suggestions():
     if not q:
         with db_lock:
             cursor = db_conn_instance.cursor()
+            cursor.execute("SELECT keyword FROM tags_summary WHERE type='dvd' ORDER BY count DESC LIMIT 10")
+            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "dvd"})
+            
             cursor.execute("SELECT keyword FROM tags_summary WHERE type='actress' ORDER BY count DESC LIMIT 10")
             for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "actress"})
             
@@ -1506,6 +1515,7 @@ def search_suggestions():
             match_actress = []
             match_genre = []
             match_maker = []
+            match_dvd = []
             match_title = []
             
             for row in tag_rows:
@@ -1513,6 +1523,7 @@ def search_suggestions():
                 if t == 'actress': match_actress.append({"text": k, "count": c})
                 elif t == 'genre': match_genre.append({"text": k, "count": c})
                 elif t == 'maker': match_maker.append({"text": k, "count": c})
+                elif t == 'dvd': match_dvd.append({"text": k, "count": c})
                 
             try:
                 cursor.execute(f'''
@@ -1530,6 +1541,7 @@ def search_suggestions():
                 custom_log("System", f"❌ FTS title search error: {e}")
                 
         chips = []
+        for d in match_dvd[:5]: chips.append({"text": d["text"], "type": "dvd"})
         for a in match_actress[:5]: chips.append({"text": a["text"], "type": "actress"})
         for g in match_genre[:5]: chips.append({"text": g["text"], "type": "genre"})
         for m in match_maker[:5]: chips.append({"text": m["text"], "type": "maker"})
