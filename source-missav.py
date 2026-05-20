@@ -247,10 +247,10 @@ class Scraper:
                         else:
                             cursor.execute("INSERT INTO movies (dvd, actresses, genres, makers) VALUES (?, ?, ?, ?)", (dvd, ", ".join(set([x for x in actress_arr if x])), ", ".join(set([x for x in genre_arr if x])), maker))
 
-                    if release_date:
-                        cursor.execute(f'''UPDATE {self.table_name} SET details = ?, release_date = ?, details_fetched = 1 WHERE id = ?''', (details, release_date, vid_id))
-                    else:
-                        cursor.execute(f'''UPDATE {self.table_name} SET details = ?, details_fetched = 1 WHERE id = ?''', (details, vid_id))
+                        if release_date:
+                            cursor.execute("UPDATE movies SET release_date = ? WHERE dvd = ?", (release_date, dvd))
+
+                    cursor.execute(f'''UPDATE {self.table_name} SET details = ?, details_fetched = 1 WHERE id = ?''', (details, vid_id))
                     self.db_conn.commit()
                 custom_log(self.source_name, f"{self.source_name} {vid_id} {len(actress_arr)} actress{'es' if len(actress_arr) != 1 else ''}, {len(genre_arr)} genre{'s' if len(genre_arr) != 1 else ''}, {maker}")
                 return True

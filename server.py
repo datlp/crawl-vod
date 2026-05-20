@@ -134,19 +134,21 @@ def flush_db_buffer(db_conn):
             
             for vid_id, vid in videos_to_save.items():
                 dvd = vid.get('dvd', '')
+                release_date = vid.get('release_date', '')
                 if dvd:
-                    cursor.execute("INSERT OR IGNORE INTO movies (dvd, actresses, genres, makers) VALUES (?, '', '', '')", (dvd,))
+                    cursor.execute("INSERT OR IGNORE INTO movies (dvd, actresses, genres, makers, release_date) VALUES (?, '', '', '', '')", (dvd,))
+                    if release_date:
+                        cursor.execute("UPDATE movies SET release_date = ? WHERE dvd = ? AND (release_date IS NULL OR release_date = '')", (release_date, dvd))
                     
                 cursor.execute(f'''
-                    INSERT INTO {VIDEOS_TABLE} (id, title, cover, added_at, release_date, dvd)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO {VIDEOS_TABLE} (id, title, cover, added_at, dvd)
+                    VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         title = excluded.title,
                         cover = excluded.cover,
                         added_at = excluded.added_at,
-                        release_date = excluded.release_date,
                         dvd = excluded.dvd
-                ''', (vid['id'], vid['title'], vid['cover'], vid['added_at'], vid.get('release_date', ''), dvd))
+                ''', (vid['id'], vid['title'], vid['cover'], vid['added_at'], dvd))
                 
             for vid_id, url in urls_to_save.items():
                 cursor.execute(f"UPDATE {VIDEOS_TABLE} SET url = ? WHERE id = ?", (url, vid_id))
@@ -206,7 +208,6 @@ def get_db_connection(db_path, limit_buffer='200M'):
             cover TEXT,
             url TEXT,
             added_at TEXT,
-            release_date TEXT,
             details TEXT,
             dvd TEXT,
             details_fetched INTEGER DEFAULT 0
@@ -228,9 +229,14 @@ def get_db_connection(db_path, limit_buffer='200M'):
             dvd TEXT PRIMARY KEY,
             actresses TEXT,
             genres TEXT,
-            makers TEXT
+            makers TEXT,
+            release_date TEXT
         )
     ''')
+    try:
+        conn.execute("ALTER TABLE movies ADD COLUMN release_date TEXT")
+    except sqlite3.OperationalError:
+        pass
     
     if 'actress' in v_cols:
         cursor.execute("SELECT COUNT(*) FROM movies")
@@ -257,7 +263,17 @@ def get_db_connection(db_path, limit_buffer='200M'):
         except Exception:
             pass
 
-    cursor.execute(f"INSERT OR IGNORE INTO movies (dvd, actresses, genres, makers) SELECT DISTINCT dvd, '', '', '' FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != ''")
+    if 'release_date' in v_cols:
+        custom_log("System", "⏳ Backfilling release_date to movies table...")
+        cursor.execute(f"SELECT dvd, release_date FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != '' AND release_date IS NOT NULL AND release_date != ''")
+        for r in cursor.fetchall():
+            cursor.execute("UPDATE movies SET release_date = ? WHERE dvd = ? AND (release_date IS NULL OR release_date = '')", (r[1], r[0]))
+        try:
+            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} DROP COLUMN release_date")
+        except Exception:
+            pass
+
+    cursor.execute(f"INSERT OR IGNORE INTO movies (dvd, actresses, genres, makers, release_date) SELECT DISTINCT dvd, '', '', '', '' FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != ''")
 
     conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_details_fetched ON {VIDEOS_TABLE}(details_fetched, added_at ASC)')
     conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_details ON {VIDEOS_TABLE}(details)')
@@ -796,21 +812,21 @@ def get_videos():
             total = cursor.fetchone()[0]
             
         if tab == 'favorites':
-            order_clause = "ORDER BY v.release_date DESC, f.added_at DESC"
+            order_clause = "ORDER BY m.release_date DESC, f.added_at DESC"
         elif tab == 'recent':
-            order_clause = "ORDER BY h.last_watched DESC, v.release_date DESC"
+            order_clause = "ORDER BY h.last_watched DESC, m.release_date DESC"
         elif tab == 'frequent':
-            order_clause = "ORDER BY h.watch_count DESC, v.release_date DESC"
+            order_clause = "ORDER BY h.watch_count DESC, m.release_date DESC"
         elif tab == 'global_frequent':
-            order_clause = "ORDER BY h.total_watches DESC, v.release_date DESC"
+            order_clause = "ORDER BY h.total_watches DESC, m.release_date DESC"
         elif tab in ['trending_day', 'trending_month']:
-            order_clause = "ORDER BY h.c DESC, v.release_date DESC"
+            order_clause = "ORDER BY h.c DESC, m.release_date DESC"
         elif safe_key:
-            order_clause = f"ORDER BY v.release_date DESC, bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.added_at DESC"
+            order_clause = f"ORDER BY m.release_date DESC, bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.added_at DESC"
         else:
-            order_clause = "ORDER BY v.release_date DESC, v.added_at DESC"
+            order_clause = "ORDER BY m.release_date DESC, v.added_at DESC"
             
-        query = f"SELECT v.id, v.title, v.cover, v.url, v.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
+        query = f"SELECT v.id, v.title, v.cover, v.url, m.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
         cursor.execute(query, params + [per_page, offset])
         rows = cursor.fetchall()
         
@@ -870,12 +886,12 @@ def get_related():
     with db_lock:
         cursor = db_conn_instance.cursor()
         sql = f'''
-            SELECT v.id, v.title, v.cover, v.url, v.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd
+            SELECT v.id, v.title, v.cover, v.url, m.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd
             FROM {VIDEOS_TABLE} v
             LEFT JOIN movies m ON v.dvd = m.dvd
             JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid
             WHERE {VIDEOS_TABLE}_fts MATCH ? AND v.id != ?
-            ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.release_date DESC
+            ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, m.release_date DESC
             LIMIT 12
         '''
         try:
@@ -1158,7 +1174,7 @@ def video_details_api():
     
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT v.id, v.title, v.cover, v.url, v.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd WHERE v.id = ?", (vid_id,))
+        cursor.execute(f"SELECT v.id, v.title, v.cover, v.url, m.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd WHERE v.id = ?", (vid_id,))
         row = cursor.fetchone()
         
     if row:
