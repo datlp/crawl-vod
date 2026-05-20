@@ -21,15 +21,15 @@ class Scraper:
         self.db_buffer = db_buffer
         self.session = curl_requests.Session(impersonate="chrome120")
         self.sync_lock = threading.Lock()
-        self.referer = "https://missav.com/"
+        self.referer = "https://missav.ai/"
 
     def update_sync_tasks_from_menu(self):
         print("[Scraper] Khởi tạo sync_tasks cho MissAV...")
         tasks = [
-            "https://missav.com/vi/new?page={page}",
-            "https://missav.com/vi/uncensored-leak?page={page}",
-            "https://missav.com/vi/genres/VR?page={page}",
-            "https://missav.com/vi/chinese-subtitle?page={page}"
+            "https://missav.ai/en/new?page={page}",
+            "https://missav.ai/en/uncensored-leak?page={page}",
+            "https://missav.ai/en/genres/VR?page={page}",
+            "https://missav.ai/en/chinese-subtitle?page={page}"
         ]
         with self.db_lock:
             cursor = self.db_conn.cursor()
@@ -61,7 +61,7 @@ class Scraper:
             
             items = soup.select('div.thumbnail, div.max-w-64, div[class*="aspect-video"]') 
             if not items:
-                items = soup.select('a[href*="missav.com/vi/"]')
+                items = soup.select('a[href*="missav.ai/en/"]')
                 
             now = int(time.time())
             for idx, item in enumerate(items):
@@ -126,7 +126,7 @@ class Scraper:
                 row = cursor.fetchone()
                 if row and row[0]: return row[0]
             
-        url = f"https://missav.com/vi/{vid_id}"
+        url = f"https://missav.ai/en/{vid_id}"
         print(f"[Scraper] Fetching video URL for {vid_id} at {url}")
         try:
             res = self.session.get(url, timeout=15)
@@ -149,7 +149,7 @@ class Scraper:
 
     def sync_video_details(self, vid_id):
         with self.sync_lock:
-            url = f"https://missav.com/vi/{vid_id}"
+            url = f"https://missav.ai/en/{vid_id}"
             try:
                 res = self.session.get(url, timeout=15)
                 if res.status_code != 200:

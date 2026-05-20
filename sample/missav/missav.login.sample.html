@@ -118,7 +118,7 @@ select:-webkit-autofill {
                                     <link rel="alternate" hreflang="th" href="https://missav.ai/th/history">
                                     <link rel="alternate" hreflang="de" href="https://missav.ai/de/history">
                                     <link rel="alternate" hreflang="fr" href="https://missav.ai/fr/history">
-                                    <link rel="alternate" hreflang="vi" href="https://missav.ai/vi/history">
+                                    <link rel="alternate" hreflang="vi" href="https://missav.ai/en/history">
                                     <link rel="alternate" hreflang="id" href="https://missav.ai/id/history">
                                     <link rel="alternate" hreflang="fil" href="https://missav.ai/fil/history">
                                     <link rel="alternate" hreflang="pt" href="https://missav.ai/pt/history">
@@ -542,13 +542,13 @@ embed[type="application/pdf"][src="about:blank"] { filter: invert(100%) contrast
 
                     if (locale === this.fallbackLocale) {
                         return this.removeTrailingSlash(path
-                            .replace('/cn/', '/').replace('/en/', '/').replace('/ja/', '/').replace('/ko/', '/').replace('/ms/', '/').replace('/th/', '/').replace('/de/', '/').replace('/fr/', '/').replace('/vi/', '/').replace('/id/', '/').replace('/fil/', '/').replace('/pt/', '/')
+                            .replace('/cn/', '/').replace('/en/', '/').replace('/ja/', '/').replace('/ko/', '/').replace('/ms/', '/').replace('/th/', '/').replace('/de/', '/').replace('/fr/', '/').replace('/en/', '/').replace('/id/', '/').replace('/fil/', '/').replace('/pt/', '/')
                         )
                     }
 
-                    if (path.includes('/cn/') || path.includes('/en/') || path.includes('/ja/') || path.includes('/ko/') || path.includes('/ms/') || path.includes('/th/') || path.includes('/de/') || path.includes('/fr/') || path.includes('/vi/') || path.includes('/id/') || path.includes('/fil/') || path.includes('/pt/')) {
+                    if (path.includes('/cn/') || path.includes('/en/') || path.includes('/ja/') || path.includes('/ko/') || path.includes('/ms/') || path.includes('/th/') || path.includes('/de/') || path.includes('/fr/') || path.includes('/en/') || path.includes('/id/') || path.includes('/fil/') || path.includes('/pt/')) {
                         return this.removeTrailingSlash(path
-                            .replace('/cn/', `/${locale}/`).replace('/en/', `/${locale}/`).replace('/ja/', `/${locale}/`).replace('/ko/', `/${locale}/`).replace('/ms/', `/${locale}/`).replace('/th/', `/${locale}/`).replace('/de/', `/${locale}/`).replace('/fr/', `/${locale}/`).replace('/vi/', `/${locale}/`).replace('/id/', `/${locale}/`).replace('/fil/', `/${locale}/`).replace('/pt/', `/${locale}/`)
+                            .replace('/cn/', `/${locale}/`).replace('/en/', `/${locale}/`).replace('/ja/', `/${locale}/`).replace('/ko/', `/${locale}/`).replace('/ms/', `/${locale}/`).replace('/th/', `/${locale}/`).replace('/de/', `/${locale}/`).replace('/fr/', `/${locale}/`).replace('/en/', `/${locale}/`).replace('/id/', `/${locale}/`).replace('/fil/', `/${locale}/`).replace('/pt/', `/${locale}/`)
                         )
                     }
 
@@ -1119,7 +1119,7 @@ embed[type="application/pdf"][src="about:blank"] { filter: invert(100%) contrast
                     </a>
                 </div>
                             <div class="py-1">
-                    <a :href="localizedUrl('vi')" class="block w-full text-left px-4 py-1.5 xs:py-2 text-sm leading-5 text-nord6 hover:bg-gray-700" href="/vi/history">
+                    <a :href="localizedUrl('vi')" class="block w-full text-left px-4 py-1.5 xs:py-2 text-sm leading-5 text-nord6 hover:bg-gray-700" href="/en/history">
                         <img width="24" height="24" class="inline mr-2" src="https://missav.ai/img/flags/vietnam.png" alt="Tiếng Việt">
                         Tiếng Việt
                     </a>
@@ -1737,7 +1737,7 @@ embed[type="application/pdf"][src="about:blank"] { filter: invert(100%) contrast
                     </a>
                 </div>
                             <div class="py-1">
-                    <a :href="localizedUrl('vi')" class="block w-full text-left px-4 py-1.5 xs:py-2 text-sm leading-5 text-nord6 hover:bg-gray-700" href="/vi/history">
+                    <a :href="localizedUrl('vi')" class="block w-full text-left px-4 py-1.5 xs:py-2 text-sm leading-5 text-nord6 hover:bg-gray-700" href="/en/history">
                         <img width="24" height="24" class="inline mr-2" src="https://missav.ai/img/flags/vietnam.png" alt="Tiếng Việt">
                         Tiếng Việt
                     </a>
