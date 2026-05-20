@@ -58,6 +58,7 @@ except ImportError:
 
 global_last_request_time = time.time()
 CLIENT_IDLE_TIMEOUT = 5
+DB_FLUSH_INTERVAL = 5 # Khoảng thời gian (giây) định kỳ ghi buffer xuống DB
 
 memory_lock = threading.Lock()
 db_lock = threading.Lock()
@@ -167,7 +168,7 @@ def flush_db_buffer(db_conn):
 
 def background_db_worker(db_conn):
     while True:
-        time.sleep(5)
+        time.sleep(DB_FLUSH_INTERVAL)
         flush_db_buffer(db_conn)
 
 def get_db_connection(db_path, limit_buffer='200M'):
@@ -384,14 +385,14 @@ class BackgroundScanner(threading.Thread):
                 
         threading.Thread(target=self.news_dispatcher_loop, daemon=True).start()
         
-        for _ in range(self.news_threads):
-            threading.Thread(target=self.news_scan_worker, daemon=True).start()
+        for i in range(self.news_threads):
+            threading.Thread(target=self.news_scan_worker, args=(i+1,), daemon=True).start()
             
-        for _ in range(self.detail_threads):
-            threading.Thread(target=self.details_scan_worker, daemon=True).start()
+        for i in range(self.detail_threads):
+            threading.Thread(target=self.details_scan_worker, args=(i+1,), daemon=True).start()
             
-        for _ in range(self.videos_threads):
-            threading.Thread(target=self.backlog_scan_worker, daemon=True).start()
+        for i in range(self.videos_threads):
+            threading.Thread(target=self.backlog_scan_worker, args=(i+1,), daemon=True).start()
             
         while True:
             time.sleep(3600)
@@ -412,8 +413,9 @@ class BackgroundScanner(threading.Thread):
                 
             time.sleep(300)
 
-    def news_scan_worker(self):
+    def news_scan_worker(self, thread_num):
         global global_last_request_time
+        source_name = getattr(self.scraper, 'source_name', 'System')
         while True:
             try:
                 url_pattern = self.news_queue.get(timeout=5)
@@ -427,23 +429,26 @@ class BackgroundScanner(threading.Thread):
                     continue
                     
                 try:
-                    custom_log(getattr(self.scraper, 'source_name', 'System'), f"⏳ Kiểm tra video mới: {url_pattern} page {page}...")
+                    custom_log(source_name, f"⏳[News Thread {thread_num}] {url_pattern} page {page}...")
                     new_inserted, found, _ = self.scraper.sync_list_page(url_pattern, page)
                     if found == -1:
                         time.sleep(5)
                         break
+                    custom_log(source_name, f"✔️[News Thread {thread_num}] {url_pattern} page {page} - {new_inserted} new, {found} found")
                     if new_inserted > 0 and found > 0:
                         page += 1
                         time.sleep(1)
                     else:
+                        custom_log(source_name, f"⏳[News Thread {thread_num}] Done Đang chuyển giao cho tác vụ khác...")
                         break
                 except Exception as e:
                     custom_log("System", f"❌ Lỗi kiểm tra video mới: {e}")
                     break
             self.news_queue.task_done()
             
-    def details_scan_worker(self):
+    def details_scan_worker(self, thread_num):
         global global_last_request_time
+        source_name = getattr(self.scraper, 'source_name', 'System')
         while True:
             time.sleep(0.5)
             try:
@@ -463,14 +468,16 @@ class BackgroundScanner(threading.Thread):
                     time.sleep(300)
                     continue
                     
-                custom_log(getattr(self.scraper, 'source_name', 'System'), f"⏳ Đang lấy chi tiết video: {vid_id}")
-                self.scraper.sync_video_details(vid_id)
+                custom_log(source_name, f"⏳[Detail Thread {thread_num}] {vid_id}")
+                success = self.scraper.sync_video_details(vid_id)
+                custom_log(source_name, f"✔️[Detail Thread {thread_num}] {vid_id} - {'Success' if success else 'Failed'}")
             except Exception as e:
                 custom_log("System", f"❌ Lỗi quét chi tiết: {e}")
                 time.sleep(5)
 
-    def backlog_scan_worker(self):
+    def backlog_scan_worker(self, thread_num):
         global global_last_request_time
+        source_name = getattr(self.scraper, 'source_name', 'System')
         while True:
             time.sleep(1)
             try:
@@ -498,7 +505,7 @@ class BackgroundScanner(threading.Thread):
                     
                 url_pattern, current_page, total_pages = task_to_run
                 
-                custom_log(getattr(self.scraper, 'source_name', 'System'), f"⏳ Sync backlog {url_pattern} page {current_page}/{total_pages}...")
+                custom_log(source_name, f"⏳[Videos Thread {thread_num}] {url_pattern} page {current_page}/{total_pages}")
                 new_inserted, found, extracted_total = self.scraper.sync_list_page(url_pattern, current_page)
                 
                 if found == -1:
@@ -509,6 +516,8 @@ class BackgroundScanner(threading.Thread):
                     time.sleep(5)
                     continue
                     
+                custom_log(source_name, f"✔️[Videos Thread {thread_num}] {url_pattern} page {current_page}/{total_pages} - {new_inserted} new, {found} found")
+
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
                     new_total = extracted_total if extracted_total > 0 else total_pages
@@ -1008,23 +1017,38 @@ def proxy_video():
             
         def generate_multithread():
             global global_last_request_time
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=6) # Sử dụng 8 luồng tải song song (cân bằng hoàn hảo)
+            max_workers = 9
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
             try:
-                window_size = 8 # Giữ ở RAM tối đa 8 khối (8 * 0.5MB = 4MB) siêu nhẹ
-                idx = 0
-                while idx < len(ranges_to_fetch):
-                    batch = ranges_to_fetch[idx:idx+window_size]
-                    futures = [executor.submit(fetch_range, b) for b in batch]
-                    for f in futures:
-                        data = f.result()
-                        if data:
-                            # Trả về từng mảnh nhỏ 128KB để player dễ dàng hiển thị dần
-                            for i in range(0, len(data), 128*1024):
-                                yield data[i:i+128*1024]
-                                global_last_request_time = time.time()
-                        else:
-                            return # Ngắt quá trình stream nếu gặp block lỗi nặng
-                    idx += window_size
+                window_size = max_workers * 2 # Nạp trước một số khối (khoảng 4.5MB RAM) để luồng không bị rảnh rỗi
+                futures = {}
+                submit_idx = 0
+                
+                def submit_next():
+                    nonlocal submit_idx
+                    if submit_idx < len(ranges_to_fetch):
+                        futures[submit_idx] = executor.submit(fetch_range, ranges_to_fetch[submit_idx])
+                        submit_idx += 1
+                        
+                # Khởi tạo nạp trước các khối vào hàng đợi
+                for _ in range(window_size):
+                    submit_next()
+                    
+                yield_idx = 0
+                while yield_idx < len(ranges_to_fetch):
+                    f = futures.pop(yield_idx)
+                    data = f.result()
+                    if data:
+                        # Trả về từng mảnh nhỏ 128KB để player dễ dàng hiển thị dần
+                        for i in range(0, len(data), 128*1024):
+                            yield data[i:i+128*1024]
+                            global_last_request_time = time.time()
+                        
+                        # Ngay khi 1 khối đã yield xong, nạp ngay khối mới để luồng nào xong việc có thể lấy chạy tiếp
+                        submit_next()
+                        yield_idx += 1
+                    else:
+                        return # Ngắt quá trình stream nếu gặp block lỗi nặng
             finally:
                 if sys.version_info >= (3, 9): executor.shutdown(wait=False, cancel_futures=True)
                 else: executor.shutdown(wait=False)
