@@ -2,6 +2,7 @@ import time
 import datetime
 import re
 import threading
+from urllib.parse import urlparse
 from curl_cffi import requests as curl_requests
 from bs4 import BeautifulSoup
 
@@ -118,25 +119,75 @@ class Scraper:
             with self.memory_lock:
                 url_in_buffer = self.db_buffer['video_urls'].get(vid_id)
             if url_in_buffer:
-                return url_in_buffer
+                url_str = url_in_buffer
+                parsed_domain = urlparse(url_str).netloc
+                if not re.match(r'^[a-f0-9]{8}\.com$', parsed_domain):
+                    return url_str
                     
             with self.db_lock:
                 cursor = self.db_conn.cursor()
                 cursor.execute("SELECT url FROM javtiful_videos WHERE id = ? AND url IS NOT NULL", (vid_id,))
                 row = cursor.fetchone()
-                if row and row[0]: return row[0]
+            
+            if row and row[0]:
+                url_str = row[0].replace('1080p/video.m3u8', 'playlist.m3u8')
+                parsed_domain = urlparse(url_str).netloc
+                # Phát hiện và bỏ qua tên miền lỗi do thuật toán cũ
+                if not re.match(r'^[a-f0-9]{8}\.com$', parsed_domain):
+                    return url_str
             
         url = f"https://missav.ai/en/{vid_id}"
         print(f"[Scraper] Fetching video URL for {vid_id} at {url}")
         try:
             res = self.session.get(url, timeout=15)
             m3u8_url = None
-            match = re.search(r'source\s*:\s*[\'"]([^\'"]+\.m3u8[^\'"]*)[\'"]', res.text)
-            if match:
-                m3u8_url = match.group(1).replace('\\/', '/')
-            else:
-                match2 = re.search(r'(https:\/\/[^\'"]+\.m3u8[^\'"]*)', res.text)
-                if match2: m3u8_url = match2.group(1).replace('\\/', '/')
+            eval_match = re.search(r"return p}\('(.*?)',\s*(\d+)\s*,\s*(\d+)\s*,\s*'(.*?)'\.split\('\|'\)", res.text)
+            if eval_match:
+                p_str = eval_match.group(1).replace("\\'", "'")
+                a_radix = int(eval_match.group(2))
+                c_count = int(eval_match.group(3))
+                k_words = eval_match.group(4).split('|')
+                
+                def e_base(num, b):
+                    if num == 0: return "0"
+                    chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    res_str = ""
+                    while num > 0:
+                        res_str = chars[num % b] + res_str
+                        num //= b
+                    return res_str
+                
+                for i in range(c_count - 1, -1, -1):
+                    if i < len(k_words) and k_words[i]:
+                        word = e_base(i, a_radix)
+                        p_str = re.sub(r'\b' + word + r'\b', k_words[i], p_str)
+                
+                playlist_match = re.search(r'(https://[^/\'"]+/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/playlist\.m3u8)', p_str)
+                if playlist_match:
+                    m3u8_url = playlist_match.group(1)
+                else:
+                    any_m3u8 = re.search(r'(https://[^/\'"]+/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/[^/]+/[^\'"]*\.m3u8)', p_str)
+                    if any_m3u8:
+                        m3u8_url = any_m3u8.group(1)
+                        m3u8_url = re.sub(r'/[^/]+/[^\']*\.m3u8$', '/playlist.m3u8', m3u8_url)
+
+            if not m3u8_url:
+                uuid_match = re.search(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', res.text)
+                if not uuid_match:
+                    print(f"[Scraper] UUID not found for {vid_id}")
+                    return None
+                video_uuid = uuid_match.group(1)
+                
+                domain = "surrit.com"
+                eval_fallback = re.search(r'eval\(function\(p,a,c,k,e,d\).*?\'([^\']+)\'\.split\(\'\|\'\)', res.text)
+                if eval_fallback:
+                    words = eval_fallback.group(1).split('|')
+                    for w in words:
+                        if w in ['surrit', 'nineyu', 'vipanicdn', 'missav']:
+                            domain = f"{w}.com"
+                            break
+                            
+                m3u8_url = f"https://{domain}/{video_uuid}/playlist.m3u8"
                     
             if m3u8_url:
                 with self.memory_lock:

@@ -683,7 +683,7 @@ def get_videos():
         videos.append({
             "id": row[0],
             "title": row[1],
-            "cover": row[2] if row[2] else f"/api/media?id={row[0]}",
+            "cover": f"/api/media?id={row[0]}",
             "url": row[3],
             "release_date": row[4] if len(row) > 4 else '',
             "actress": row[5] if len(row) > 5 else '',
@@ -752,7 +752,7 @@ def get_related():
         videos.append({
             "id": row[0],
             "title": row[1],
-            "cover": row[2] if row[2] else f"/api/media?id={row[0]}",
+            "cover": f"/api/media?id={row[0]}",
             "url": row[3],
             "release_date": row[4] if row[4] else '',
             "actress": row[5] if row[5] else '',
@@ -761,6 +761,64 @@ def get_related():
             "details": row[8] if row[8] else ''
         })
     return jsonify({"items": videos})
+
+@app.route('/api/media', methods=['GET'])
+def get_media():
+    vid_id = request.args.get('id', '')
+    
+    with memory_lock:
+        media_in_buffer = db_buffer['media'].get(vid_id)
+    if media_in_buffer:
+        return Response(media_in_buffer['data'], mimetype=media_in_buffer['content_type'] or 'image/jpeg', headers={'Cache-Control': 'public, max-age=31536000'})
+        
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT data, content_type FROM media WHERE id = ?", (vid_id,))
+        row = cursor.fetchone()
+        
+    if row:
+        return Response(row[0], mimetype=row[1] or 'image/jpeg', headers={'Cache-Control': 'public, max-age=31536000'})
+    else:
+        cover_url = None
+        with db_lock:
+            cursor = db_conn_instance.cursor()
+            cursor.execute("SELECT cover FROM javtiful_videos WHERE id = ?", (vid_id,))
+            vrow = cursor.fetchone()
+            
+        if vrow and vrow[0]:
+            cover_url = vrow[0]
+            if cover_url.startswith('//'):
+                cover_url = 'https:' + cover_url
+        
+        if cover_url:
+            if vid_id in downloading_media:
+                for _ in range(100):
+                    time.sleep(0.1)
+                    if vid_id not in downloading_media:
+                        break
+                
+                with memory_lock:
+                    media_in_buffer = db_buffer['media'].get(vid_id)
+                if media_in_buffer:
+                    return Response(media_in_buffer['data'], mimetype=media_in_buffer['content_type'] or 'image/jpeg', headers={'Cache-Control': 'public, max-age=31536000'})
+            
+            downloading_media.add(vid_id)
+            try:
+                res = scraper_instance.session.get(cover_url, headers={"Referer": getattr(scraper_instance, 'referer', '')}, timeout=10)
+                if res.status_code == 200:
+                    content_type = res.headers.get('Content-Type', 'image/jpeg')
+                    with memory_lock:
+                        db_buffer['media'][vid_id] = {
+                            'data': res.content,
+                            'content_type': content_type
+                        }
+                    return Response(res.content, mimetype=content_type, headers={'Cache-Control': 'public, max-age=31536000'})
+            except Exception as e:
+                pass
+            finally:
+                downloading_media.discard(vid_id)
+                
+        return Response(status=404)
 
 @app.route('/api/proxy', methods=['GET'])
 def proxy_video():
@@ -772,6 +830,52 @@ def proxy_video():
     headers = {"Referer": getattr(scraper_instance, 'referer', '')}
         
     try:
+        is_m3u8 = target_url.split('?')[0].endswith('.m3u8')
+        
+        if is_m3u8:
+            res = scraper_instance.session.get(target_url, headers=headers, timeout=15)
+            content = res.text
+            base_url = target_url.rsplit('/', 1)[0] + '/'
+            
+            if target_url.split('?')[0].endswith('playlist.m3u8'):
+                lines = content.splitlines()
+                best_info = ""
+                best_url = ""
+                max_val = -1
+                for i in range(len(lines)):
+                    if lines[i].startswith('#EXT-X-STREAM-INF'):
+                        match = re.search(r'RESOLUTION=\d+x(\d+)', lines[i])
+                        val = int(match.group(1)) if match else 0
+                        if val == 0:
+                            match_bw = re.search(r'BANDWIDTH=(\d+)', lines[i])
+                            val = int(match_bw.group(1)) if match_bw else 0
+                        if val >= max_val and i + 1 < len(lines):
+                            max_val = val
+                            best_info = lines[i]
+                            best_url = lines[i+1].strip()
+                if best_url:
+                    content = f"#EXTM3U\n{best_info}\n{best_url}"
+
+            new_content = []
+            for line in content.splitlines():
+                if line.startswith('#') or not line.strip():
+                    new_content.append(line)
+                else:
+                    if line.startswith('http'):
+                        new_url = line
+                    elif line.startswith('/'):
+                        parsed_base = urlparse(target_url)
+                        new_url = f"{parsed_base.scheme}://{parsed_base.netloc}{line}"
+                    else:
+                        new_url = base_url + line
+                    new_content.append(f"/api/proxy?url={quote(new_url)}")
+            body = '\n'.join(new_content).encode('utf-8')
+            
+            resp_headers = {k: v for k, v in res.headers.items() if k.lower() not in ['content-encoding', 'transfer-encoding', 'content-length', 'connection', 'access-control-allow-origin']}
+            resp_headers['Access-Control-Allow-Origin'] = '*'
+            resp_headers['Content-Length'] = str(len(body))
+            return Response(body, status=res.status_code, headers=resp_headers)
+
         # Bước 1: Request 2 byte đầu tiên để lấy Content-Length và kiểm tra HTTP Range
         head_req = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": "bytes=0-1"}, timeout=10)
         
@@ -786,7 +890,7 @@ def proxy_video():
                 is_range_supported = True
                 
         # Nếu Server không hỗ trợ tải nhiều luồng / không trả về size, dùng Proxy 1 luồng cơ bản
-        if not is_range_supported or total_size == 0:
+        if not is_range_supported or total_size == 0 or total_size < 5 * 1024 * 1024 or target_url.split('?')[0].endswith('.ts'):
             if client_range:
                 headers['Range'] = client_range
             res = scraper_instance.session.get(target_url, headers=headers, timeout=15, stream=True)
@@ -909,7 +1013,7 @@ def video_details_api():
             "data": {
                 "id": row[0],
                 "title": row[1],
-                "cover": row[2] if row[2] else f"/api/media?id={row[0]}",
+                "cover": f"/api/media?id={row[0]}",
                 "url": row[3],
                 "release_date": row[4] if row[4] else '',
                 "actress": row[5] if row[5] else '',
