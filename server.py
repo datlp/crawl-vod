@@ -135,10 +135,13 @@ def flush_db_buffer(db_conn):
             for vid_id, vid in videos_to_save.items():
                 dvd = vid.get('dvd', '')
                 release_date = vid.get('release_date', '')
+                release_date_raw = vid.get('release_date_raw', '')
                 if dvd:
-                    cursor.execute("INSERT OR IGNORE INTO movies (dvd, actresses, genres, makers, release_date) VALUES (?, '', '', '', '')", (dvd,))
+                    cursor.execute("INSERT OR IGNORE INTO movies (dvd, actresses, genres, makers, release_date, release_date_raw) VALUES (?, '', '', '', '', '')", (dvd,))
                     if release_date:
                         cursor.execute("UPDATE movies SET release_date = ? WHERE dvd = ? AND (release_date IS NULL OR release_date = '')", (release_date, dvd))
+                    if release_date_raw:
+                        cursor.execute("UPDATE movies SET release_date_raw = ? WHERE dvd = ? AND (release_date_raw IS NULL OR release_date_raw = '')", (release_date_raw, dvd))
                     
                 cursor.execute(f'''
                     INSERT INTO {VIDEOS_TABLE} (id, title, cover, added_at, dvd)
@@ -230,11 +233,16 @@ def get_db_connection(db_path, limit_buffer='200M'):
             actresses TEXT,
             genres TEXT,
             makers TEXT,
-            release_date TEXT
+            release_date TEXT,
+            release_date_raw TEXT
         )
     ''')
     try:
         conn.execute("ALTER TABLE movies ADD COLUMN release_date TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE movies ADD COLUMN release_date_raw TEXT")
     except sqlite3.OperationalError:
         pass
     
@@ -273,7 +281,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
         except Exception:
             pass
 
-    cursor.execute(f"INSERT OR IGNORE INTO movies (dvd, actresses, genres, makers, release_date) SELECT DISTINCT dvd, '', '', '', '' FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != ''")
+    cursor.execute(f"INSERT OR IGNORE INTO movies (dvd, actresses, genres, makers, release_date, release_date_raw) SELECT DISTINCT dvd, '', '', '', '', '' FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != ''")
 
     conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_details_fetched ON {VIDEOS_TABLE}(details_fetched, added_at ASC)')
     conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_details ON {VIDEOS_TABLE}(details)')
@@ -826,7 +834,7 @@ def get_videos():
         else:
             order_clause = "ORDER BY m.release_date DESC, v.added_at DESC"
             
-        query = f"SELECT v.id, v.title, v.cover, v.url, m.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
+        query = f"SELECT v.id, v.title, v.cover, v.url, m.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd, m.release_date_raw FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
         cursor.execute(query, params + [per_page, offset])
         rows = cursor.fetchall()
         
@@ -842,7 +850,8 @@ def get_videos():
             "genre": row[6] if len(row) > 6 else '',
             "maker": row[7] if len(row) > 7 else '',
             "details": row[8] if len(row) > 8 else '',
-            "dvd": row[9] if len(row) > 9 else ''
+            "dvd": row[9] if len(row) > 9 else '',
+            "release_date_raw": row[10] if len(row) > 10 else ''
         })
     return jsonify({"items": videos, "total": total, "page": page})
 
@@ -886,7 +895,7 @@ def get_related():
     with db_lock:
         cursor = db_conn_instance.cursor()
         sql = f'''
-            SELECT v.id, v.title, v.cover, v.url, m.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd
+            SELECT v.id, v.title, v.cover, v.url, m.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd, m.release_date_raw
             FROM {VIDEOS_TABLE} v
             LEFT JOIN movies m ON v.dvd = m.dvd
             JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid
@@ -913,7 +922,8 @@ def get_related():
             "genre": row[6] if row[6] else '',
             "maker": row[7] if row[7] else '',
             "details": row[8] if row[8] else '',
-            "dvd": row[9] if len(row) > 9 and row[9] else ''
+            "dvd": row[9] if len(row) > 9 and row[9] else '',
+            "release_date_raw": row[10] if len(row) > 10 and row[10] else ''
         })
     return jsonify({"items": videos})
 
@@ -1174,7 +1184,7 @@ def video_details_api():
     
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT v.id, v.title, v.cover, v.url, m.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd WHERE v.id = ?", (vid_id,))
+        cursor.execute(f"SELECT v.id, v.title, v.cover, v.url, m.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd, m.release_date_raw FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd WHERE v.id = ?", (vid_id,))
         row = cursor.fetchone()
         
     if row:
@@ -1190,7 +1200,8 @@ def video_details_api():
                 "genre": row[6] if row[6] else '',
                 "maker": row[7] if row[7] else '',
                 "details": row[8] if row[8] else '',
-                "dvd": row[9] if row[9] else ''
+                "dvd": row[9] if row[9] else '',
+                "release_date_raw": row[10] if row[10] else ''
             }
         })
     return jsonify({"success": False, "error": "Not found"})

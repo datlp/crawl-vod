@@ -92,7 +92,7 @@ class Scraper:
                 if vid_id and cover and "missav" in href:
                     pseudo_time = now - (page * 10000) - idx
                     added_at_dt = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(pseudo_time))
-                    videos.append((vid_id, title, cover, added_at_dt, "", dvd))
+                    videos.append((vid_id, title, cover, added_at_dt, "", "", dvd))
                     
             with self.db_lock:
                 cursor = self.db_conn.cursor()
@@ -109,7 +109,7 @@ class Scraper:
                     for vid in set(videos):
                         vid_id = vid[0]
                         self.db_buffer['videos'][vid_id] = {
-                            'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4], 'dvd': vid[5]
+                            'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4], 'release_date_raw': vid[5], 'dvd': vid[6]
                         }
             custom_log(self.source_name, f"{self.source_name} {page} {len(videos)} video{'s' if len(videos) != 1 else ''}")
             return new_count, len(videos), total_pages
@@ -221,7 +221,8 @@ class Scraper:
                 maker = maker_tag.text.strip() if maker_tag else ""
                 
                 date_match = re.search(r'\b(20\d{2}-\d{2}-\d{2})\b', res.text)
-                release_date = date_match.group(1) + " 00:00:00" if date_match else ""
+                release_date_raw = date_match.group(1) if date_match else ""
+                release_date = release_date_raw + " 00:00:00" if release_date_raw else ""
                 
                 desc_meta = soup.find('meta', {'name': 'description'})
                 details = desc_meta.get('content', '') if desc_meta else ""
@@ -249,6 +250,8 @@ class Scraper:
 
                         if release_date:
                             cursor.execute("UPDATE movies SET release_date = ? WHERE dvd = ?", (release_date, dvd))
+                        if release_date_raw:
+                            cursor.execute("UPDATE movies SET release_date_raw = ? WHERE dvd = ?", (release_date_raw, dvd))
 
                     cursor.execute(f'''UPDATE {self.table_name} SET details = ?, details_fetched = 1 WHERE id = ?''', (details, vid_id))
                     self.db_conn.commit()

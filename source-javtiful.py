@@ -123,19 +123,19 @@ class Scraper:
                 title = title_tag.text.strip() if title_tag else vid_id
                 dvd = title.split(' ')[0] if title else ''
                 
-                release_date = ""
+                release_date_raw = ""
                 meta_div = item.select_one('.front-video-meta')
                 if meta_div:
                     spans = meta_div.select('span')
                     if len(spans) >= 3:
-                        release_date = spans[2].text.strip()
+                        release_date_raw = spans[2].text.strip()
                 
-                release_date = parse_release_date(release_date)
+                release_date = parse_release_date(release_date_raw)
                 
                 if vid_id and cover:
                     pseudo_time = now - (page * 10000) - idx
                     added_at_dt = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(pseudo_time))
-                    videos.append((vid_id, title, cover, added_at_dt, release_date, dvd))
+                    videos.append((vid_id, title, cover, added_at_dt, release_date, release_date_raw, dvd))
                     
             with self.db_lock:
                 cursor = self.db_conn.cursor()
@@ -152,7 +152,7 @@ class Scraper:
                     for vid in videos:
                         vid_id = vid[0]
                         self.db_buffer['videos'][vid_id] = {
-                            'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4], 'dvd': vid[5]
+                            'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4], 'release_date_raw': vid[5], 'dvd': vid[6]
                         }
             custom_log(self.source_name, f"{self.source_name} {page} {len(videos)} video{'s' if len(videos) != 1 else ''}")
             return new_count, len(videos), total_pages
@@ -209,7 +209,7 @@ class Scraper:
                         self.db_conn.commit()
                     return False
                 soup = BeautifulSoup(res.text, 'html.parser')
-                actress_arr, genre_arr, maker, details, release_date = [], [], "", "", ""
+                actress_arr, genre_arr, maker, details, release_date, release_date_raw = [], [], "", "", "", ""
                 for block in soup.select('.front-watch-detail'):
                     strong = block.select_one('strong')
                     if not strong: continue
@@ -223,7 +223,11 @@ class Scraper:
                         if a_tag: maker = a_tag.text.strip()
                     elif 'added on' in label or 'date' in label:
                         time_tag = block.select_one('time')
-                        if time_tag and time_tag.get('datetime'): release_date = time_tag.get('datetime').split('T')[0]
+                        if time_tag:
+                            release_date_raw = time_tag.text.strip()
+                            if time_tag.get('datetime'): release_date = time_tag.get('datetime').split('T')[0]
+                if release_date_raw and not release_date:
+                    release_date = release_date_raw
                 release_date = parse_release_date(release_date)
                 desc_meta = soup.find('meta', {'name': 'description'})
                 if desc_meta: details = desc_meta.get('content', '')
@@ -252,6 +256,8 @@ class Scraper:
 
                         if release_date:
                             cursor.execute("UPDATE movies SET release_date = ? WHERE dvd = ?", (release_date, dvd))
+                        if release_date_raw:
+                            cursor.execute("UPDATE movies SET release_date_raw = ? WHERE dvd = ?", (release_date_raw, dvd))
 
                     cursor.execute(f'''UPDATE {self.table_name} SET details = ?, details_fetched = 1 WHERE id = ?''', (details, vid_id))
                     self.db_conn.commit()
