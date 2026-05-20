@@ -40,7 +40,7 @@ except ImportError:
     nltk = None
 
 global_last_request_time = time.time()
-CLIENT_IDLE_TIMEOUT = 60
+CLIENT_IDLE_TIMEOUT = 5
 
 memory_lock = threading.Lock()
 db_lock = threading.Lock()
