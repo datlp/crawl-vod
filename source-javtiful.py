@@ -52,11 +52,12 @@ def parse_release_date(date_str):
     return date_str
 
 class Scraper:
-    def __init__(self, db_conn, db_lock, memory_lock, db_buffer):
+    def __init__(self, db_conn, db_lock, memory_lock, db_buffer, table_name="javtiful_videos"):
         self.db_conn = db_conn
         self.db_lock = db_lock
         self.memory_lock = memory_lock
         self.db_buffer = db_buffer
+        self.table_name = table_name
         self.session = curl_requests.Session(impersonate="chrome120")
         self.sync_lock = threading.Lock()
         self.referer = "https://javtiful.com/"
@@ -141,7 +142,7 @@ class Scraper:
                 new_count = 0
                 for vid in videos:
                     vid_id = vid[0]
-                    cursor.execute("SELECT id FROM javtiful_videos WHERE id = ?", (vid_id,))
+                    cursor.execute(f"SELECT id FROM {self.table_name} WHERE id = ?", (vid_id,))
                     if not cursor.fetchone():
                         with self.memory_lock:
                             if vid_id not in self.db_buffer['videos']:
@@ -168,7 +169,7 @@ class Scraper:
                     
             with self.db_lock:
                 cursor = self.db_conn.cursor()
-                cursor.execute("SELECT url FROM javtiful_videos WHERE id = ? AND url IS NOT NULL", (vid_id,))
+                cursor.execute(f"SELECT url FROM {self.table_name} WHERE id = ? AND url IS NOT NULL", (vid_id,))
                 row = cursor.fetchone()
                 if row and row[0]:
                     return row[0]
@@ -204,7 +205,7 @@ class Scraper:
                 if res.status_code != 200:
                     with self.db_lock:
                         cursor = self.db_conn.cursor()
-                        cursor.execute("UPDATE javtiful_videos SET details_fetched = -1 WHERE id = ?", (vid_id,))
+                        cursor.execute(f"UPDATE {self.table_name} SET details_fetched = -1 WHERE id = ?", (vid_id,))
                         self.db_conn.commit()
                     return False
                 soup = BeautifulSoup(res.text, 'html.parser')
@@ -231,9 +232,9 @@ class Scraper:
                 with self.db_lock:
                     cursor = self.db_conn.cursor()
                     if release_date:
-                        cursor.execute('''UPDATE javtiful_videos SET actress = ?, genre = ?, maker = ?, details = ?, release_date = ?, details_fetched = 1 WHERE id = ?''', (actress_str, genre_str, maker, details, release_date, vid_id))
+                        cursor.execute(f'''UPDATE {self.table_name} SET actress = ?, genre = ?, maker = ?, details = ?, release_date = ?, details_fetched = 1 WHERE id = ?''', (actress_str, genre_str, maker, details, release_date, vid_id))
                     else:
-                        cursor.execute('''UPDATE javtiful_videos SET actress = ?, genre = ?, maker = ?, details = ?, details_fetched = 1 WHERE id = ?''', (actress_str, genre_str, maker, details, vid_id))
+                        cursor.execute(f'''UPDATE {self.table_name} SET actress = ?, genre = ?, maker = ?, details = ?, details_fetched = 1 WHERE id = ?''', (actress_str, genre_str, maker, details, vid_id))
                     self.db_conn.commit()
                 custom_log(self.source_name, f"{self.source_name} {vid_id} {len(actress_arr)} actress{'es' if len(actress_arr) != 1 else ''}, {len(genre_arr)} genre{'s' if len(genre_arr) != 1 else ''}, {maker}")
                 return True
@@ -241,6 +242,6 @@ class Scraper:
                 custom_log(self.source_name, f"❌ Lỗi lấy chi tiết video {vid_id}: {e}")
                 with self.db_lock:
                     cursor = self.db_conn.cursor()
-                    cursor.execute("UPDATE javtiful_videos SET details_fetched = -1 WHERE id = ?", (vid_id,))
+                    cursor.execute(f"UPDATE {self.table_name} SET details_fetched = -1 WHERE id = ?", (vid_id,))
                     self.db_conn.commit()
                 return False
