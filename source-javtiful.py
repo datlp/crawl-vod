@@ -254,10 +254,8 @@ class Scraper:
                         else:
                             cursor.execute("INSERT INTO movies (dvd, actresses, genres, makers) VALUES (?, ?, ?, ?)", (dvd, ", ".join(set([x for x in actress_arr if x])), ", ".join(set([x for x in genre_arr if x])), maker))
 
-                        if release_date:
-                            cursor.execute("UPDATE movies SET release_date = ? WHERE dvd = ?", (release_date, dvd))
-                        if release_date_raw:
-                            cursor.execute("UPDATE movies SET release_date_raw = ? WHERE dvd = ?", (release_date_raw, dvd))
+                    if release_date or release_date_raw:
+                        cursor.execute("INSERT INTO dvd_release (video_id, dvd, release_date, release_date_raw) VALUES (?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET release_date = CASE WHEN excluded.release_date != '' THEN excluded.release_date ELSE release_date END, release_date_raw = CASE WHEN excluded.release_date_raw != '' THEN excluded.release_date_raw ELSE release_date_raw END", (vid_id, dvd, release_date, release_date_raw))
 
                     cursor.execute(f'''UPDATE {self.table_name} SET details = ?, details_fetched = 1 WHERE id = ?''', (details, vid_id))
                     self.db_conn.commit()
