@@ -261,8 +261,8 @@ def get_db_connection(db_path, limit_buffer='200M'):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
             other_names TEXT,
-            source TEXT,
-            UNIQUE(name, source)
+            sources TEXT,
+            UNIQUE(name, sources)
         )
     ''')
     
@@ -270,8 +270,8 @@ def get_db_connection(db_path, limit_buffer='200M'):
         CREATE TABLE IF NOT EXISTS genres (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
-            source TEXT,
-            UNIQUE(name, source)
+            sources TEXT,
+            UNIQUE(name, sources)
         )
     ''')
     
@@ -279,10 +279,16 @@ def get_db_connection(db_path, limit_buffer='200M'):
         CREATE TABLE IF NOT EXISTS makers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
-            source TEXT,
-            UNIQUE(name, source)
+            sources TEXT,
+            UNIQUE(name, sources)
         )
     ''')
+    
+    for tbl in ['actresses', 'genres', 'makers']:
+        try:
+            conn.execute(f"ALTER TABLE {tbl} RENAME COLUMN source TO sources")
+        except sqlite3.OperationalError:
+            pass
     
     conn.execute('''
         CREATE TABLE IF NOT EXISTS movies (
@@ -314,8 +320,8 @@ def get_db_connection(db_path, limit_buffer='200M'):
             a_list = [x.strip() for x in a_str.split(',') if x.strip()]
             a_ids = []
             for a in a_list:
-                cursor.execute("INSERT OR IGNORE INTO actresses (name, other_names, source) VALUES (?, '[]', ?)", (a, app_args.source))
-                cursor.execute("SELECT id FROM actresses WHERE name = ? AND source = ?", (a, app_args.source))
+                cursor.execute("INSERT OR IGNORE INTO actresses (name, other_names, sources) VALUES (?, '[]', ?)", (a, app_args.source))
+                cursor.execute("SELECT id FROM actresses WHERE name = ? AND sources = ?", (a, app_args.source))
                 row = cursor.fetchone()
                 if row:
                     a_ids.append(str(row[0]))
@@ -333,8 +339,8 @@ def get_db_connection(db_path, limit_buffer='200M'):
             g_list = [x.strip() for x in g_str.split(',') if x.strip()]
             g_ids = []
             for g in g_list:
-                cursor.execute("INSERT OR IGNORE INTO genres (name, source) VALUES (?, ?)", (g, app_args.source))
-                cursor.execute("SELECT id FROM genres WHERE name = ? AND source = ?", (g, app_args.source))
+                cursor.execute("INSERT OR IGNORE INTO genres (name, sources) VALUES (?, ?)", (g, app_args.source))
+                cursor.execute("SELECT id FROM genres WHERE name = ? AND sources = ?", (g, app_args.source))
                 row = cursor.fetchone()
                 if row:
                     g_ids.append(str(row[0]))
@@ -477,8 +483,8 @@ def get_db_connection(db_path, limit_buffer='200M'):
             m_list = [x.strip() for x in m_str.split(',') if x.strip()]
             m_ids = []
             for m in m_list:
-                cursor.execute("INSERT OR IGNORE INTO makers (name, source) VALUES (?, ?)", (m, app_args.source))
-                cursor.execute("SELECT id FROM makers WHERE name = ? AND source = ?", (m, app_args.source))
+                cursor.execute("INSERT OR IGNORE INTO makers (name, sources) VALUES (?, ?)", (m, app_args.source))
+                cursor.execute("SELECT id FROM makers WHERE name = ? AND sources = ?", (m, app_args.source))
                 row = cursor.fetchone()
                 if row:
                     m_ids.append(str(row[0]))
