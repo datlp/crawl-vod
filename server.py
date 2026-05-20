@@ -12,19 +12,34 @@ import hashlib
 import threading
 import concurrent.futures
 import importlib.util
+import builtins
 import difflib
 from urllib.parse import urlparse, parse_qs, quote
+
+
+
+def custom_log(category, message):
+    now = datetime.datetime.now()
+    timestamp = now.strftime('%y%m%d_%H%M%S_') + f"{now.microsecond // 1000:03d}"
+    print(f"{timestamp} [{category}] {message}", flush=True)
+
+# Đưa custom_log vào builtins để các file source-*.py gọi được mà không cần import builtins
+builtins.custom_log = custom_log
 
 try:
     from curl_cffi import requests as curl_requests
     from bs4 import BeautifulSoup
     from flask import Flask, request, jsonify, Response, make_response
+    import psutil
+    custom_log("System", "✔️ Kiểm tra đủ package cơ bản...")
 except ImportError as e:
     print(f"Lỗi: Không tìm thấy thư viện bắt buộc. Chi tiết: {e}")
     print("Vui lòng cài đặt các thư viện cần thiết bằng lệnh sau:")
     print("pip install curl_cffi beautifulsoup4 flask")
+    custom_log("System", f"❌ Không tìm thấy thư viện bắt buộc. Chi tiết: {e}")
+    custom_log("System", "⚠️ Vui lòng cài đặt bằng lệnh: pip install curl_cffi beautifulsoup4 flask psutil")
     sys.exit(1)
-# 
+#  
 try:
     import spacy
 except ImportError:
@@ -131,7 +146,7 @@ def flush_db_buffer(db_conn):
                 
             db_conn.commit()
     except Exception as e:
-        print(f"Lỗi khi ghi DB: {e}")
+        custom_log("System", f"❌ Lỗi khi ghi DB: {e}")
         try:
             with db_lock:
                 db_conn.rollback()
@@ -169,7 +184,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
                 conn.execute(f'PRAGMA cache_size=-{kb};')
                 conn.execute(f'PRAGMA mmap_size={kb * 1024};')
         except Exception as e:
-            print(f"[DB] Lỗi khi set limit buffer: {e}")
+            custom_log("System", f"⚠️ Lỗi khi set limit buffer: {e}")
             
     conn.execute('''
         CREATE TABLE IF NOT EXISTS javtiful_videos (
@@ -278,7 +293,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM javtiful_videos_fts")
     if cursor.fetchone()[0] == 0:
-        print("[DB] Backfilling FTS index...")
+        custom_log("System", "⏳ Backfilling FTS index...")
         cursor.execute('''
             INSERT INTO javtiful_videos_fts(rowid, title, actress, genre, maker, details)
             SELECT rowid, title, actress, genre, maker, details FROM javtiful_videos
@@ -299,10 +314,10 @@ def load_tags_cache_if_needed(cursor):
                 sorted_low = " ".join(sorted(low.split()))
                 tags_cache.append((kw, r[1], r[2], low, sorted_low))
         except Exception as e:
-            print("Load tags cache error:", e)
+            custom_log("System", f"❌ Load tags cache error: {e}")
 
 def rebuild_tags_fts(db_conn):
-    print("[DB] Đang tổng hợp dữ liệu actress, genre, maker...")
+    custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker...")
     cursor = db_conn.cursor()
     cursor.execute("SELECT actress, genre, maker FROM javtiful_videos")
     rows = cursor.fetchall()
@@ -341,7 +356,7 @@ def rebuild_tags_fts(db_conn):
     db_conn.commit()
     global tags_cache
     tags_cache = []
-    print("[DB] Hoàn tất tổng hợp tags.")
+    custom_log("System", "✔️ Hoàn tất tổng hợp tags.")
 
 class BackgroundScanner(threading.Thread):
     def __init__(self, scraper, upgrade_all=False):
@@ -367,7 +382,7 @@ class BackgroundScanner(threading.Thread):
                 continue
                 
             try:
-                print("\n[Scanner] Định kỳ 5 phút: Kiểm tra các video mới...")
+                custom_log(getattr(self.scraper, 'source_name', 'System'), "⏳ Định kỳ 5 phút: Kiểm tra các video mới...")
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
                     cursor.execute("SELECT url_pattern FROM sync_tasks ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END")
@@ -389,7 +404,7 @@ class BackgroundScanner(threading.Thread):
                         else:
                             break
             except Exception as e:
-                print(f"[Scanner] Lỗi kiểm tra video mới: {e}")
+                custom_log("System", f"❌ Lỗi kiểm tra video mới: {e}")
                 
             last_scan_time = time.time()
             
@@ -411,10 +426,10 @@ class BackgroundScanner(threading.Thread):
                     continue
                     
                 vid_id = row[0]
-                print(f"[Scanner] Đang lấy chi tiết video: {vid_id}")
+                custom_log(getattr(self.scraper, 'source_name', 'System'), f"⏳ Đang lấy chi tiết video: {vid_id}")
                 self.scraper.sync_video_details(vid_id)
             except Exception as e:
-                print(f"[Scanner] Lỗi quét chi tiết: {e}")
+                custom_log("System", f"❌ Lỗi quét chi tiết: {e}")
 
     def backlog_scan_loop(self):
         global global_last_request_time
@@ -452,7 +467,7 @@ class BackgroundScanner(threading.Thread):
                             self.scraper.db_conn.commit()
                         continue
                         
-                    print(f"[Scanner] Sync backlog {url_pattern} page {current_page}/{total_pages}...")
+                    custom_log(getattr(self.scraper, 'source_name', 'System'), f"⏳ Sync backlog {url_pattern} page {current_page}/{total_pages}...")
                     new_inserted, found, extracted_total = self.scraper.sync_list_page(url_pattern, current_page)
                     
                     if found == -1:
@@ -470,7 +485,7 @@ class BackgroundScanner(threading.Thread):
                     
                     time.sleep(1)
             except Exception as e:
-                print(f"[Scanner] Lỗi backlog scanner: {e}")
+                custom_log("System", f"❌ Lỗi backlog scanner: {e}")
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
@@ -496,6 +511,11 @@ def handle_options():
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
+    ip = request.remote_addr
+    method = request.method
+    code = response.status_code
+    url = request.full_path.rstrip('?')
+    custom_log("API", f"{ip} {method} {code} {url}")
     return response
 
 def get_identifier():
@@ -744,7 +764,7 @@ def get_related():
             cursor.execute(sql, (fts_query, vid_id))
             rows = cursor.fetchall()
         except Exception as e:
-            print("FTS Related Error:", e)
+            custom_log("System", f"❌ FTS Related Error: {e}")
             rows = []
             
     videos = []
@@ -974,7 +994,7 @@ def proxy_video():
                 
         return Response(generate_multithread(), status=status_code, headers=resp_headers)
     except Exception as e:
-        print(f"[Proxy] Error fetching {target_url}: {e}")
+        custom_log("System", f"❌ Error fetching {target_url}: {e}")
         return Response(status=500)
 
 @app.route('/api/sync', methods=['GET'])
@@ -1074,7 +1094,7 @@ def search_suggestions():
                 ''', (safe_key_and,))
                 tag_rows = cursor.fetchall()
             except Exception as e:
-                print("FTS tags search error:", e)
+                custom_log("System", f"❌ FTS tags search error: {e}")
                 tag_rows = []
                 
             # Fuzzy Search (Tìm kiếm mờ) bổ sung nếu FTS không trả về đủ kết quả
@@ -1131,7 +1151,7 @@ def search_suggestions():
                     if t:
                         match_title.append({"text": t[:80] + ("..." if len(t)>80 else ""), "type": "title", "id": row[1]})
             except Exception as e:
-                print("FTS title search error:", e)
+                custom_log("System", f"❌ FTS title search error: {e}")
                 
         chips = []
         for a in match_actress[:5]: chips.append({"text": a["text"], "type": "actress"})
@@ -1473,10 +1493,10 @@ def serve_html(path):
 
 def migrate_old_database(db_conn, old_db_path):
     if not os.path.exists(old_db_path):
-        print(f"[Migration] Không tìm thấy file database cũ tại {old_db_path}")
+        custom_log("System", f"⚠️ Không tìm thấy file database cũ tại {old_db_path}")
         return
 # 
-    print(f"[Migration] Đang gắn (attach) database cũ từ {old_db_path}...")
+    custom_log("System", f"⏳ Đang gắn (attach) database cũ từ {old_db_path}...")
     try:
         cursor = db_conn.cursor()
         cursor.execute("ATTACH DATABASE ? AS old_db", (old_db_path,))
@@ -1487,7 +1507,7 @@ def migrate_old_database(db_conn, old_db_path):
         ]
         
         for table in tables_to_sync:
-            print(f"[Migration] Đang đồng bộ bảng: {table}...")
+            custom_log("System", f"⏳ Đang đồng bộ bảng: {table}...")
             try:
                 cursor.execute(f"PRAGMA table_info({table})")
                 new_cols = [row[1] for row in cursor.fetchall()]
@@ -1496,7 +1516,7 @@ def migrate_old_database(db_conn, old_db_path):
                 old_cols = [row[1] for row in cursor.fetchall()]
                 
                 if not old_cols:
-                    print(f"[Migration] Bảng {table} không tồn tại trong DB cũ, bỏ qua.")
+                    custom_log("System", f"⚠️ Bảng {table} không tồn tại trong DB cũ, bỏ qua.")
                     continue
                     
                 common_cols = [col for col in new_cols if col in old_cols]
@@ -1504,14 +1524,14 @@ def migrate_old_database(db_conn, old_db_path):
                 
                 cursor.execute(f"INSERT OR IGNORE INTO {table} ({cols_str}) SELECT {cols_str} FROM old_db.{table}")
                 db_conn.commit()
-                print(f"[Migration] Đã đồng bộ bảng {table}.")
+                custom_log("System", f"✔️ Đã đồng bộ bảng {table}.")
             except Exception as e:
-                print(f"[Migration] Lỗi khi đồng bộ bảng {table}: {e}")
+                custom_log("System", f"❌ Lỗi khi đồng bộ bảng {table}: {e}")
         
         cursor.execute("DETACH DATABASE old_db")
-        print("[Migration] Hoàn tất đồng bộ dữ liệu từ database cũ!")
+        custom_log("System", "✔️ Hoàn tất đồng bộ dữ liệu từ database cũ!")
     except Exception as e:
-        print(f"[Migration] Lỗi trong quá trình migration: {e}")
+        custom_log("System", f"❌ Lỗi trong quá trình migration: {e}")
 
 def start_reloader():
     import glob
@@ -1529,14 +1549,14 @@ def start_reloader():
         while True:
             time.sleep(2)
             if get_mtimes() != mtimes:
-                print("\n[AutoReloader] Phát hiện thay đổi code, tự động khởi động lại...")
+                custom_log("System", "⚠️ Phát hiện thay đổi code, tự động khởi động lại...")
                 os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=reloader_thread, daemon=True).start()
 
 def load_source_module(source_name):
     file_path = f"./source-{source_name}.py"
     if not os.path.exists(file_path):
-        print(f"Lỗi: Không tìm thấy file {file_path}")
+        custom_log("System", f"❌ Lỗi: Không tìm thấy file {file_path}")
         sys.exit(1)
     
     spec = importlib.util.spec_from_file_location(f"source_{source_name}", file_path)
@@ -1544,6 +1564,17 @@ def load_source_module(source_name):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+def system_monitor_worker():
+    try: import psutil
+    except ImportError: return
+    while True:
+        try:
+            cpu = psutil.cpu_percent(interval=None)
+            mem = psutil.virtual_memory()
+            custom_log("System", f"Tài nguyên: CPU {cpu}% | RAM {mem.percent}% ({mem.used//1048576}MB/{mem.total//1048576}MB)")
+        except Exception: pass
+        time.sleep(5)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -1569,9 +1600,10 @@ def main():
         db_buffer['media'].clear()
     downloading_media.clear()
     tags_cache = []
-    print("[System] Đã xóa cache trong bộ nhớ khi khởi động.")
+    custom_log("System", "✔️ Đã xóa cache trong bộ nhớ khi khởi động.")
 
     start_reloader()
+    threading.Thread(target=system_monitor_worker, daemon=True).start()
     
     db_conn_instance = get_db_connection(args.sqlite3, args.limit_buffer)
     if args.old_sqlite3:
@@ -1584,7 +1616,7 @@ def main():
     threading.Thread(target=background_db_worker, args=(db_conn_instance,), daemon=True).start()
     scanner = BackgroundScanner(scraper_instance, upgrade_all=args.upgrade_all)
     scanner.start()
-    print(f"Javtiful Player worker started at http://localhost:{args.port}")
+    custom_log("System", f"✔️ {args.source.capitalize()} Player worker started at http://localhost:{args.port}")
         
     app.run(host='0.0.0.0', port=args.port, threaded=True, use_reloader=False)
 

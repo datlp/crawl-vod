@@ -23,9 +23,10 @@ class Scraper:
         self.session = curl_requests.Session(impersonate="chrome120")
         self.sync_lock = threading.Lock()
         self.referer = "https://missav.ai/"
+        self.source_name = "MissAV"
 
     def update_sync_tasks_from_menu(self):
-        print("[Scraper] Khởi tạo sync_tasks cho MissAV...")
+        custom_log(self.source_name, f"Khởi tạo sync_tasks cho {self.source_name}...")
         tasks = [
             "https://missav.ai/en/new?page={page}",
             "https://missav.ai/en/uncensored-leak?page={page}",
@@ -44,7 +45,7 @@ class Scraper:
             
     def _sync_list_page(self, url_pattern, page):
         url = url_pattern.replace("{page}", str(page))
-        print(f"[Scraper] Syncing {url}")
+        custom_log(self.source_name, f"⏳ Syncing {url}")
         try:
             res = self.session.get(url, timeout=15)
             soup = BeautifulSoup(res.text, 'html.parser')
@@ -108,10 +109,10 @@ class Scraper:
                         self.db_buffer['videos'][vid_id] = {
                             'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4]
                         }
-            print(f"[Scraper] Synced {len(videos)} videos from {url} (New: {new_count}).")
+            custom_log(self.source_name, f"{self.source_name} {page} {len(videos)} video{'s' if len(videos) != 1 else ''}")
             return new_count, len(videos), total_pages
         except Exception as e:
-            print(f"[Scraper] Sync failed: {e}")
+            custom_log(self.source_name, f"❌ Sync failed: {e}")
             return 0, -1, 0
 
     def get_video_url(self, vid_id, force_refresh=False):
@@ -137,7 +138,7 @@ class Scraper:
                     return url_str
             
         url = f"https://missav.ai/en/{vid_id}"
-        print(f"[Scraper] Fetching video URL for {vid_id} at {url}")
+        custom_log(self.source_name, f"⏳ Fetching video URL for {vid_id}")
         try:
             res = self.session.get(url, timeout=15)
             m3u8_url = None
@@ -174,7 +175,7 @@ class Scraper:
             if not m3u8_url:
                 uuid_match = re.search(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', res.text)
                 if not uuid_match:
-                    print(f"[Scraper] UUID not found for {vid_id}")
+                    custom_log(self.source_name, f"⚠️ UUID not found for {vid_id}")
                     return None
                 video_uuid = uuid_match.group(1)
                 
@@ -195,7 +196,7 @@ class Scraper:
                 return m3u8_url
             return None
         except Exception as e:
-            print(f"[Scraper] Failed to get video URL for {vid_id}: {e}")
+            custom_log(self.source_name, f"❌ Failed to get video URL for {vid_id}: {e}")
             return None
 
     def sync_video_details(self, vid_id):
@@ -230,9 +231,10 @@ class Scraper:
                     else:
                         cursor.execute('''UPDATE javtiful_videos SET actress = ?, genre = ?, maker = ?, details = ?, details_fetched = 1 WHERE id = ?''', (", ".join(set(actress_arr)), ", ".join(set(genre_arr)), maker, details, vid_id))
                     self.db_conn.commit()
+                custom_log(self.source_name, f"{self.source_name} {vid_id} {len(actress_arr)} actress{'es' if len(actress_arr) != 1 else ''}, {len(genre_arr)} genre{'s' if len(genre_arr) != 1 else ''}, {maker}")
                 return True
             except Exception as e:
-                print(f"[Scraper] Lỗi lấy chi tiết video {vid_id}: {e}")
+                custom_log(self.source_name, f"❌ Lỗi lấy chi tiết video {vid_id}: {e}")
                 with self.db_lock:
                     cursor = self.db_conn.cursor()
                     cursor.execute("UPDATE javtiful_videos SET details_fetched = -1 WHERE id = ?", (vid_id,))
