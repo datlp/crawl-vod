@@ -385,7 +385,7 @@ def rebuild_tags_fts(db_conn):
     custom_log("System", "✔️ Hoàn tất tổng hợp tags.")
 
 class BackgroundScanner(threading.Thread):
-    def __init__(self, scraper, upgrade_all=False, news_threads=3, detail_threads=3, videos_threads=3):
+    def __init__(self, scraper, upgrade_all=False, news_threads=0, detail_threads=0, videos_threads=0):
         super().__init__(daemon=True)
         self.scraper = scraper
         self.upgrade_all = upgrade_all
@@ -403,7 +403,8 @@ class BackgroundScanner(threading.Thread):
                 cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0")
                 self.scraper.db_conn.commit()
                 
-        threading.Thread(target=self.news_dispatcher_loop, daemon=True).start()
+        if self.news_threads > 0:
+            threading.Thread(target=self.news_dispatcher_loop, daemon=True).start()
         
         for i in range(self.news_threads):
             threading.Thread(target=self.news_scan_worker, args=(i+1,), daemon=True).start()
@@ -1672,9 +1673,9 @@ def main():
     parser.add_argument('-old-sqlite3', type=str, default="", help="Path to an old SQLite3 database to migrate data from")
     parser.add_argument('-limit-bufer', '-limit-buffer', type=str, default='200M', dest='limit_buffer', help="Limit memory buffer size to avoid Termux killing the process")
     parser.add_argument('-source', type=str, default='javtiful', help="Nguồn crawl dữ liệu (ví dụ: javtiful, missav)")
-    parser.add_argument('-news-threads', type=int, default=3, help="Số luồng quét video mới (mặc định 3)")
-    parser.add_argument('-detail-threads', type=int, default=3, help="Số luồng lấy chi tiết video (mặc định 3)")
-    parser.add_argument('-videos-threads', type=int, default=3, help="Số luồng quét video backlog (mặc định 3)")
+    parser.add_argument('-news-threads', type=int, default=0, help="Số luồng quét video mới (mặc định 0)")
+    parser.add_argument('-detail-threads', type=int, default=0, help="Số luồng lấy chi tiết video (mặc định 0)")
+    parser.add_argument('-videos-threads', type=int, default=0, help="Số luồng quét video backlog (mặc định 0)")
     
     args = parser.parse_args()
     
