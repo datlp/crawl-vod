@@ -133,6 +133,10 @@ def flush_db_buffer(db_conn):
             cursor.execute("BEGIN TRANSACTION;")
             
             for vid_id, vid in videos_to_save.items():
+                dvd = vid.get('dvd', '')
+                if dvd:
+                    cursor.execute("INSERT OR IGNORE INTO movies (dvd, actresses, genres, makers) VALUES (?, '', '', '')", (dvd,))
+                    
                 cursor.execute(f'''
                     INSERT INTO {VIDEOS_TABLE} (id, title, cover, added_at, release_date, dvd)
                     VALUES (?, ?, ?, ?, ?, ?)
@@ -142,7 +146,7 @@ def flush_db_buffer(db_conn):
                         added_at = excluded.added_at,
                         release_date = excluded.release_date,
                         dvd = excluded.dvd
-                ''', (vid['id'], vid['title'], vid['cover'], vid['added_at'], vid.get('release_date', ''), vid.get('dvd', '')))
+                ''', (vid['id'], vid['title'], vid['cover'], vid['added_at'], vid.get('release_date', ''), dvd))
                 
             for vid_id, url in urls_to_save.items():
                 cursor.execute(f"UPDATE {VIDEOS_TABLE} SET url = ? WHERE id = ?", (url, vid_id))
@@ -203,9 +207,6 @@ def get_db_connection(db_path, limit_buffer='200M'):
             url TEXT,
             added_at TEXT,
             release_date TEXT,
-            actress TEXT,
-            genre TEXT,
-            maker TEXT,
             details TEXT,
             dvd TEXT,
             details_fetched INTEGER DEFAULT 0
@@ -219,10 +220,46 @@ def get_db_connection(db_path, limit_buffer='200M'):
     cursor = conn.cursor()
     cursor.execute(f"UPDATE {VIDEOS_TABLE} SET dvd = substr(title, 1, instr(title || ' ', ' ') - 1) WHERE dvd IS NULL OR dvd = ''")
     
+    cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE})")
+    v_cols = [row[1] for row in cursor.fetchall()]
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS movies (
+            dvd TEXT PRIMARY KEY,
+            actresses TEXT,
+            genres TEXT,
+            makers TEXT
+        )
+    ''')
+    
+    if 'actress' in v_cols:
+        cursor.execute("SELECT COUNT(*) FROM movies")
+        if cursor.fetchone()[0] == 0:
+            custom_log("System", "⏳ Backfilling movies table...")
+            cursor.execute(f"SELECT dvd, actress, genre, maker FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != '' AND details_fetched = 1")
+            dvd_data = {}
+            for r in cursor.fetchall():
+                dvd, a, g, m = r
+                if dvd not in dvd_data:
+                    dvd_data[dvd] = {'actresses': set(), 'genres': set(), 'makers': set()}
+                if a: dvd_data[dvd]['actresses'].update([x.strip() for x in a.split(',') if x.strip()])
+                if g: dvd_data[dvd]['genres'].update([x.strip() for x in g.split(',') if x.strip()])
+                if m: dvd_data[dvd]['makers'].update([x.strip() for x in m.split(',') if x.strip()])
+            for dvd, data in dvd_data.items():
+                cursor.execute("INSERT INTO movies (dvd, actresses, genres, makers) VALUES (?, ?, ?, ?)", (dvd, ', '.join(sorted(data['actresses'])), ', '.join(sorted(data['genres'])), ', '.join(sorted(data['makers']))))
+        try:
+            conn.execute(f"DROP INDEX IF EXISTS idx_{VIDEOS_TABLE}_search_actress")
+            conn.execute(f"DROP INDEX IF EXISTS idx_{VIDEOS_TABLE}_search_genre")
+            conn.execute(f"DROP INDEX IF EXISTS idx_{VIDEOS_TABLE}_search_maker")
+            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} DROP COLUMN actress")
+            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} DROP COLUMN genre")
+            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} DROP COLUMN maker")
+        except Exception:
+            pass
+
+    cursor.execute(f"INSERT OR IGNORE INTO movies (dvd, actresses, genres, makers) SELECT DISTINCT dvd, '', '', '' FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != ''")
+
     conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_details_fetched ON {VIDEOS_TABLE}(details_fetched, added_at ASC)')
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_actress ON {VIDEOS_TABLE}(actress)')
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_genre ON {VIDEOS_TABLE}(genre)')
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_maker ON {VIDEOS_TABLE}(maker)')
     conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_details ON {VIDEOS_TABLE}(details)')
     conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_title ON {VIDEOS_TABLE}(title)')
 
@@ -298,22 +335,23 @@ def get_db_connection(db_path, limit_buffer='200M'):
     cursor = conn.cursor()
     cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE}_fts)")
     fts_cols = [row[1] for row in cursor.fetchall()]
-    if 'dvd' not in fts_cols:
+    if 'actresses' not in fts_cols:
         cursor.execute(f"DROP TABLE IF EXISTS {VIDEOS_TABLE}_fts")
         cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ai")
         cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ad")
         cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_au")
+        cursor.execute(f"DROP TRIGGER IF EXISTS movies_au")
 
     conn.execute(f'''
         CREATE VIRTUAL TABLE IF NOT EXISTS {VIDEOS_TABLE}_fts USING fts5(
-            title, actress, genre, maker, details, dvd,
-            content='{VIDEOS_TABLE}', content_rowid='rowid'
+            title, details, dvd, actresses, genres, makers
         )
     ''')
     for trigger_sql in [
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ai AFTER INSERT ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;",
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ad AFTER DELETE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); END;",
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_au AFTER UPDATE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;"
+        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ai AFTER INSERT ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, details, dvd, actresses, genres, makers) VALUES (new.rowid, new.title, new.details, new.dvd, (SELECT actresses FROM movies WHERE dvd = new.dvd), (SELECT genres FROM movies WHERE dvd = new.dvd), (SELECT makers FROM movies WHERE dvd = new.dvd)); END;",
+        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ad AFTER DELETE ON {VIDEOS_TABLE} BEGIN DELETE FROM {VIDEOS_TABLE}_fts WHERE rowid = old.rowid; END;",
+        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_au AFTER UPDATE ON {VIDEOS_TABLE} BEGIN UPDATE {VIDEOS_TABLE}_fts SET title = new.title, details = new.details, dvd = new.dvd, actresses = (SELECT actresses FROM movies WHERE dvd = new.dvd), genres = (SELECT genres FROM movies WHERE dvd = new.dvd), makers = (SELECT makers FROM movies WHERE dvd = new.dvd) WHERE rowid = old.rowid; END;",
+        f"CREATE TRIGGER IF NOT EXISTS movies_au AFTER UPDATE ON movies BEGIN UPDATE {VIDEOS_TABLE}_fts SET actresses = new.actresses, genres = new.genres, makers = new.makers WHERE dvd = new.dvd; END;"
     ]:
         conn.execute(trigger_sql)
         
@@ -321,8 +359,9 @@ def get_db_connection(db_path, limit_buffer='200M'):
     if cursor.fetchone()[0] == 0:
         custom_log("System", "⏳ Backfilling FTS index...")
         cursor.execute(f'''
-            INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd)
-            SELECT rowid, title, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE}
+            INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, details, dvd, actresses, genres, makers)
+            SELECT v.rowid, v.title, v.details, v.dvd, m.actresses, m.genres, m.makers 
+            FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd
         ''')
     conn.commit()
     return conn
@@ -345,7 +384,7 @@ def load_tags_cache_if_needed(cursor):
 def rebuild_tags_fts(db_conn):
     custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker...")
     cursor = db_conn.cursor()
-    cursor.execute(f"SELECT actress, genre, maker FROM {VIDEOS_TABLE}")
+    cursor.execute(f"SELECT actresses, genres, makers FROM movies")
     rows = cursor.fetchall()
     
     actress_counts = {}
@@ -638,6 +677,11 @@ def get_counts():
             if match_field:
                 field = match_field.group(1).lower()
                 val = match_field.group(2).strip()
+                
+                if field == 'actress': field = 'actresses'
+                elif field == 'genre': field = 'genres'
+                elif field == 'maker': field = 'makers'
+                
                 safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
                 if safe_val:
                     fts_join = f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
@@ -692,29 +736,29 @@ def get_videos():
         cursor = db_conn_instance.cursor()
         where_clauses = []
         params = []
-        from_clause = f"{VIDEOS_TABLE} v"
+        from_clause = f"{VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd"
         
         if tab == 'favorites':
             if not identifier:
                 return jsonify({"items": [], "total": 0, "page": page})
-            from_clause = f"{VIDEOS_TABLE} v JOIN favorites f ON v.id = f.video_id"
+            from_clause += " JOIN favorites f ON v.id = f.video_id"
             where_clauses.append("f.username = ?")
             params.append(identifier)
         elif tab in ['recent', 'frequent']:
             if not identifier:
                 return jsonify({"items": [], "total": 0, "page": page})
-            from_clause = f"{VIDEOS_TABLE} v JOIN history h ON v.id = h.video_id"
+            from_clause += " JOIN history h ON v.id = h.video_id"
             where_clauses.append("h.username = ?")
             params.append(identifier)
         elif tab == 'global_frequent':
-            from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, SUM(watch_count) as total_watches FROM history GROUP BY video_id) h ON v.id = h.video_id"
+            from_clause += " JOIN (SELECT video_id, SUM(watch_count) as total_watches FROM history GROUP BY video_id) h ON v.id = h.video_id"
         elif tab == 'trending_day':
             day_ago = int(time.time()) - 86400
-            from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
+            from_clause += " JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
             params.append(day_ago)
         elif tab == 'trending_month':
             month_ago = int(time.time()) - 30*86400
-            from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
+            from_clause += " JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
             params.append(month_ago)
 
         safe_key = ""
@@ -723,6 +767,11 @@ def get_videos():
             if match_field:
                 field = match_field.group(1).lower()
                 val = match_field.group(2).strip()
+                
+                if field == 'actress': field = 'actresses'
+                elif field == 'genre': field = 'genres'
+                elif field == 'maker': field = 'makers'
+                
                 safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
                 if safe_val:
                     from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
@@ -761,7 +810,7 @@ def get_videos():
         else:
             order_clause = "ORDER BY v.release_date DESC, v.added_at DESC"
             
-        query = f"SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
+        query = f"SELECT v.id, v.title, v.cover, v.url, v.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
         cursor.execute(query, params + [per_page, offset])
         rows = cursor.fetchall()
         
@@ -789,7 +838,7 @@ def get_related():
         
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE} WHERE id = ?", (vid_id,))
+        cursor.execute(f"SELECT v.title, m.actresses, m.genres, m.makers FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd WHERE v.id = ?", (vid_id,))
         row = cursor.fetchone()
         
     if not row:
@@ -802,12 +851,12 @@ def get_related():
     query_parts = []
     if actress:
         actresses = [a.strip() for a in actress.split(',')]
-        query_parts.append(' OR '.join([f'actress : "{a}"' for a in actresses if a]))
+        query_parts.append(' OR '.join([f'actresses : "{a}"' for a in actresses if a]))
     if genre:
         genres = [g.strip() for g in genre.split(',')]
-        query_parts.append(' OR '.join([f'genre : "{g}"' for g in genres if g]))
+        query_parts.append(' OR '.join([f'genres : "{g}"' for g in genres if g]))
     if maker:
-        query_parts.append(f'maker : "{maker}"')
+        query_parts.append(f'makers : "{maker}"')
         
     if keywords:
         kw_str = ' OR '.join([f'"{k}"*' for k in keywords[:5]])
@@ -821,8 +870,9 @@ def get_related():
     with db_lock:
         cursor = db_conn_instance.cursor()
         sql = f'''
-            SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd
+            SELECT v.id, v.title, v.cover, v.url, v.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd
             FROM {VIDEOS_TABLE} v
+            LEFT JOIN movies m ON v.dvd = m.dvd
             JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid
             WHERE {VIDEOS_TABLE}_fts MATCH ? AND v.id != ?
             ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.release_date DESC
@@ -1108,7 +1158,7 @@ def video_details_api():
     
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT id, title, cover, url, release_date, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE} WHERE id = ?", (vid_id,))
+        cursor.execute(f"SELECT v.id, v.title, v.cover, v.url, v.release_date, m.actresses, m.genres, m.makers, v.details, v.dvd FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd WHERE v.id = ?", (vid_id,))
         row = cursor.fetchone()
         
     if row:
@@ -1587,7 +1637,7 @@ def migrate_old_database(db_conn, old_db_path):
         cursor.execute("ATTACH DATABASE ? AS old_db", (old_db_path,))
         
         tables_to_sync = [
-            VIDEOS_TABLE, 'media', 'identities', 'user_sessions', 
+            VIDEOS_TABLE, 'movies', 'media', 'identities', 'user_sessions', 
             'favorites', 'history', 'sync_tasks', 'history_logs', 'search_history'
         ]
         

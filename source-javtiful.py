@@ -231,10 +231,29 @@ class Scraper:
                 genre_str = ", ".join(genre_arr)
                 with self.db_lock:
                     cursor = self.db_conn.cursor()
+                    
+                    cursor.execute(f"SELECT dvd FROM {self.table_name} WHERE id = ?", (vid_id,))
+                    dvd_row = cursor.fetchone()
+                    dvd = dvd_row[0] if dvd_row else ""
+                    
+                    if dvd:
+                        cursor.execute("SELECT actresses, genres, makers FROM movies WHERE dvd = ?", (dvd,))
+                        movie_row = cursor.fetchone()
+                        if movie_row:
+                            ex_a = [x.strip() for x in (movie_row[0] or "").split(',') if x.strip()]
+                            ex_g = [x.strip() for x in (movie_row[1] or "").split(',') if x.strip()]
+                            ex_m = [x.strip() for x in (movie_row[2] or "").split(',') if x.strip()]
+                            m_a = list(set([x for x in actress_arr + ex_a if x]))
+                            m_g = list(set([x for x in genre_arr + ex_g if x]))
+                            m_m = list(set([x for x in ([maker] if maker else []) + ex_m if x]))
+                            cursor.execute("UPDATE movies SET actresses = ?, genres = ?, makers = ? WHERE dvd = ?", (", ".join(m_a), ", ".join(m_g), ", ".join(m_m), dvd))
+                        else:
+                            cursor.execute("INSERT INTO movies (dvd, actresses, genres, makers) VALUES (?, ?, ?, ?)", (dvd, ", ".join(set([x for x in actress_arr if x])), ", ".join(set([x for x in genre_arr if x])), maker))
+
                     if release_date:
-                        cursor.execute(f'''UPDATE {self.table_name} SET actress = ?, genre = ?, maker = ?, details = ?, release_date = ?, details_fetched = 1 WHERE id = ?''', (actress_str, genre_str, maker, details, release_date, vid_id))
+                        cursor.execute(f'''UPDATE {self.table_name} SET details = ?, release_date = ?, details_fetched = 1 WHERE id = ?''', (details, release_date, vid_id))
                     else:
-                        cursor.execute(f'''UPDATE {self.table_name} SET actress = ?, genre = ?, maker = ?, details = ?, details_fetched = 1 WHERE id = ?''', (actress_str, genre_str, maker, details, vid_id))
+                        cursor.execute(f'''UPDATE {self.table_name} SET details = ?, details_fetched = 1 WHERE id = ?''', (details, vid_id))
                     self.db_conn.commit()
                 custom_log(self.source_name, f"{self.source_name} {vid_id} {len(actress_arr)} actress{'es' if len(actress_arr) != 1 else ''}, {len(genre_arr)} genre{'s' if len(genre_arr) != 1 else ''}, {maker}")
                 return True
