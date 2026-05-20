@@ -335,6 +335,33 @@
                         <button id="btnUpdatePassword" style="padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer;" disabled>Cập nhật mật khẩu</button>
                     </div>
                 </div>
+
+                <div id="adminStatsSection" style="display:none; flex-direction: column; gap: 10px; margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
+                    <h4 style="margin: 0; color: #f1f1f1;">Thống kê Hệ thống</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div style="background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444; text-align: center;">
+                            <div style="font-size: 12px; color: #aaa;">Tổng Video</div>
+                            <div id="stat-videos" style="font-size: 18px; font-weight: bold; color: #ff4081;">0</div>
+                        </div>
+                        <div style="background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444; text-align: center;">
+                            <div style="font-size: 12px; color: #aaa;">DVD/Movies</div>
+                            <div id="stat-movies" style="font-size: 18px; font-weight: bold; color: #1e88e5;">0</div>
+                        </div>
+                        <div style="background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444; text-align: center;">
+                            <div style="font-size: 12px; color: #aaa;">Diễn viên</div>
+                            <div id="stat-actresses" style="font-size: 18px; font-weight: bold; color: #43a047;">0</div>
+                        </div>
+                        <div style="background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444; text-align: center;">
+                            <div style="font-size: 12px; color: #aaa;">Thể loại</div>
+                            <div id="stat-genres" style="font-size: 18px; font-weight: bold; color: #fb8c00;">0</div>
+                        </div>
+                        <div style="background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444; text-align: center; grid-column: span 2;">
+                            <div style="font-size: 12px; color: #aaa;">Nhà sản xuất</div>
+                            <div id="stat-makers" style="font-size: 18px; font-weight: bold; color: #8e24aa;">0</div>
+                        </div>
+                    </div>
+                    <button id="btnRefreshStats" style="padding: 8px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 5px;">🔄 Làm mới thống kê</button>
+                </div>
             </div>
         </div>
 
@@ -372,11 +399,7 @@
                 <div style="text-align: center; margin-bottom: 15px; font-size: 14px; color: #aaa;" id="details-date"></div>
                 <div id="details-chips" class="chips-container"></div>
                 <div style="margin-bottom: 15px; font-size: 14px; line-height: 1.5;"><strong>Mô tả:</strong> <div id="details-desc" style="margin-top: 5px; color: #aaa;"></div></div>
-                <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
-                    <button id="btn-watch-now" style="padding: 10px; background: #43a047; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">▶ Xem ngay</button>
-                    <button id="btn-open-javtiful" style="padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">🌐 Javtiful</button>
-                    <button id="btn-search-list" style="padding: 10px; background: #1e88e5; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">🔍 Xem trong danh sách video</button>
-                </div>
+                <div id="details-source-buttons" style="display: flex; flex-direction: column; margin-bottom: 20px;"></div>
             </div>
         </div>
 
@@ -389,6 +412,7 @@
             <div class="action-btn" id="btn-profile" title="Tài khoản">👤</div>
             <div class="action-btn" id="btn-favorite" title="Yêu thích">🤍</div>
             <div class="action-btn" id="btn-sync" title="Đồng bộ">🔄</div>
+            <div class="action-btn" id="btn-change-source" title="Đổi Server" style="display: none;">🔁</div>
             <div class="action-btn" id="btn-list" title="Danh sách">☰</div>
             <div class="action-btn" id="btn-fullscreen" title="Toàn màn hình">⛶</div>
             <div class="action-btn" id="btn-play-pause" title="Play/Pause">▶</div>
@@ -411,6 +435,7 @@
         let currentPlayingVideo = null;
         let currentRenderId = 0;
         let lastNavTime = 0;
+        let currentWatchId = null;
         
         let isSeekingUI = false;
         let seekThrottleTimeout = null;
@@ -971,13 +996,16 @@
         window.addEventListener('hashchange', handleNavigation);
         
         async function showVideoDetailById(id) {
-            const idx = videos.findIndex(v => v.id === id);
+            let idx = videos.findIndex(v => v.sources && v.sources.some(s => s.id === id));
+            if (idx === -1) idx = videos.findIndex(v => v.id === id);
+            
             if (idx !== -1) {
                 showVideoDetail(idx);
             } else {
                 try {
                     const res = await apiFetch(`/api/video_details?id=${id}`);
                     if (res.success && res.data) {
+                        res.data.sources = [{id: res.data.id, source: res.data.source}];
                         showVideoDetail(-1, res.data);
                     }
                 } catch(e) {
@@ -987,18 +1015,23 @@
         }
 
         async function playVideoById(id) {
-            if (currentPlayingVideo && currentPlayingVideo.id === id) return;
+            if (currentPlayingVideo && currentWatchId === id) return;
             
-            const idx = videos.findIndex(v => v.id === id);
+            let idx = videos.findIndex(v => v.sources && v.sources.some(s => s.id === id));
+            if (idx === -1) idx = videos.findIndex(v => v.id === id);
+
             if (idx !== -1) {
                 currentVideoIndex = idx;
+                currentWatchId = id;
                 renderCurrentVideo();
             } else {
                 try {
                     const res = await apiFetch(`/api/video_details?id=${id}`);
                     if (res.success && res.data) {
+                        res.data.sources = [{id: res.data.id, source: res.data.source}];
                         videos.push(res.data);
                         currentVideoIndex = videos.length - 1;
+                        currentWatchId = id;
                         renderCurrentVideo();
                     }
                 } catch(e) {
@@ -1034,6 +1067,13 @@
             emailUnverifiedBadge: document.getElementById('emailUnverifiedBadge'),
             emailCallToAction: document.getElementById('emailCallToAction'),
             btnUpdatePassword: document.getElementById('btnUpdatePassword'),
+            adminStatsSection: document.getElementById('adminStatsSection'),
+            statVideos: document.getElementById('stat-videos'),
+            statMovies: document.getElementById('stat-movies'),
+            statActresses: document.getElementById('stat-actresses'),
+            statGenres: document.getElementById('stat-genres'),
+            statMakers: document.getElementById('stat-makers'),
+            btnRefreshStats: document.getElementById('btnRefreshStats')
         };
 
         async function updateIdentityDisplay() {
@@ -1044,6 +1084,7 @@
                 show(el.logoutBtn);
                 hide(el.identifyForm);
                 show(el.profileSection, 'flex');
+                fetchSystemStats();
                 
                 try {
                     const res = await apiFetch('/api/identity/me');
@@ -1093,8 +1134,27 @@
                 show(el.identifyBtn);
                 hide(el.logoutBtn);
                 hide(el.profileSection);
+                hide(el.adminStatsSection);
             }
         }
+
+        async function fetchSystemStats() {
+            try {
+                const res = await apiFetch('/api/stats');
+                if (res.success && res.stats) {
+                    el.statVideos.innerText = formatCount(res.stats.videos);
+                    el.statMovies.innerText = formatCount(res.stats.movies);
+                    el.statActresses.innerText = formatCount(res.stats.actresses);
+                    el.statGenres.innerText = formatCount(res.stats.genres);
+                    el.statMakers.innerText = formatCount(res.stats.makers);
+                    show(el.adminStatsSection, 'flex');
+                }
+            } catch (e) {
+                console.error("Lỗi lấy thống kê", e);
+            }
+        }
+        
+        el.btnRefreshStats.onclick = fetchSystemStats;
 
         el.logoutBtn.onclick = () => {
             logout();
@@ -1546,50 +1606,78 @@
                 
                 if (data.items && data.items.length > 0) {
                     const startIndex = videos.length;
-                    videos = videos.concat(data.items);
                     
-                    data.items.forEach((video, i) => {
-                        const idx = startIndex + i;
-                        const item = document.createElement('div');
-                        item.className = 'gallery-item';
-                        item.dataset.id = video.id;
-                        if (idx === currentVideoIndex) {
-                            item.classList.add('active');
+                    data.items.forEach((video) => {
+                        let isGrouped = false;
+                        if (video.dvd) {
+                            let existingIdx = videos.findIndex(v => v.dvd === video.dvd);
+                            if (existingIdx !== -1) {
+                                isGrouped = true;
+                                if (!videos[existingIdx].sources) {
+                                    videos[existingIdx].sources = [{id: videos[existingIdx].id, source: videos[existingIdx].source}];
+                                }
+                                if (!videos[existingIdx].sources.find(s => s.id === video.id)) {
+                                    videos[existingIdx].sources.push({id: video.id, source: video.source});
+                                }
+                                let itemEl = document.getElementById(`gallery-item-${existingIdx}`);
+                                if (itemEl) {
+                                    let sourceBadge = itemEl.querySelector('.source-badge');
+                                    if (sourceBadge) {
+                                        sourceBadge.innerText = videos[existingIdx].sources.map(s => s.source).join(' | ');
+                                    }
+                                }
+                            }
                         }
-                        item.id = `gallery-item-${idx}`;
                         
-                        let dateStr = '';
-                        if (video.added_at) {
-                            dateStr = `🕒 ${formatTimeAgo(video.added_at)}`;
-                        } else if (video.release_date) {
-                            dateStr = `📅 ${formatTimeAgo(video.release_date)}`;
+                        if (!isGrouped) {
+                            video.sources = [{id: video.id, source: video.source}];
+                            const idx = videos.length;
+                            videos.push(video);
+                            
+                            const item = document.createElement('div');
+                            item.className = 'gallery-item';
+                            item.dataset.id = video.id;
+                            if (idx === currentVideoIndex) {
+                                item.classList.add('active');
+                            }
+                            item.id = `gallery-item-${idx}`;
+                            
+                            let dateStr = '';
+                            if (video.added_at) {
+                                dateStr = `🕒 ${formatTimeAgo(video.added_at)}`;
+                            } else if (video.release_date) {
+                                dateStr = `📅 ${formatTimeAgo(video.release_date)}`;
+                            }
+                            
+                            let viewsStr = video.views ? `👁️ ${video.views}` : '';
+                            let sourceStr = `<div class="source-badge" style="position:absolute; top:8px; left:8px; background:rgba(0,0,0,0.7); border: 1px solid #444; color:#fff; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:4px; z-index:2; text-transform: capitalize; box-shadow: 0 2px 4px rgba(0,0,0,0.5);">${video.source}</div>`;
+
+                            item.innerHTML = `
+                                <div class="gallery-item-thumb" style="background-image: url('${video.cover}')">
+                                    ${sourceStr}
+                                </div>
+                                <div class="item-info">
+                                    <div class="item-title">${video.title}</div>
+                                    <div class="item-meta"><span>${dateStr}</span><span>${viewsStr}</span></div>
+                                </div>
+                            `;
+
+                            item.querySelector('.gallery-item-thumb').onclick = (e) => {
+                                e.stopPropagation();
+                                const p = getBaseUrlParams();
+                                p.set('watch', video.id); 
+                                history.pushState(null, '', `/?${p.toString()}`);
+                                handleNavigation();
+                            };
+                            item.querySelector('.item-info').onclick = (e) => {
+                                e.stopPropagation();
+                                const p = getBaseUrlParams();
+                                p.set('video', video.id);
+                                history.pushState(null, '', `/?${p.toString()}`);
+                                handleNavigation();
+                            };
+                            galleryGrid.appendChild(item);
                         }
-                        
-                        let viewsStr = video.views ? `👁️ ${video.views}` : '';
-
-                        item.innerHTML = `
-                            <div class="gallery-item-thumb" style="background-image: url('${video.cover}')"></div>
-                            <div class="item-info">
-                                <div class="item-title">${video.title}</div>
-                                <div class="item-meta"><span>${dateStr}</span><span>${viewsStr}</span></div>
-                            </div>
-                        `;
-
-                        item.querySelector('.gallery-item-thumb').onclick = (e) => {
-                            e.stopPropagation();
-                            const p = getBaseUrlParams();
-                            p.set('watch', video.id);
-                            history.pushState(null, '', `/?${p.toString()}`);
-                            handleNavigation();
-                        };
-                        item.querySelector('.item-info').onclick = (e) => {
-                            e.stopPropagation();
-                            const p = getBaseUrlParams();
-                            p.set('video', video.id);
-                            history.pushState(null, '', `/?${p.toString()}`);
-                            handleNavigation();
-                        };
-                        galleryGrid.appendChild(item);
                     });
                     currentPage++;
                 } else {
@@ -1622,10 +1710,15 @@
             const renderId = ++currentRenderId;
             const video = videos[currentVideoIndex];
             currentPlayingVideo = video;
-            titleEl.innerText = video.title;
+            const playId = currentWatchId || video.id;
+            
+            const playingSourceObj = video.sources ? video.sources.find(s => s.id === playId) : null;
+            const playingSource = playingSourceObj ? playingSourceObj.source : video.source;
+            
+            titleEl.innerHTML = `<span style="background: #ff4081; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-right: 8px; vertical-align: middle; text-transform: capitalize;">${playingSource}</span>${video.title}`;
             mediaCounter.innerText = `${currentVideoIndex + 1} / ${videos.length}`;
             
-            checkFavoriteStatus(video.id);
+            checkFavoriteStatus(playId);
             
             if (activePlayer) {
                 activePlayer.dispose();
@@ -1643,13 +1736,31 @@
                 activeItem.classList.add('active');
             }
 
+            const sourceSelectorBtn = document.getElementById('btn-change-source');
+            if (sourceSelectorBtn) {
+                if (video.sources && video.sources.length > 1) {
+                    sourceSelectorBtn.style.display = 'flex';
+                    sourceSelectorBtn.onclick = () => {
+                        let currSrcIdx = video.sources.findIndex(s => s.id === playId);
+                        let nextSrcIdx = (currSrcIdx + 1) % video.sources.length;
+                        const nextSource = video.sources[nextSrcIdx];
+                        const p = getBaseUrlParams();
+                        p.set('watch', nextSource.id);
+                        history.replaceState(null, '', `/?${p.toString()}`);
+                        handleNavigation();
+                    };
+                } else {
+                    sourceSelectorBtn.style.display = 'none';
+                }
+            }
+
             try {
-                const data = await apiFetch(`/api/video_url?id=${encodeURIComponent(video.id)}`);
+                const data = await apiFetch(`/api/video_url?id=${encodeURIComponent(playId)}`);
                 
                 if (renderId !== currentRenderId) return;
 
                 if (data.success && data.url) {
-                    let url = `/api/proxy?url=${encodeURIComponent(data.url)}`;
+                    let url = `/api/proxy?url=${encodeURIComponent(data.url)}&source=${data.source || playingSource}`;
                     let videoType = 'video/mp4';
                     if (data.url.includes('.m3u8')) videoType = 'application/x-mpegURL';
                     
@@ -1701,10 +1812,10 @@
                             showToast(`Đang thử lại link mới lần ${errorRetryCount}/3...`, "warning");
                             loadingIndicator.style.display = 'block';
                             try {
-                                const newData = await apiFetch(`/api/video_url?id=${encodeURIComponent(video.id)}&refresh=true`);
+                                const newData = await apiFetch(`/api/video_url?id=${encodeURIComponent(playId)}&refresh=true`);
                                 if (renderId !== currentRenderId) return;
                                 if (newData.success && newData.url) {
-                                    let newUrl = `/api/proxy?url=${encodeURIComponent(newData.url)}`;
+                                    let newUrl = `/api/proxy?url=${encodeURIComponent(newData.url)}&source=${newData.source || playingSource}`;
                                     let newVideoType = 'video/mp4';
                                     if (newData.url.includes('.m3u8')) newVideoType = 'application/x-mpegURL';
                                     
@@ -1776,7 +1887,7 @@
                         apiFetch('/api/history/record', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ video_id: video.id })
+                            body: JSON.stringify({ video_id: playId })
                         }).catch(() => {});
                     });
                 } else {
@@ -1797,14 +1908,16 @@
             if (videos.length === 0) return;
             if (currentVideoIndex < videos.length - 1) {
                 const nextVid = videos[currentVideoIndex + 1];
-                const p = getBaseUrlParams(); p.set('watch', nextVid.id);
+                const nextId = nextVid.sources ? nextVid.sources[0].id : nextVid.id;
+                const p = getBaseUrlParams(); p.set('watch', nextId);
                 history.replaceState(null, '', `/?${p.toString()}`);
                 handleNavigation();
             } else {
                 fetchVideos().then(() => {
                     if (currentVideoIndex < videos.length - 1) {
                         const nextVid = videos[currentVideoIndex + 1];
-                        const p = getBaseUrlParams(); p.set('watch', nextVid.id);
+                        const nextId = nextVid.sources ? nextVid.sources[0].id : nextVid.id;
+                        const p = getBaseUrlParams(); p.set('watch', nextId);
                         history.replaceState(null, '', `/?${p.toString()}`);
                         handleNavigation();
                     }
@@ -1815,7 +1928,8 @@
         function prevVideo() {
             if (currentVideoIndex > 0) {
                 const prevVid = videos[currentVideoIndex - 1];
-                const p = getBaseUrlParams(); p.set('watch', prevVid.id);
+                const prevId = prevVid.sources ? prevVid.sources[0].id : prevVid.id;
+                const p = getBaseUrlParams(); p.set('watch', prevId);
                 history.replaceState(null, '', `/?${p.toString()}`);
                 handleNavigation();
             }
@@ -1868,7 +1982,7 @@
                 const focusId = urlParams.get('id');
                 let targetItem = null;
                 if (focusId) {
-                    targetItem = galleryGrid.querySelector(`.gallery-item[data-id="${focusId}"]`);
+                    targetItem = galleryGrid.querySelector(`.gallery-item[data-id="${focusId}"]`) || galleryGrid.querySelector(`.gallery-item`);
                 }
                 if (!targetItem) targetItem = galleryGrid.querySelector('.gallery-item.active');
                 
@@ -1901,7 +2015,7 @@
             if (!urlParams.has('watch') && !urlParams.has('video')) {
                 if (currentPlayingVideo) {
                     const p = getBaseUrlParams();
-                    p.set('watch', currentPlayingVideo.id);
+                    p.set('watch', currentWatchId || currentPlayingVideo.id);
                     history.pushState(null, '', `/?${p.toString()}`);
                     handleNavigation();
                 }
@@ -1987,7 +2101,7 @@
         }
 
         document.getElementById('btn-favorite').addEventListener('click', (e) => {
-            if (currentPlayingVideo) toggleFavorite(currentPlayingVideo.id, undefined, undefined, 'toggle');
+            if (currentPlayingVideo) toggleFavorite(currentWatchId || currentPlayingVideo.id, undefined, undefined, 'toggle');
         });
 
         function toggleFavorite(vidId, x, y, action = 'toggle') {
@@ -2046,7 +2160,7 @@
             const now = Date.now();
             if (now - lastTapTime < 300) {
                 clearTimeout(singleClickTimeout);
-                if (currentPlayingVideo) toggleFavorite(currentPlayingVideo.id, e.clientX, e.clientY, 'add');
+                if (currentPlayingVideo) toggleFavorite(currentWatchId || currentPlayingVideo.id, e.clientX, e.clientY, 'add');
                 lastTapTime = 0;
             } else {
                 lastTapTime = now;
@@ -2336,7 +2450,7 @@
                     } else if (!urlParams.has('watch')) {
                         if (currentPlayingVideo) {
                             const p = getBaseUrlParams();
-                            p.set('watch', currentPlayingVideo.id);
+                            p.set('watch', currentWatchId || currentPlayingVideo.id);
                             history.pushState(null, '', `/?${p.toString()}`);
                             handleNavigation();
                         }
@@ -2450,14 +2564,41 @@
             document.getElementById('details-desc').innerText = video.details || 'Đang tải...';
             
             const setupButtons = (v) => {
-                document.getElementById('btn-watch-now').onclick = () => {
-                    const p = getBaseUrlParams();
-                    p.set('watch', v.id);
-                    history.pushState(null, '', `/?${p.toString()}`);
-                    handleNavigation();
-                };
-                document.getElementById('btn-open-javtiful').onclick = () => window.open(v.url || `https://javtiful.com/video/${v.id}`, '_blank');
-                document.getElementById('btn-search-list').onclick = () => {
+                const sourceButtonsDiv = document.getElementById('details-source-buttons');
+                sourceButtonsDiv.innerHTML = '';
+                
+                if (v.sources && v.sources.length > 0) {
+                    v.sources.forEach(s => {
+                        const row = document.createElement('div');
+                        row.style.display = 'flex';
+                        row.style.gap = '10px';
+                        row.style.marginBottom = '10px';
+                        
+                        const btnWatch = document.createElement('button');
+                        btnWatch.style = "flex: 1; padding: 10px; background: #43a047; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; text-transform: capitalize;";
+                        btnWatch.innerText = `▶ Xem ngay (${s.source})`;
+                        btnWatch.onclick = () => {
+                            const p = getBaseUrlParams();
+                            p.set('watch', s.id);
+                            history.pushState(null, '', `/?${p.toString()}`);
+                            handleNavigation();
+                        };
+                        
+                        const btnWeb = document.createElement('button');
+                        btnWeb.style = "padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; white-space: nowrap;";
+                        btnWeb.innerText = `🌐 Web`;
+                        btnWeb.onclick = () => window.open(s.url || `https://${s.source === 'missav' ? 'missav.ai/en' : 'javtiful.com/video'}/${s.id}`, '_blank');
+                        
+                        row.appendChild(btnWatch);
+                        row.appendChild(btnWeb);
+                        sourceButtonsDiv.appendChild(row);
+                    });
+                }
+                
+                const btnSearch = document.createElement('button');
+                btnSearch.style = "padding: 10px; background: #1e88e5; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;";
+                btnSearch.innerText = "🔍 Xem trong danh sách video";
+                btnSearch.onclick = () => {
                     const p = getBaseUrlParams();
                     p.set('id', v.id);
                     p.delete('watch');
@@ -2465,13 +2606,16 @@
                     history.pushState(null, '', `/?${p.toString()}`);
                     handleNavigation();
                 };
+                sourceButtonsDiv.appendChild(btnSearch);
             };
             setupButtons(video);
             
             try {
-                const res = await apiFetch(`/api/video_details?id=${video.id}`);
+                const fetchId = video.sources ? video.sources[0].id : video.id;
+                const res = await apiFetch(`/api/video_details?id=${fetchId}`);
                 if (res.success && res.data) {
                     const d = res.data;
+                    d.sources = video.sources;
                     document.getElementById('details-cover').src = d.cover || '';
                     document.getElementById('details-title').innerText = d.title || '';
                     document.getElementById('details-date').innerText = d.release_date || 'N/A';
@@ -2487,7 +2631,7 @@
         titleEl.onclick = async () => {
             if (currentPlayingVideo) {
                 const p = getBaseUrlParams();
-                p.set('video', currentPlayingVideo.id);
+                p.set('video', currentWatchId || currentPlayingVideo.id);
                 history.pushState(null, '', `/?${p.toString()}`);
                 handleNavigation();
             }

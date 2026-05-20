@@ -899,6 +899,23 @@ def get_counts():
         "trending_month": 0
     })
 
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        stats = {}
+        cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE}")
+        stats['videos'] = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM movies")
+        stats['movies'] = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM actresses")
+        stats['actresses'] = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM genres")
+        stats['genres'] = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM makers")
+        stats['makers'] = cursor.fetchone()[0]
+    return jsonify({"success": True, "stats": stats})
+
 @app.route('/api/videos', methods=['GET'])
 def get_videos():
     page = int(request.args.get('page', 1))
@@ -1158,14 +1175,17 @@ def get_media():
 @app.route('/api/proxy', methods=['GET'])
 def proxy_video():
     target_url = request.args.get('url', '')
+    source_param = request.args.get('source', '')
     if not target_url:
         return Response(status=400)
         
-    scraper = list(scrapers.values())[0]
-    for s in scrapers.values():
-        if s.referer and urlparse(s.referer).netloc in target_url:
-            scraper = s
-            break
+    scraper = scrapers.get(source_param)
+    if not scraper:
+        scraper = list(scrapers.values())[0]
+        for s in scrapers.values():
+            if s.referer and urlparse(s.referer).netloc in target_url:
+                scraper = s
+                break
             
     client_range = request.headers.get('Range')
     headers = {"Referer": getattr(scraper, 'referer', '')}
@@ -1209,7 +1229,7 @@ def proxy_video():
                         new_url = f"{parsed_base.scheme}://{parsed_base.netloc}{line}"
                     else:
                         new_url = base_url + line
-                    new_content.append(f"/api/proxy?url={quote(new_url)}")
+                    new_content.append(f"/api/proxy?url={quote(new_url)}&source={source_param}")
             body = '\n'.join(new_content).encode('utf-8')
             
             resp_headers = {k: v for k, v in res.headers.items() if k.lower() not in ['content-encoding', 'transfer-encoding', 'content-length', 'connection', 'access-control-allow-origin']}
@@ -1366,7 +1386,7 @@ def video_url_api():
     
     url = scraper.get_video_url(vid_id, force_refresh=force_refresh)
     if url:
-        return jsonify({"success": True, "url": url})
+        return jsonify({"success": True, "url": url, "source": source})
     return jsonify({"success": False, "error": "Cannot extract URL"})
 
 @app.route('/api/video_details', methods=['GET'])
