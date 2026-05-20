@@ -1514,11 +1514,21 @@ def migrate_old_database(db_conn, old_db_path):
         print(f"[Migration] Lỗi trong quá trình migration: {e}")
 
 def start_reloader():
+    import glob
+    def get_mtimes():
+        base_dir = os.path.dirname(os.path.abspath(__file__)) or '.'
+        files = [__file__] + glob.glob(os.path.join(base_dir, 'source-*.py'))
+        mtimes = {}
+        for f in files:
+            try: mtimes[f] = os.path.getmtime(f)
+            except OSError: pass
+        return mtimes
+
     def reloader_thread():
-        mtime = os.path.getmtime(__file__)
+        mtimes = get_mtimes()
         while True:
             time.sleep(2)
-            if os.path.getmtime(__file__) != mtime:
+            if get_mtimes() != mtimes:
                 print("\n[AutoReloader] Phát hiện thay đổi code, tự động khởi động lại...")
                 os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=reloader_thread, daemon=True).start()
