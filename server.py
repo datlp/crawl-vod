@@ -611,7 +611,8 @@ class BackgroundScanner(threading.Thread):
         if self.upgrade_all:
             with db_lock:
                 cursor = self.scraper.db_conn.cursor()
-                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0")
+                source_key = self.scraper.source_name.lower()
+                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0 WHERE url_pattern LIKE ?", (f'%{source_key}%',))
                 self.scraper.db_conn.commit()
                 
         if self.news_threads > 0:
@@ -630,11 +631,12 @@ class BackgroundScanner(threading.Thread):
             time.sleep(3600)
 
     def news_dispatcher_loop(self):
+        source_key = self.scraper.source_name.lower()
         while True:
             try:
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
-                    cursor.execute("SELECT url_pattern FROM sync_tasks ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END")
+                    cursor.execute("SELECT url_pattern FROM sync_tasks WHERE url_pattern LIKE ? ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END", (f'%{source_key}%',))
                     tasks = cursor.fetchall()
                 
                 if self.news_queue.empty():
@@ -681,6 +683,7 @@ class BackgroundScanner(threading.Thread):
     def details_scan_worker(self, thread_num):
         global global_last_request_time
         source_name = getattr(self.scraper, 'source_name', 'System')
+        source_key = source_name.lower()
         while True:
             time.sleep(0.5)
             try:
@@ -689,7 +692,7 @@ class BackgroundScanner(threading.Thread):
                     
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
-                    cursor.execute(f"SELECT id FROM {VIDEOS_TABLE} WHERE details_fetched = 0 ORDER BY added_at ASC LIMIT 1")
+                    cursor.execute(f"SELECT id FROM {VIDEOS_TABLE} WHERE details_fetched = 0 AND source = ? ORDER BY added_at ASC LIMIT 1", (source_key,))
                     row = cursor.fetchone()
                     if row:
                         vid_id = row[0]
@@ -710,6 +713,7 @@ class BackgroundScanner(threading.Thread):
     def backlog_scan_worker(self, thread_num):
         global global_last_request_time
         source_name = getattr(self.scraper, 'source_name', 'System')
+        source_key = source_name.lower()
         while True:
             time.sleep(1)
             try:
@@ -719,7 +723,7 @@ class BackgroundScanner(threading.Thread):
                 task_to_run = None
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
-                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END LIMIT 1")
+                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 AND url_pattern LIKE ? ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END LIMIT 1", (f'%{source_key}%',))
                     row = cursor.fetchone()
                     if row:
                         url_pattern, current_page, total_pages = row
