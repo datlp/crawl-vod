@@ -137,7 +137,7 @@ def flush_db_buffer(db_conn):
                 release_date = vid.get('release_date', '')
                 release_date_raw = vid.get('release_date_raw', '')
                 if dvd:
-                    cursor.execute("INSERT OR IGNORE INTO movies (dvd, actress_ids, genre_ids, makers) VALUES (?, '', '', '')", (dvd,))
+                    cursor.execute("INSERT OR IGNORE INTO movies (dvd, actress_ids, genre_ids, maker_ids) VALUES (?, '', '', '')", (dvd,))
                     
                 cursor.execute(f'''
                     INSERT INTO {VIDEOS_TABLE} (id, title, added_at, dvd)
@@ -245,15 +245,28 @@ def get_db_connection(db_path, limit_buffer='200M'):
     ''')
     
     conn.execute('''
+        CREATE TABLE IF NOT EXISTS makers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            source TEXT,
+            UNIQUE(name, source)
+        )
+    ''')
+    
+    conn.execute('''
         CREATE TABLE IF NOT EXISTS movies (
             dvd TEXT PRIMARY KEY,
             actress_ids TEXT,
             genre_ids TEXT,
-            makers TEXT
+            maker_ids TEXT
         )
     ''')
     try:
         conn.execute("ALTER TABLE movies ADD COLUMN actress_ids TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE movies ADD COLUMN maker_ids TEXT")
     except sqlite3.OperationalError:
         pass
     try:
@@ -310,7 +323,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
         )
     ''')
     cursor.execute("SELECT COUNT(*) FROM dvd_release")
-    if cursor.fetchone()[0] == 0:
+    if cursor.fetchone()[0] == 0 and 'release_date' in m_cols:
         custom_log("System", "⏳ Backfilling dvd_release table...")
         cursor.execute(f"INSERT OR IGNORE INTO dvd_release (video_id, dvd, release_date, release_date_raw) SELECT v.id, v.dvd, m.release_date, m.release_date_raw FROM {VIDEOS_TABLE} v JOIN movies m ON v.dvd = m.dvd")
     
@@ -360,7 +373,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
     except Exception:
         pass
 
-    cursor.execute(f"INSERT OR IGNORE INTO movies (dvd, actress_ids, genre_ids, makers) SELECT DISTINCT dvd, '', '', '' FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != ''")
+    cursor.execute(f"INSERT OR IGNORE INTO movies (dvd, actress_ids, genre_ids, maker_ids) SELECT DISTINCT dvd, '', '', '' FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != ''")
 
     conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_details_fetched ON {VIDEOS_TABLE}(details_fetched, added_at ASC)')
     conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_details ON {VIDEOS_TABLE}(details)')
@@ -426,6 +439,25 @@ def get_db_connection(db_path, limit_buffer='200M'):
     ''')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_history_logs_time ON history_logs(watched_at)')
 
+    if 'makers' in m_cols:
+        custom_log("System", "⏳ Migrating makers to new table...")
+        cursor.execute("SELECT dvd, makers FROM movies WHERE makers IS NOT NULL AND makers != ''")
+        for dvd, m_str in cursor.fetchall():
+            m_list = [x.strip() for x in m_str.split(',') if x.strip()]
+            m_ids = []
+            for m in m_list:
+                cursor.execute("INSERT OR IGNORE INTO makers (name, source) VALUES (?, ?)", (m, app_args.source))
+                cursor.execute("SELECT id FROM makers WHERE name = ? AND source = ?", (m, app_args.source))
+                row = cursor.fetchone()
+                if row:
+                    m_ids.append(str(row[0]))
+            if m_ids:
+                cursor.execute("UPDATE movies SET maker_ids = ? WHERE dvd = ?", (",".join(set(m_ids)), dvd))
+        try:
+            conn.execute("ALTER TABLE movies DROP COLUMN makers")
+        except Exception:
+            pass
+
     conn.execute('''
         CREATE TABLE IF NOT EXISTS search_history (
             username TEXT,
@@ -446,6 +478,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
     cursor.execute(f"DROP TRIGGER IF EXISTS movies_au")
     cursor.execute(f"DROP TRIGGER IF EXISTS actresses_au")
     cursor.execute(f"DROP TRIGGER IF EXISTS genres_au")
+    cursor.execute(f"DROP TRIGGER IF EXISTS makers_au")
 
     conn.execute(f'''
         CREATE VIRTUAL TABLE IF NOT EXISTS {VIDEOS_TABLE}_fts USING fts5(
@@ -453,12 +486,13 @@ def get_db_connection(db_path, limit_buffer='200M'):
         )
     ''')
     for trigger_sql in [
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ai AFTER INSERT ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, details, dvd, actresses, genres, makers) VALUES (new.rowid, new.title, new.details, new.dvd, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || (SELECT actress_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || (SELECT genre_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || genres.id || ',%'), (SELECT makers FROM movies WHERE dvd = new.dvd)); END;",
+        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ai AFTER INSERT ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, details, dvd, actresses, genres, makers) VALUES (new.rowid, new.title, new.details, new.dvd, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || (SELECT actress_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || (SELECT genre_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || (SELECT maker_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || makers.id || ',%')); END;",
         f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ad AFTER DELETE ON {VIDEOS_TABLE} BEGIN DELETE FROM {VIDEOS_TABLE}_fts WHERE rowid = old.rowid; END;",
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_au AFTER UPDATE ON {VIDEOS_TABLE} BEGIN UPDATE {VIDEOS_TABLE}_fts SET title = new.title, details = new.details, dvd = new.dvd, actresses = (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || (SELECT actress_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || actresses.id || ',%'), genres = (SELECT group_concat(name, ', ') FROM genres WHERE ',' || (SELECT genre_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || genres.id || ',%'), makers = (SELECT makers FROM movies WHERE dvd = new.dvd) WHERE rowid = old.rowid; END;",
-        f"CREATE TRIGGER IF NOT EXISTS movies_au AFTER UPDATE ON movies BEGIN UPDATE {VIDEOS_TABLE}_fts SET actresses = (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || new.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), genres = (SELECT group_concat(name, ', ') FROM genres WHERE ',' || new.genre_ids || ',' LIKE '%,' || genres.id || ',%'), makers = new.makers WHERE dvd = new.dvd; END;",
+        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_au AFTER UPDATE ON {VIDEOS_TABLE} BEGIN UPDATE {VIDEOS_TABLE}_fts SET title = new.title, details = new.details, dvd = new.dvd, actresses = (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || (SELECT actress_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || actresses.id || ',%'), genres = (SELECT group_concat(name, ', ') FROM genres WHERE ',' || (SELECT genre_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || genres.id || ',%'), makers = (SELECT group_concat(name, ', ') FROM makers WHERE ',' || (SELECT maker_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || makers.id || ',%') WHERE rowid = old.rowid; END;",
+        f"CREATE TRIGGER IF NOT EXISTS movies_au AFTER UPDATE ON movies BEGIN UPDATE {VIDEOS_TABLE}_fts SET actresses = (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || new.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), genres = (SELECT group_concat(name, ', ') FROM genres WHERE ',' || new.genre_ids || ',' LIKE '%,' || genres.id || ',%'), makers = (SELECT group_concat(name, ', ') FROM makers WHERE ',' || new.maker_ids || ',' LIKE '%,' || makers.id || ',%') WHERE dvd = new.dvd; END;",
         f"CREATE TRIGGER IF NOT EXISTS actresses_au AFTER UPDATE ON actresses BEGIN UPDATE {VIDEOS_TABLE}_fts SET actresses = (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || (SELECT actress_ids FROM movies WHERE dvd = {VIDEOS_TABLE}_fts.dvd) || ',' LIKE '%,' || actresses.id || ',%') WHERE dvd IN (SELECT dvd FROM movies WHERE ',' || actress_ids || ',' LIKE '%,' || old.id || ',%'); END;",
-        f"CREATE TRIGGER IF NOT EXISTS genres_au AFTER UPDATE ON genres BEGIN UPDATE {VIDEOS_TABLE}_fts SET genres = (SELECT group_concat(name, ', ') FROM genres WHERE ',' || (SELECT genre_ids FROM movies WHERE dvd = {VIDEOS_TABLE}_fts.dvd) || ',' LIKE '%,' || genres.id || ',%') WHERE dvd IN (SELECT dvd FROM movies WHERE ',' || genre_ids || ',' LIKE '%,' || old.id || ',%'); END;"
+        f"CREATE TRIGGER IF NOT EXISTS genres_au AFTER UPDATE ON genres BEGIN UPDATE {VIDEOS_TABLE}_fts SET genres = (SELECT group_concat(name, ', ') FROM genres WHERE ',' || (SELECT genre_ids FROM movies WHERE dvd = {VIDEOS_TABLE}_fts.dvd) || ',' LIKE '%,' || genres.id || ',%') WHERE dvd IN (SELECT dvd FROM movies WHERE ',' || genre_ids || ',' LIKE '%,' || old.id || ',%'); END;",
+        f"CREATE TRIGGER IF NOT EXISTS makers_au AFTER UPDATE ON makers BEGIN UPDATE {VIDEOS_TABLE}_fts SET makers = (SELECT group_concat(name, ', ') FROM makers WHERE ',' || (SELECT maker_ids FROM movies WHERE dvd = {VIDEOS_TABLE}_fts.dvd) || ',' LIKE '%,' || makers.id || ',%') WHERE dvd IN (SELECT dvd FROM movies WHERE ',' || maker_ids || ',' LIKE '%,' || old.id || ',%'); END;"
     ]:
         conn.execute(trigger_sql)
         
@@ -467,7 +501,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
         custom_log("System", "⏳ Backfilling FTS index...")
         cursor.execute(f'''
             INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, details, dvd, actresses, genres, makers)
-            SELECT v.rowid, v.title, v.details, v.dvd, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), m.makers 
+            SELECT v.rowid, v.title, v.details, v.dvd, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%') 
             FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd
         ''')
     conn.commit()
@@ -491,7 +525,7 @@ def load_tags_cache_if_needed(cursor):
 def rebuild_tags_fts(db_conn):
     custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker...")
     cursor = db_conn.cursor()
-    cursor.execute(f"SELECT actress_ids, genre_ids, makers FROM movies")
+    cursor.execute(f"SELECT actress_ids, genre_ids, maker_ids FROM movies")
     rows = cursor.fetchall()
     
     cursor.execute("SELECT id, name FROM actresses")
@@ -499,6 +533,9 @@ def rebuild_tags_fts(db_conn):
     
     cursor.execute("SELECT id, name FROM genres")
     genre_map = {str(r[0]): r[1] for r in cursor.fetchall()}
+    
+    cursor.execute("SELECT id, name FROM makers")
+    maker_map = {str(r[0]): r[1] for r in cursor.fetchall()}
     
     actress_counts = {}
     genre_counts = {}
@@ -518,7 +555,8 @@ def rebuild_tags_fts(db_conn):
         if row[2]:
             for m in row[2].split(','):
                 m = m.strip()
-                if m: maker_counts[m] = maker_counts.get(m, 0) + 1
+                name = maker_map.get(m)
+                if name: maker_counts[name] = maker_counts.get(name, 0) + 1
                 
     cursor.execute("DROP TABLE IF EXISTS tags_summary")
     cursor.execute("DROP TABLE IF EXISTS tags_fts")
@@ -925,7 +963,7 @@ def get_videos():
         else:
             order_clause = "ORDER BY dr.release_date DESC, v.added_at DESC"
             
-        query = f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), m.makers, v.details, v.dvd, dr.release_date_raw FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
+        query = f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
         cursor.execute(query, params + [per_page, offset])
         rows = cursor.fetchall()
         
@@ -954,13 +992,13 @@ def get_related():
         
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT v.title, m.actress_ids, m.genre_ids, m.makers FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd WHERE v.id = ?", (vid_id,))
+        cursor.execute(f"SELECT v.title, m.actress_ids, m.genre_ids, m.maker_ids FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd WHERE v.id = ?", (vid_id,))
         row = cursor.fetchone()
         
     if not row:
         return jsonify({"items": []})
         
-    title, actress_ids, genre_ids, maker = row
+    title, actress_ids, genre_ids, maker_ids = row
     actress = ""
     if actress_ids:
         cursor.execute("SELECT group_concat(name, ', ') FROM actresses WHERE ',' || ? || ',' LIKE '%,' || id || ',%'", (actress_ids,))
@@ -997,7 +1035,7 @@ def get_related():
     with db_lock:
         cursor = db_conn_instance.cursor()
         sql = f'''
-            SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), m.makers, v.details, v.dvd, dr.release_date_raw
+            SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw
             FROM {VIDEOS_TABLE} v
             LEFT JOIN movies m ON v.dvd = m.dvd
             LEFT JOIN dvd_release dr ON v.id = dr.video_id
@@ -1288,7 +1326,7 @@ def video_details_api():
     
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), m.makers, v.details, v.dvd, dr.release_date_raw FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd LEFT JOIN dvd_release dr ON v.id = dr.video_id LEFT JOIN dvd_cover dc ON v.id = dc.video_id WHERE v.id = ?", (vid_id,))
+        cursor.execute(f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd LEFT JOIN dvd_release dr ON v.id = dr.video_id LEFT JOIN dvd_cover dc ON v.id = dc.video_id WHERE v.id = ?", (vid_id,))
         row = cursor.fetchone()
         
     if row:
@@ -1768,7 +1806,7 @@ def migrate_old_database(db_conn, old_db_path):
         cursor.execute("ATTACH DATABASE ? AS old_db", (old_db_path,))
         
         tables_to_sync = [
-            VIDEOS_TABLE, 'movies', 'dvd_release', 'dvd_cover', 'actresses', 'genres', 'media', 'identities', 'user_sessions', 
+            VIDEOS_TABLE, 'movies', 'dvd_release', 'dvd_cover', 'actresses', 'genres', 'makers', 'media', 'identities', 'user_sessions', 
             'favorites', 'history', 'sync_tasks', 'history_logs', 'search_history'
         ]
         
