@@ -1545,6 +1545,16 @@ def main():
     global db_conn_instance, scraper_instance, app_args
     app_args = args
     
+    # Xóa cache trong bộ nhớ khi khởi động hoặc tải lại để đảm bảo không có dữ liệu cũ
+    global tags_cache
+    with memory_lock:
+        db_buffer['videos'].clear()
+        db_buffer['video_urls'].clear()
+        db_buffer['media'].clear()
+    downloading_media.clear()
+    tags_cache = []
+    print("[System] Đã xóa cache trong bộ nhớ khi khởi động.")
+
     start_reloader()
     
     db_conn_instance = get_db_connection(args.sqlite3, args.limit_buffer)
