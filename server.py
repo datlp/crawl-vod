@@ -15,6 +15,7 @@ import importlib.util
 import builtins
 import difflib
 import signal
+import queue
 from urllib.parse import urlparse, parse_qs, quote
 
 
@@ -363,56 +364,85 @@ def rebuild_tags_fts(db_conn):
     custom_log("System", "✔️ Hoàn tất tổng hợp tags.")
 
 class BackgroundScanner(threading.Thread):
-    def __init__(self, scraper, upgrade_all=False):
+    def __init__(self, scraper, upgrade_all=False, news_threads=3, detail_threads=3, videos_threads=3):
         super().__init__(daemon=True)
         self.scraper = scraper
         self.upgrade_all = upgrade_all
+        self.news_threads = news_threads
+        self.detail_threads = detail_threads
+        self.videos_threads = videos_threads
+        self.news_queue = queue.Queue()
 
     def run(self):
         self.scraper.update_sync_tasks_from_menu()
-        threading.Thread(target=self.recent_scan_loop, daemon=True).start()
-        threading.Thread(target=self.details_scan_loop, daemon=True).start()
-        self.backlog_scan_loop()
-
-    def recent_scan_loop(self):
-        global global_last_request_time
-        last_scan_time = 0
-        while True:
-            time.sleep(5)
-            now = time.time()
-            if now - global_last_request_time < CLIENT_IDLE_TIMEOUT:
-                continue
-            if now - last_scan_time < 300:
-                continue
+        
+        if self.upgrade_all:
+            with db_lock:
+                cursor = self.scraper.db_conn.cursor()
+                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0")
+                self.scraper.db_conn.commit()
                 
+        threading.Thread(target=self.news_dispatcher_loop, daemon=True).start()
+        
+        for _ in range(self.news_threads):
+            threading.Thread(target=self.news_scan_worker, daemon=True).start()
+            
+        for _ in range(self.detail_threads):
+            threading.Thread(target=self.details_scan_worker, daemon=True).start()
+            
+        for _ in range(self.videos_threads):
+            threading.Thread(target=self.backlog_scan_worker, daemon=True).start()
+            
+        while True:
+            time.sleep(3600)
+
+    def news_dispatcher_loop(self):
+        while True:
             try:
-                custom_log(getattr(self.scraper, 'source_name', 'System'), "⏳ Định kỳ 5 phút: Kiểm tra các video mới...")
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
                     cursor.execute("SELECT url_pattern FROM sync_tasks ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END")
                     tasks = cursor.fetchall()
                 
-                for task in tasks:
-                    url_pattern = task[0]
-                    page = 1
-                    while True:
-                        if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
-                            break
-                        new_inserted, found, _ = self.scraper.sync_list_page(url_pattern, page)
-                        if found == -1:
-                            time.sleep(5)
-                            break
-                        if new_inserted > 0 and found > 0:
-                            page += 1
-                            time.sleep(1)
-                        else:
-                            break
+                if self.news_queue.empty():
+                    for task in tasks:
+                        self.news_queue.put(task[0])
             except Exception as e:
-                custom_log("System", f"❌ Lỗi kiểm tra video mới: {e}")
+                custom_log("System", f"❌ Lỗi dispatcher video mới: {e}")
                 
-            last_scan_time = time.time()
+            time.sleep(300)
+
+    def news_scan_worker(self):
+        global global_last_request_time
+        while True:
+            try:
+                url_pattern = self.news_queue.get(timeout=5)
+            except queue.Empty:
+                continue
+                
+            page = 1
+            while True:
+                if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
+                    time.sleep(2)
+                    continue
+                    
+                try:
+                    custom_log(getattr(self.scraper, 'source_name', 'System'), f"⏳ Kiểm tra video mới: {url_pattern} page {page}...")
+                    new_inserted, found, _ = self.scraper.sync_list_page(url_pattern, page)
+                    if found == -1:
+                        time.sleep(5)
+                        break
+                    if new_inserted > 0 and found > 0:
+                        page += 1
+                        time.sleep(1)
+                    else:
+                        break
+                except Exception as e:
+                    custom_log("System", f"❌ Lỗi kiểm tra video mới: {e}")
+                    break
+            self.news_queue.task_done()
             
-    def details_scan_loop(self):
+    def details_scan_worker(self):
         global global_last_request_time
         while True:
             time.sleep(0.5)
@@ -424,72 +454,75 @@ class BackgroundScanner(threading.Thread):
                     cursor = self.scraper.db_conn.cursor()
                     cursor.execute("SELECT id FROM javtiful_videos WHERE details_fetched = 0 ORDER BY added_at ASC LIMIT 1")
                     row = cursor.fetchone()
+                    if row:
+                        vid_id = row[0]
+                        cursor.execute("UPDATE javtiful_videos SET details_fetched = -2 WHERE id = ?", (vid_id,))
+                        self.scraper.db_conn.commit()
                     
                 if not row:
-                    time.sleep(10)
+                    time.sleep(300)
                     continue
                     
-                vid_id = row[0]
                 custom_log(getattr(self.scraper, 'source_name', 'System'), f"⏳ Đang lấy chi tiết video: {vid_id}")
                 self.scraper.sync_video_details(vid_id)
             except Exception as e:
                 custom_log("System", f"❌ Lỗi quét chi tiết: {e}")
+                time.sleep(5)
 
-    def backlog_scan_loop(self):
+    def backlog_scan_worker(self):
         global global_last_request_time
-        if self.upgrade_all:
-            with db_lock:
-                cursor = self.scraper.db_conn.cursor()
-                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0")
-                self.scraper.db_conn.commit()
-
         while True:
             time.sleep(1)
             try:
                 if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
                     continue
                     
+                task_to_run = None
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
-                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END")
-                    tasks = cursor.fetchall()
-                    
-                if not tasks:
-                    time.sleep(10)
-                    continue
-                    
-                for task in tasks:
-                    if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
-                        break
-                        
-                    url_pattern, current_page, total_pages = task
-                    
-                    if current_page > total_pages or current_page > 2000:
-                        with db_lock:
-                            cursor = self.scraper.db_conn.cursor()
+                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END LIMIT 1")
+                    row = cursor.fetchone()
+                    if row:
+                        url_pattern, current_page, total_pages = row
+                        if current_page > total_pages or current_page > 2000:
                             cursor.execute("UPDATE sync_tasks SET is_completed = 1 WHERE url_pattern = ?", (url_pattern,))
                             self.scraper.db_conn.commit()
-                        continue
-                        
-                    custom_log(getattr(self.scraper, 'source_name', 'System'), f"⏳ Sync backlog {url_pattern} page {current_page}/{total_pages}...")
-                    new_inserted, found, extracted_total = self.scraper.sync_list_page(url_pattern, current_page)
+                        else:
+                            cursor.execute("UPDATE sync_tasks SET current_page = current_page + 1 WHERE url_pattern = ?", (url_pattern,))
+                            self.scraper.db_conn.commit()
+                            task_to_run = (url_pattern, current_page, total_pages)
                     
-                    if found == -1:
-                        time.sleep(5)
-                        continue
-                        
+                if not task_to_run:
+                    time.sleep(60)
+                    continue
+                    
+                url_pattern, current_page, total_pages = task_to_run
+                
+                custom_log(getattr(self.scraper, 'source_name', 'System'), f"⏳ Sync backlog {url_pattern} page {current_page}/{total_pages}...")
+                new_inserted, found, extracted_total = self.scraper.sync_list_page(url_pattern, current_page)
+                
+                if found == -1:
                     with db_lock:
                         cursor = self.scraper.db_conn.cursor()
-                        next_page = current_page + 1
-                        new_total = extracted_total if extracted_total > 0 else total_pages
-                        is_completed = 1 if (next_page > new_total or next_page > 2000 or found == 0) else 0
-                        cursor.execute("UPDATE sync_tasks SET current_page = ?, total_pages = ?, last_fetched = ?, is_completed = ? WHERE url_pattern = ?", 
-                                       (next_page, new_total, int(time.time()), is_completed, url_pattern))
+                        cursor.execute("UPDATE sync_tasks SET current_page = current_page - 1 WHERE url_pattern = ? AND current_page > 1", (url_pattern,))
                         self.scraper.db_conn.commit()
+                    time.sleep(5)
+                    continue
                     
-                    time.sleep(1)
+                with db_lock:
+                    cursor = self.scraper.db_conn.cursor()
+                    new_total = extracted_total if extracted_total > 0 else total_pages
+                    if found == 0 or current_page >= new_total or current_page >= 2000:
+                        cursor.execute("UPDATE sync_tasks SET is_completed = 1, total_pages = ?, last_fetched = ? WHERE url_pattern = ?", 
+                                       (new_total, int(time.time()), url_pattern))
+                    else:
+                        cursor.execute("UPDATE sync_tasks SET total_pages = ?, last_fetched = ? WHERE url_pattern = ?", 
+                                       (new_total, int(time.time()), url_pattern))
+                    self.scraper.db_conn.commit()
+                
             except Exception as e:
                 custom_log("System", f"❌ Lỗi backlog scanner: {e}")
+                time.sleep(5)
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
@@ -1578,7 +1611,7 @@ def system_monitor_worker():
             process = psutil.Process(os.getpid())
             ram_mb = process.memory_info().rss / 1048576.0
             nltk_mb = sys.getsizeof(sys.modules.get('nltk')) / 1048576.0 if 'nltk' in sys.modules else 0.0
-            custom_log("System", f"✔️RAM chiếm dụng: {ram_mb:.2f}M |  CPU: {cpu}%")
+            custom_log("System", f"✔️RAM chiếm dụng: {ram_mb:.2f}M | NLTK: {nltk_mb:.2f}M | CPU: {cpu}%")
         except Exception: pass
         time.sleep(5)
 
@@ -1592,6 +1625,9 @@ def main():
     parser.add_argument('-old-sqlite3', type=str, default="", help="Path to an old SQLite3 database to migrate data from")
     parser.add_argument('-limit-bufer', '-limit-buffer', type=str, default='200M', dest='limit_buffer', help="Limit memory buffer size to avoid Termux killing the process")
     parser.add_argument('-source', type=str, default='javtiful', help="Nguồn crawl dữ liệu (ví dụ: javtiful, missav)")
+    parser.add_argument('-news-threads', type=int, default=3, help="Số luồng quét video mới (mặc định 3)")
+    parser.add_argument('-detail-threads', type=int, default=3, help="Số luồng lấy chi tiết video (mặc định 3)")
+    parser.add_argument('-videos-threads', type=int, default=3, help="Số luồng quét video backlog (mặc định 3)")
     
     args = parser.parse_args()
     
@@ -1620,7 +1656,13 @@ def main():
     source_module = load_source_module(args.source)
     scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer)
     threading.Thread(target=background_db_worker, args=(db_conn_instance,), daemon=True).start()
-    scanner = BackgroundScanner(scraper_instance, upgrade_all=args.upgrade_all)
+    scanner = BackgroundScanner(
+        scraper_instance, 
+        upgrade_all=args.upgrade_all,
+        news_threads=args.news_threads,
+        detail_threads=args.detail_threads,
+        videos_threads=args.videos_threads
+    )
     scanner.start()
     custom_log("System", f"✔️ {args.source.capitalize()} Player worker started at http://localhost:{args.port}")
         
