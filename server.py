@@ -132,14 +132,15 @@ def flush_db_buffer(db_conn):
             
             for vid_id, vid in videos_to_save.items():
                 cursor.execute('''
-                    INSERT INTO javtiful_videos (id, title, cover, added_at, release_date)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO javtiful_videos (id, title, cover, added_at, release_date, dvd)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         title = excluded.title,
                         cover = excluded.cover,
                         added_at = excluded.added_at,
-                        release_date = excluded.release_date
-                ''', (vid['id'], vid['title'], vid['cover'], vid['added_at'], vid.get('release_date', '')))
+                        release_date = excluded.release_date,
+                        dvd = excluded.dvd
+                ''', (vid['id'], vid['title'], vid['cover'], vid['added_at'], vid.get('release_date', ''), vid.get('dvd', '')))
                 
             for vid_id, url in urls_to_save.items():
                 cursor.execute("UPDATE javtiful_videos SET url = ? WHERE id = ?", (url, vid_id))
@@ -204,9 +205,18 @@ def get_db_connection(db_path, limit_buffer='200M'):
             genre TEXT,
             maker TEXT,
             details TEXT,
+            dvd TEXT,
             details_fetched INTEGER DEFAULT 0
         )
     ''')
+    try:
+        conn.execute("ALTER TABLE javtiful_videos ADD COLUMN dvd TEXT")
+    except sqlite3.OperationalError:
+        pass
+        
+    cursor = conn.cursor()
+    cursor.execute("UPDATE javtiful_videos SET dvd = substr(title, 1, instr(title || ' ', ' ') - 1) WHERE dvd IS NULL OR dvd = ''")
+    
     conn.execute('CREATE INDEX IF NOT EXISTS idx_javtiful_videos_details_fetched ON javtiful_videos(details_fetched, added_at ASC)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_javtiful_videos_search_actress ON javtiful_videos(actress)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_javtiful_videos_search_genre ON javtiful_videos(genre)')
@@ -283,26 +293,34 @@ def get_db_connection(db_path, limit_buffer='200M'):
         )
     ''')
 
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(javtiful_videos_fts)")
+    fts_cols = [row[1] for row in cursor.fetchall()]
+    if 'dvd' not in fts_cols:
+        cursor.execute("DROP TABLE IF EXISTS javtiful_videos_fts")
+        cursor.execute("DROP TRIGGER IF EXISTS javtiful_videos_ai")
+        cursor.execute("DROP TRIGGER IF EXISTS javtiful_videos_ad")
+        cursor.execute("DROP TRIGGER IF EXISTS javtiful_videos_au")
+
     conn.execute('''
         CREATE VIRTUAL TABLE IF NOT EXISTS javtiful_videos_fts USING fts5(
-            title, actress, genre, maker, details,
+            title, actress, genre, maker, details, dvd,
             content='javtiful_videos', content_rowid='rowid'
         )
     ''')
     for trigger_sql in [
-        "CREATE TRIGGER IF NOT EXISTS javtiful_videos_ai AFTER INSERT ON javtiful_videos BEGIN INSERT INTO javtiful_videos_fts(rowid, title, actress, genre, maker, details) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details); END;",
-        "CREATE TRIGGER IF NOT EXISTS javtiful_videos_ad AFTER DELETE ON javtiful_videos BEGIN INSERT INTO javtiful_videos_fts(javtiful_videos_fts, rowid, title, actress, genre, maker, details) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details); END;",
-        "CREATE TRIGGER IF NOT EXISTS javtiful_videos_au AFTER UPDATE ON javtiful_videos BEGIN INSERT INTO javtiful_videos_fts(javtiful_videos_fts, rowid, title, actress, genre, maker, details) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details); INSERT INTO javtiful_videos_fts(rowid, title, actress, genre, maker, details) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details); END;"
+        "CREATE TRIGGER IF NOT EXISTS javtiful_videos_ai AFTER INSERT ON javtiful_videos BEGIN INSERT INTO javtiful_videos_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;",
+        "CREATE TRIGGER IF NOT EXISTS javtiful_videos_ad AFTER DELETE ON javtiful_videos BEGIN INSERT INTO javtiful_videos_fts(javtiful_videos_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); END;",
+        "CREATE TRIGGER IF NOT EXISTS javtiful_videos_au AFTER UPDATE ON javtiful_videos BEGIN INSERT INTO javtiful_videos_fts(javtiful_videos_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); INSERT INTO javtiful_videos_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;"
     ]:
         conn.execute(trigger_sql)
         
-    cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM javtiful_videos_fts")
     if cursor.fetchone()[0] == 0:
         custom_log("System", "⏳ Backfilling FTS index...")
         cursor.execute('''
-            INSERT INTO javtiful_videos_fts(rowid, title, actress, genre, maker, details)
-            SELECT rowid, title, actress, genre, maker, details FROM javtiful_videos
+            INSERT INTO javtiful_videos_fts(rowid, title, actress, genre, maker, details, dvd)
+            SELECT rowid, title, actress, genre, maker, details, dvd FROM javtiful_videos
         ''')
     conn.commit()
     return conn
@@ -613,7 +631,7 @@ def get_counts():
         fts_join = ""
         
         if search_key:
-            match_field = re.match(r'^(actress|genre|maker|title)\s*:\s*(.*)$', search_key, re.IGNORECASE)
+            match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
             if match_field:
                 field = match_field.group(1).lower()
                 val = match_field.group(2).strip()
@@ -698,7 +716,7 @@ def get_videos():
 
         safe_key = ""
         if search_key:
-            match_field = re.match(r'^(actress|genre|maker|title)\s*:\s*(.*)$', search_key, re.IGNORECASE)
+            match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
             if match_field:
                 field = match_field.group(1).lower()
                 val = match_field.group(2).strip()
@@ -740,7 +758,7 @@ def get_videos():
         else:
             order_clause = "ORDER BY v.release_date DESC, v.added_at DESC"
             
-        query = f"SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
+        query = f"SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
         cursor.execute(query, params + [per_page, offset])
         rows = cursor.fetchall()
         
@@ -755,7 +773,8 @@ def get_videos():
             "actress": row[5] if len(row) > 5 else '',
             "genre": row[6] if len(row) > 6 else '',
             "maker": row[7] if len(row) > 7 else '',
-            "details": row[8] if len(row) > 8 else ''
+            "details": row[8] if len(row) > 8 else '',
+            "dvd": row[9] if len(row) > 9 else ''
         })
     return jsonify({"items": videos, "total": total, "page": page})
 
@@ -799,7 +818,7 @@ def get_related():
     with db_lock:
         cursor = db_conn_instance.cursor()
         sql = '''
-            SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details 
+            SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd
             FROM javtiful_videos v
             JOIN javtiful_videos_fts ON v.rowid = javtiful_videos_fts.rowid
             WHERE javtiful_videos_fts MATCH ? AND v.id != ?
@@ -824,7 +843,8 @@ def get_related():
             "actress": row[5] if row[5] else '',
             "genre": row[6] if row[6] else '',
             "maker": row[7] if row[7] else '',
-            "details": row[8] if row[8] else ''
+            "details": row[8] if row[8] else '',
+            "dvd": row[9] if len(row) > 9 and row[9] else ''
         })
     return jsonify({"items": videos})
 
@@ -1085,7 +1105,7 @@ def video_details_api():
     
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute("SELECT id, title, cover, url, release_date, actress, genre, maker, details FROM javtiful_videos WHERE id = ?", (vid_id,))
+        cursor.execute("SELECT id, title, cover, url, release_date, actress, genre, maker, details, dvd FROM javtiful_videos WHERE id = ?", (vid_id,))
         row = cursor.fetchone()
         
     if row:
@@ -1100,7 +1120,8 @@ def video_details_api():
                 "actress": row[5] if row[5] else '',
                 "genre": row[6] if row[6] else '',
                 "maker": row[7] if row[7] else '',
-                "details": row[8] if row[8] else ''
+                "details": row[8] if row[8] else '',
+                "dvd": row[9] if row[9] else ''
             }
         })
     return jsonify({"success": False, "error": "Not found"})
@@ -1641,8 +1662,8 @@ def system_monitor_worker():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-port', type=int, default=5010, help="Port to run the HTTP server on")
-    parser.add_argument('-sqlite3', type=str, default='javtiful.db', help="Path to the SQLite3 database file")
+    parser.add_argument('-port', type=int, default=5004, help="Port to run the HTTP server on")
+    parser.add_argument('-sqlite3', type=str, default=None, help="Path to the SQLite3 database file")
     parser.add_argument('-upgrade-all', action='store_true', help="Start scanning from page 1 instead of backlog")
     parser.add_argument('-emailPass', type=str, default="szywozapustydcuw", help="App password for email")
     parser.add_argument('-email', type=str, default="infor.dkeeps@gmail.com", help="Email to send OTP from")
@@ -1654,6 +1675,12 @@ def main():
     parser.add_argument('-videos-threads', type=int, default=3, help="Số luồng quét video backlog (mặc định 3)")
     
     args = parser.parse_args()
+    
+    if args.sqlite3 is None:
+        if os.name == 'nt':
+            args.sqlite3 = f"D:\\Database\\{args.source}.db"
+        else:
+            args.sqlite3 = f"/sdcard/Projects/Database/{args.source}.db"
     
     global db_conn_instance, scraper_instance, app_args
     app_args = args

@@ -120,6 +120,7 @@ class Scraper:
                 
                 title_tag = item.select_one('a.front-video-title')
                 title = title_tag.text.strip() if title_tag else vid_id
+                dvd = title.split(' ')[0] if title else ''
                 
                 release_date = ""
                 meta_div = item.select_one('.front-video-meta')
@@ -133,7 +134,7 @@ class Scraper:
                 if vid_id and cover:
                     pseudo_time = now - (page * 10000) - idx
                     added_at_dt = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(pseudo_time))
-                    videos.append((vid_id, title, cover, added_at_dt, release_date))
+                    videos.append((vid_id, title, cover, added_at_dt, release_date, dvd))
                     
             with self.db_lock:
                 cursor = self.db_conn.cursor()
@@ -150,7 +151,7 @@ class Scraper:
                     for vid in videos:
                         vid_id = vid[0]
                         self.db_buffer['videos'][vid_id] = {
-                            'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4]
+                            'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4], 'dvd': vid[5]
                         }
             custom_log(self.source_name, f"{self.source_name} {page} {len(videos)} video{'s' if len(videos) != 1 else ''}")
             return new_count, len(videos), total_pages
