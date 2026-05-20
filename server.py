@@ -1,0 +1,1462 @@
+import argparse
+import os
+import sys
+import time
+import datetime
+import json
+import re
+import sqlite3
+import base64
+import hmac
+import hashlib
+import threading
+import concurrent.futures
+import importlib.util
+import difflib
+from urllib.parse import urlparse, parse_qs, quote
+
+try:
+    from curl_cffi import requests as curl_requests
+    from bs4 import BeautifulSoup
+    from flask import Flask, request, jsonify, Response, make_response
+except ImportError as e:
+    print(f"Lỗi: Không tìm thấy thư viện bắt buộc. Chi tiết: {e}")
+    print("Vui lòng cài đặt các thư viện cần thiết bằng lệnh sau:")
+    print("pip install curl_cffi beautifulsoup4 flask")
+    sys.exit(1)
+# 
+try:
+    import spacy
+except ImportError:
+    spacy = None
+try:
+    import underthesea
+except ImportError:
+    underthesea = None
+
+try:
+    import nltk
+except ImportError:
+    nltk = None
+
+global_last_request_time = time.time()
+CLIENT_IDLE_TIMEOUT = 60
+
+memory_lock = threading.Lock()
+db_lock = threading.Lock()
+db_buffer = {
+    'videos': {},
+    'video_urls': {},
+    'media': {}
+}
+downloading_media = set()
+
+JWT_SECRET = "javtiful-player-secret-key-2026"
+
+def create_jwt(payload):
+    header = base64.urlsafe_b64encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(',', ':')).encode()).decode().rstrip('=')
+    payload_enc = base64.urlsafe_b64encode(json.dumps(payload, separators=(',', ':')).encode()).decode().rstrip('=')
+    signature = base64.urlsafe_b64encode(hmac.new(JWT_SECRET.encode(), f"{header}.{payload_enc}".encode(), hashlib.sha256).digest()).decode().rstrip('=')
+    return f"{header}.{payload_enc}.{signature}"
+
+def verify_jwt(token):
+    try:
+        header, payload_enc, signature = token.split('.')
+        expected_sig = base64.urlsafe_b64encode(hmac.new(JWT_SECRET.encode(), f"{header}.{payload_enc}".encode(), hashlib.sha256).digest()).decode().rstrip('=')
+        if hmac.compare_digest(signature, expected_sig):
+            payload_padded = payload_enc + '=' * (-len(payload_enc) % 4)
+            return json.loads(base64.urlsafe_b64decode(payload_padded.encode()).decode())
+    except Exception:
+        pass
+    return None
+
+def extract_clean_keywords_bulletproof(text):
+    if not text:
+        return []
+    text = re.sub(r'[^\w\s]', ' ', text.lower())
+    words = text.split()
+    
+    if nltk:
+        try:
+            try:
+                nltk.data.find('corpora/stopwords')
+            except LookupError:
+                nltk.download('stopwords', quiet=True)
+            from nltk.corpus import stopwords
+            stop_words = set(stopwords.words('english'))
+            words = [w for w in words if w not in stop_words and not w.isdigit() and len(w) > 2]
+            return list(dict.fromkeys(words))
+        except Exception:
+            pass
+            
+    # Fallback nếu không có nltk hoặc nltk bị lỗi
+    basic_stopwords = {'the', 'is', 'are', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'this', 'that'}
+    words = [w for w in words if w not in basic_stopwords and not w.isdigit() and len(w) > 2]
+    return list(dict.fromkeys(words))
+
+def flush_db_buffer(db_conn):
+    with memory_lock:
+        videos_to_save = db_buffer['videos'].copy()
+        urls_to_save = db_buffer['video_urls'].copy()
+        media_to_save = db_buffer['media'].copy()
+        
+        db_buffer['videos'].clear()
+        db_buffer['video_urls'].clear()
+        db_buffer['media'].clear()
+        
+    if not any([videos_to_save, urls_to_save, media_to_save]):
+        return
+        
+    try:
+        with db_lock:
+            cursor = db_conn.cursor()
+            cursor.execute("BEGIN TRANSACTION;")
+            
+            for vid_id, vid in videos_to_save.items():
+                cursor.execute('''
+                    INSERT INTO javtiful_videos (id, title, cover, added_at, release_date)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        title = excluded.title,
+                        cover = excluded.cover,
+                        added_at = excluded.added_at,
+                        release_date = excluded.release_date
+                ''', (vid['id'], vid['title'], vid['cover'], vid['added_at'], vid.get('release_date', '')))
+                
+            for vid_id, url in urls_to_save.items():
+                cursor.execute("UPDATE javtiful_videos SET url = ? WHERE id = ?", (url, vid_id))
+                
+            for media_id, m in media_to_save.items():
+                cursor.execute("INSERT OR REPLACE INTO media (id, data, content_type) VALUES (?, ?, ?)", (media_id, m['data'], m['content_type']))
+                
+            db_conn.commit()
+    except Exception as e:
+        print(f"Lỗi khi ghi DB: {e}")
+        try:
+            with db_lock:
+                db_conn.rollback()
+        except:
+            pass
+        with memory_lock:
+            for vid_id, vid in videos_to_save.items():
+                if vid_id not in db_buffer['videos']: db_buffer['videos'][vid_id] = vid
+            for vid_id, url in urls_to_save.items():
+                if vid_id not in db_buffer['video_urls']: db_buffer['video_urls'][vid_id] = url
+            for media_id, m in media_to_save.items():
+                if media_id not in db_buffer['media']: db_buffer['media'][media_id] = m
+
+def background_db_worker(db_conn):
+    while True:
+        time.sleep(5)
+        flush_db_buffer(db_conn)
+
+def get_db_connection(db_path, limit_buffer='200M'):
+    os.makedirs(os.path.dirname(os.path.abspath(db_path)) or '.', exist_ok=True)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.execute('PRAGMA journal_mode=WAL;')
+    
+    # Thiết lập cache_size và mmap_size cho SQLite để tránh Android Termux kill process do tốn RAM
+    if limit_buffer and limit_buffer != '0':
+        limit_str = str(limit_buffer).strip().upper()
+        kb = 2000
+        try:
+            if limit_str.endswith('G'): kb = int(float(limit_str[:-1]) * 1024 * 1024)
+            elif limit_str.endswith('M'): kb = int(float(limit_str[:-1]) * 1024)
+            elif limit_str.endswith('K'): kb = int(float(limit_str[:-1]))
+            elif limit_str.isdigit(): kb = int(limit_str) // 1024
+            
+            if kb > 0:
+                conn.execute(f'PRAGMA cache_size=-{kb};')
+                conn.execute(f'PRAGMA mmap_size={kb * 1024};')
+        except Exception as e:
+            print(f"[DB] Lỗi khi set limit buffer: {e}")
+            
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS javtiful_videos (
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            cover TEXT,
+            url TEXT,
+            added_at TEXT,
+            release_date TEXT,
+            actress TEXT,
+            genre TEXT,
+            maker TEXT,
+            details TEXT,
+            details_fetched INTEGER DEFAULT 0
+        )
+    ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_javtiful_videos_details_fetched ON javtiful_videos(details_fetched, added_at ASC)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_javtiful_videos_search_actress ON javtiful_videos(actress)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_javtiful_videos_search_genre ON javtiful_videos(genre)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_javtiful_videos_search_maker ON javtiful_videos(maker)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_javtiful_videos_search_details ON javtiful_videos(details)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_javtiful_videos_search_title ON javtiful_videos(title)')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS media (
+            id TEXT PRIMARY KEY,
+            data BLOB,
+            content_type TEXT
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS identities (
+            username TEXT PRIMARY KEY,
+            email TEXT UNIQUE,
+            password TEXT,
+            session_id TEXT,
+            otp TEXT,
+            otp_expire INTEGER,
+            created_at INTEGER,
+            verified INTEGER DEFAULT 0
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            username TEXT,
+            session_id TEXT PRIMARY KEY
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS favorites (
+            username TEXT,
+            video_id TEXT,
+            added_at TEXT,
+            PRIMARY KEY (username, video_id)
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS history (
+            username TEXT,
+            video_id TEXT,
+            watch_count INTEGER DEFAULT 1,
+            last_watched INTEGER,
+            PRIMARY KEY (username, video_id)
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS sync_tasks (
+            url_pattern TEXT PRIMARY KEY,
+            current_page INTEGER DEFAULT 1,
+            total_pages INTEGER DEFAULT 2000,
+            last_fetched INTEGER DEFAULT 0,
+            is_completed INTEGER DEFAULT 0
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS history_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id TEXT,
+            watched_at INTEGER
+        )
+    ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_history_logs_time ON history_logs(watched_at)')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS search_history (
+            username TEXT,
+            keyword TEXT,
+            searched_at INTEGER,
+            PRIMARY KEY (username, keyword)
+        )
+    ''')
+
+    conn.execute('''
+        CREATE VIRTUAL TABLE IF NOT EXISTS javtiful_videos_fts USING fts5(
+            title, actress, genre, maker, details,
+            content='javtiful_videos', content_rowid='rowid'
+        )
+    ''')
+    for trigger_sql in [
+        "CREATE TRIGGER IF NOT EXISTS javtiful_videos_ai AFTER INSERT ON javtiful_videos BEGIN INSERT INTO javtiful_videos_fts(rowid, title, actress, genre, maker, details) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details); END;",
+        "CREATE TRIGGER IF NOT EXISTS javtiful_videos_ad AFTER DELETE ON javtiful_videos BEGIN INSERT INTO javtiful_videos_fts(javtiful_videos_fts, rowid, title, actress, genre, maker, details) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details); END;",
+        "CREATE TRIGGER IF NOT EXISTS javtiful_videos_au AFTER UPDATE ON javtiful_videos BEGIN INSERT INTO javtiful_videos_fts(javtiful_videos_fts, rowid, title, actress, genre, maker, details) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details); INSERT INTO javtiful_videos_fts(rowid, title, actress, genre, maker, details) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details); END;"
+    ]:
+        conn.execute(trigger_sql)
+        
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM javtiful_videos_fts")
+    if cursor.fetchone()[0] == 0:
+        print("[DB] Backfilling FTS index...")
+        cursor.execute('''
+            INSERT INTO javtiful_videos_fts(rowid, title, actress, genre, maker, details)
+            SELECT rowid, title, actress, genre, maker, details FROM javtiful_videos
+        ''')
+    conn.commit()
+    return conn
+
+tags_cache = []
+def load_tags_cache_if_needed(cursor):
+    global tags_cache
+    if not tags_cache:
+        try:
+            cursor.execute("SELECT keyword, type, count FROM tags_summary")
+            for r in cursor.fetchall():
+                kw = r[0]
+                if not kw: continue
+                low = kw.lower()
+                sorted_low = " ".join(sorted(low.split()))
+                tags_cache.append((kw, r[1], r[2], low, sorted_low))
+        except Exception as e:
+            print("Load tags cache error:", e)
+
+def rebuild_tags_fts(db_conn):
+    print("[DB] Đang tổng hợp dữ liệu actress, genre, maker...")
+    cursor = db_conn.cursor()
+    cursor.execute("SELECT actress, genre, maker FROM javtiful_videos")
+    rows = cursor.fetchall()
+    
+    actress_counts = {}
+    genre_counts = {}
+    maker_counts = {}
+    
+    for row in rows:
+        if row[0]:
+            for a in row[0].split(','):
+                a = a.strip()
+                if a: actress_counts[a] = actress_counts.get(a, 0) + 1
+        if row[1]:
+            for g in row[1].split(','):
+                g = g.strip()
+                if g: genre_counts[g] = genre_counts.get(g, 0) + 1
+        if row[2]:
+            for m in row[2].split(','):
+                m = m.strip()
+                if m: maker_counts[m] = maker_counts.get(m, 0) + 1
+                
+    cursor.execute("DROP TABLE IF EXISTS tags_summary")
+    cursor.execute("DROP TABLE IF EXISTS tags_fts")
+    
+    cursor.execute("CREATE TABLE tags_summary (keyword TEXT, type TEXT, count INTEGER)")
+    cursor.execute("CREATE VIRTUAL TABLE tags_fts USING fts5(keyword, type UNINDEXED, count UNINDEXED, content='tags_summary', content_rowid='rowid')")
+    
+    data = []
+    for k, c in actress_counts.items(): data.append((k, 'actress', c))
+    for k, c in genre_counts.items(): data.append((k, 'genre', c))
+    for k, c in maker_counts.items(): data.append((k, 'maker', c))
+    
+    cursor.executemany("INSERT INTO tags_summary (keyword, type, count) VALUES (?, ?, ?)", data)
+    cursor.execute("INSERT INTO tags_fts(tags_fts) VALUES('rebuild')")
+    db_conn.commit()
+    global tags_cache
+    tags_cache = []
+    print("[DB] Hoàn tất tổng hợp tags.")
+
+class BackgroundScanner(threading.Thread):
+    def __init__(self, scraper, upgrade_all=False):
+        super().__init__(daemon=True)
+        self.scraper = scraper
+        self.upgrade_all = upgrade_all
+
+    def run(self):
+        self.scraper.update_sync_tasks_from_menu()
+        threading.Thread(target=self.recent_scan_loop, daemon=True).start()
+        threading.Thread(target=self.details_scan_loop, daemon=True).start()
+        self.backlog_scan_loop()
+
+    def recent_scan_loop(self):
+        global global_last_request_time
+        last_scan_time = 0
+        while True:
+            time.sleep(5)
+            now = time.time()
+            if now - global_last_request_time < CLIENT_IDLE_TIMEOUT:
+                continue
+            if now - last_scan_time < 300:
+                continue
+                
+            try:
+                print("\n[Scanner] Định kỳ 5 phút: Kiểm tra các video mới...")
+                with db_lock:
+                    cursor = self.scraper.db_conn.cursor()
+                    cursor.execute("SELECT url_pattern FROM sync_tasks ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END")
+                    tasks = cursor.fetchall()
+                
+                for task in tasks:
+                    url_pattern = task[0]
+                    page = 1
+                    while True:
+                        if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
+                            break
+                        new_inserted, found, _ = self.scraper.sync_list_page(url_pattern, page)
+                        if found == -1:
+                            time.sleep(5)
+                            break
+                        if new_inserted > 0 and found > 0:
+                            page += 1
+                            time.sleep(1)
+                        else:
+                            break
+            except Exception as e:
+                print(f"[Scanner] Lỗi kiểm tra video mới: {e}")
+                
+            last_scan_time = time.time()
+            
+    def details_scan_loop(self):
+        global global_last_request_time
+        while True:
+            time.sleep(0.5)
+            try:
+                if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
+                    continue
+                    
+                with db_lock:
+                    cursor = self.scraper.db_conn.cursor()
+                    cursor.execute("SELECT id FROM javtiful_videos WHERE details_fetched = 0 ORDER BY added_at ASC LIMIT 1")
+                    row = cursor.fetchone()
+                    
+                if not row:
+                    time.sleep(10)
+                    continue
+                    
+                vid_id = row[0]
+                print(f"[Scanner] Đang lấy chi tiết video: {vid_id}")
+                self.scraper.sync_video_details(vid_id)
+            except Exception as e:
+                print(f"[Scanner] Lỗi quét chi tiết: {e}")
+
+    def backlog_scan_loop(self):
+        global global_last_request_time
+        if self.upgrade_all:
+            with db_lock:
+                cursor = self.scraper.db_conn.cursor()
+                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0")
+                self.scraper.db_conn.commit()
+
+        while True:
+            time.sleep(1)
+            try:
+                if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
+                    continue
+                    
+                with db_lock:
+                    cursor = self.scraper.db_conn.cursor()
+                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END")
+                    tasks = cursor.fetchall()
+                    
+                if not tasks:
+                    time.sleep(10)
+                    continue
+                    
+                for task in tasks:
+                    if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
+                        break
+                        
+                    url_pattern, current_page, total_pages = task
+                    
+                    if current_page > total_pages or current_page > 2000:
+                        with db_lock:
+                            cursor = self.scraper.db_conn.cursor()
+                            cursor.execute("UPDATE sync_tasks SET is_completed = 1 WHERE url_pattern = ?", (url_pattern,))
+                            self.scraper.db_conn.commit()
+                        continue
+                        
+                    print(f"[Scanner] Sync backlog {url_pattern} page {current_page}/{total_pages}...")
+                    new_inserted, found, extracted_total = self.scraper.sync_list_page(url_pattern, current_page)
+                    
+                    if found == -1:
+                        time.sleep(5)
+                        continue
+                        
+                    with db_lock:
+                        cursor = self.scraper.db_conn.cursor()
+                        next_page = current_page + 1
+                        new_total = extracted_total if extracted_total > 0 else total_pages
+                        is_completed = 1 if (next_page > new_total or next_page > 2000 or found == 0) else 0
+                        cursor.execute("UPDATE sync_tasks SET current_page = ?, total_pages = ?, last_fetched = ?, is_completed = ? WHERE url_pattern = ?", 
+                                       (next_page, new_total, int(time.time()), is_completed, url_pattern))
+                        self.scraper.db_conn.commit()
+                    
+                    time.sleep(1)
+            except Exception as e:
+                print(f"[Scanner] Lỗi backlog scanner: {e}")
+
+app = Flask(__name__)
+app.config['JSON_AS_ASCII'] = False
+import logging
+log = logging.getLogger('werkzeug')
+log.disabled = True
+
+scraper_instance = None
+db_conn_instance = None
+app_args = None
+
+@app.before_request
+def handle_options():
+    global global_last_request_time
+    global_last_request_time = time.time()
+    if request.method == 'OPTIONS':
+        resp = Response(status=204)
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = request.headers.get('Access-Control-Request-Headers', '*')
+        return resp
+
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+def get_identifier():
+    auth_header = request.headers.get('Authorization', '')
+    username = None
+    if auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        jwt_payload = verify_jwt(token)
+        if jwt_payload and 'username' in jwt_payload:
+            username = jwt_payload['username']
+            
+    session_id = request.headers.get('Session-Id', '') or request.args.get('session_id', '')
+    if not username and session_id:
+        with db_lock:
+            cursor = db_conn_instance.cursor()
+            cursor.execute("SELECT username FROM user_sessions WHERE session_id = ?", (session_id,))
+            row = cursor.fetchone()
+            if row:
+                username = row[0]
+    return username if username else session_id
+
+@app.route('/api/identity/me', methods=['GET'])
+def identity_me():
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    token = auth_header.split(' ')[1]
+    jwt_payload = verify_jwt(token)
+    if not jwt_payload or 'username' not in jwt_payload:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT username, email, verified FROM identities WHERE username = ?", (jwt_payload['username'],))
+        row = cursor.fetchone()
+    if row:
+        return jsonify({"success": True, "username": row[0], "email": row[1], "verified": bool(row[2])})
+    return jsonify({"success": False, "error": "User not found"})
+
+@app.route('/api/counts', methods=['GET'])
+def get_counts():
+    search_key = request.args.get('search_key', '').strip()
+    identifier = get_identifier()
+    
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        search_where_v = ""
+        search_params = []
+        fts_join = ""
+        
+        if search_key:
+            match_field = re.match(r'^(actress|genre|maker|title)\s*:\s*(.*)$', search_key, re.IGNORECASE)
+            if match_field:
+                field = match_field.group(1).lower()
+                val = match_field.group(2).strip()
+                safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
+                if safe_val:
+                    fts_join = " JOIN javtiful_videos_fts ON v.rowid = javtiful_videos_fts.rowid"
+                    search_where_v = "javtiful_videos_fts MATCH ?"
+                    search_params.append(f"{field} : ({safe_val})")
+            else:
+                safe_key = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
+                if safe_key:
+                    fts_join = " JOIN javtiful_videos_fts ON v.rowid = javtiful_videos_fts.rowid"
+                    search_where_v = "javtiful_videos_fts MATCH ?"
+                    search_params.append(safe_key)
+
+        where_all = ("WHERE " + search_where_v) if search_where_v else ""
+        cursor.execute(f"SELECT COUNT(*) FROM javtiful_videos v {fts_join} {where_all}", search_params)
+        count_all = cursor.fetchone()[0]
+        
+        count_fav = 0
+        count_recent = 0
+        if identifier:
+            where_fav = "WHERE f.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
+            cursor.execute(f"SELECT COUNT(*) FROM favorites f JOIN javtiful_videos v ON f.video_id = v.id {fts_join} {where_fav}", [identifier] + search_params)
+            count_fav = cursor.fetchone()[0]
+            
+            where_hist = "WHERE h.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
+            cursor.execute(f"SELECT COUNT(*) FROM history h JOIN javtiful_videos v ON h.video_id = v.id {fts_join} {where_hist}", [identifier] + search_params)
+            count_recent = cursor.fetchone()[0]
+        
+        where_glob = ("WHERE " + search_where_v) if search_where_v else ""
+        cursor.execute(f"SELECT COUNT(DISTINCT h.video_id) FROM history h JOIN javtiful_videos v ON h.video_id = v.id {fts_join} {where_glob}", search_params)
+        count_global = cursor.fetchone()[0]
+
+    return jsonify({
+        "all": count_all,
+        "favorites": count_fav,
+        "recent": count_recent,
+        "frequent": count_recent,
+        "global_frequent": count_global,
+        "trending_day": 0,
+        "trending_month": 0
+    })
+
+@app.route('/api/videos', methods=['GET'])
+def get_videos():
+    page = int(request.args.get('page', 1))
+    search_key = request.args.get('search_key', '').strip()
+    tab = request.args.get('tab', 'all')
+    per_page = 24
+    offset = (page - 1) * per_page
+    identifier = get_identifier()
+
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        where_clauses = []
+        params = []
+        from_clause = "javtiful_videos v"
+        
+        if tab == 'favorites':
+            if not identifier:
+                return jsonify({"items": [], "total": 0, "page": page})
+            from_clause = "javtiful_videos v JOIN favorites f ON v.id = f.video_id"
+            where_clauses.append("f.username = ?")
+            params.append(identifier)
+        elif tab in ['recent', 'frequent']:
+            if not identifier:
+                return jsonify({"items": [], "total": 0, "page": page})
+            from_clause = "javtiful_videos v JOIN history h ON v.id = h.video_id"
+            where_clauses.append("h.username = ?")
+            params.append(identifier)
+        elif tab == 'global_frequent':
+            from_clause = "javtiful_videos v JOIN (SELECT video_id, SUM(watch_count) as total_watches FROM history GROUP BY video_id) h ON v.id = h.video_id"
+        elif tab == 'trending_day':
+            day_ago = int(time.time()) - 86400
+            from_clause = "javtiful_videos v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
+            params.append(day_ago)
+        elif tab == 'trending_month':
+            month_ago = int(time.time()) - 30*86400
+            from_clause = "javtiful_videos v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
+            params.append(month_ago)
+
+        safe_key = ""
+        if search_key:
+            match_field = re.match(r'^(actress|genre|maker|title)\s*:\s*(.*)$', search_key, re.IGNORECASE)
+            if match_field:
+                field = match_field.group(1).lower()
+                val = match_field.group(2).strip()
+                safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
+                if safe_val:
+                    from_clause += " JOIN javtiful_videos_fts ON v.rowid = javtiful_videos_fts.rowid"
+                    where_clauses.append("javtiful_videos_fts MATCH ?")
+                    safe_key = f"{field} : ({safe_val})"
+                    params.append(safe_key)
+            else:
+                safe_key_fmt = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
+                if safe_key_fmt:
+                    from_clause += " JOIN javtiful_videos_fts ON v.rowid = javtiful_videos_fts.rowid"
+                    where_clauses.append("javtiful_videos_fts MATCH ?")
+                    safe_key = safe_key_fmt
+                    params.append(safe_key)
+                
+        where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        
+        if tab == 'global_frequent' and not search_key:
+            cursor.execute("SELECT COUNT(DISTINCT video_id) FROM history")
+            total = cursor.fetchone()[0]
+        else:
+            cursor.execute(f"SELECT COUNT(*) FROM {from_clause} {where_sql}", params)
+            total = cursor.fetchone()[0]
+            
+        if tab == 'favorites':
+            order_clause = "ORDER BY v.release_date DESC, f.added_at DESC"
+        elif tab == 'recent':
+            order_clause = "ORDER BY h.last_watched DESC, v.release_date DESC"
+        elif tab == 'frequent':
+            order_clause = "ORDER BY h.watch_count DESC, v.release_date DESC"
+        elif tab == 'global_frequent':
+            order_clause = "ORDER BY h.total_watches DESC, v.release_date DESC"
+        elif tab in ['trending_day', 'trending_month']:
+            order_clause = "ORDER BY h.c DESC, v.release_date DESC"
+        elif safe_key:
+            order_clause = "ORDER BY v.release_date DESC, bm25(javtiful_videos_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.added_at DESC"
+        else:
+            order_clause = "ORDER BY v.release_date DESC, v.added_at DESC"
+            
+        query = f"SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
+        cursor.execute(query, params + [per_page, offset])
+        rows = cursor.fetchall()
+        
+    videos = []
+    for row in rows:
+        videos.append({
+            "id": row[0],
+            "title": row[1],
+            "cover": row[2] if row[2] else f"/api/media?id={row[0]}",
+            "url": row[3],
+            "release_date": row[4] if len(row) > 4 else '',
+            "actress": row[5] if len(row) > 5 else '',
+            "genre": row[6] if len(row) > 6 else '',
+            "maker": row[7] if len(row) > 7 else '',
+            "details": row[8] if len(row) > 8 else ''
+        })
+    return jsonify({"items": videos, "total": total, "page": page})
+
+@app.route('/api/related', methods=['GET'])
+def get_related():
+    vid_id = request.args.get('id', '')
+    if not vid_id:
+        return jsonify({"items": []})
+        
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT title, actress, genre, maker FROM javtiful_videos WHERE id = ?", (vid_id,))
+        row = cursor.fetchone()
+        
+    if not row:
+        return jsonify({"items": []})
+        
+    title, actress, genre, maker = row
+    
+    keywords = extract_clean_keywords_bulletproof(title) if title else []
+            
+    query_parts = []
+    if actress:
+        actresses = [a.strip() for a in actress.split(',')]
+        query_parts.append(' OR '.join([f'actress : "{a}"' for a in actresses if a]))
+    if genre:
+        genres = [g.strip() for g in genre.split(',')]
+        query_parts.append(' OR '.join([f'genre : "{g}"' for g in genres if g]))
+    if maker:
+        query_parts.append(f'maker : "{maker}"')
+        
+    if keywords:
+        kw_str = ' OR '.join([f'"{k}"*' for k in keywords[:5]])
+        query_parts.append(f'title : ({kw_str})')
+        
+    fts_query = ' OR '.join([p for p in query_parts if p])
+    
+    if not fts_query:
+        return jsonify({"items": []})
+        
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        sql = '''
+            SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details 
+            FROM javtiful_videos v
+            JOIN javtiful_videos_fts ON v.rowid = javtiful_videos_fts.rowid
+            WHERE javtiful_videos_fts MATCH ? AND v.id != ?
+            ORDER BY bm25(javtiful_videos_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.release_date DESC
+            LIMIT 12
+        '''
+        try:
+            cursor.execute(sql, (fts_query, vid_id))
+            rows = cursor.fetchall()
+        except Exception as e:
+            print("FTS Related Error:", e)
+            rows = []
+            
+    videos = []
+    for row in rows:
+        videos.append({
+            "id": row[0],
+            "title": row[1],
+            "cover": row[2] if row[2] else f"/api/media?id={row[0]}",
+            "url": row[3],
+            "release_date": row[4] if row[4] else '',
+            "actress": row[5] if row[5] else '',
+            "genre": row[6] if row[6] else '',
+            "maker": row[7] if row[7] else '',
+            "details": row[8] if row[8] else ''
+        })
+    return jsonify({"items": videos})
+
+@app.route('/api/proxy', methods=['GET'])
+def proxy_video():
+    target_url = request.args.get('url', '')
+    if not target_url:
+        return Response(status=400)
+        
+    client_range = request.headers.get('Range')
+    headers = {"Referer": getattr(scraper_instance, 'referer', '')}
+        
+    try:
+        # Bước 1: Request 2 byte đầu tiên để lấy Content-Length và kiểm tra HTTP Range
+        head_req = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": "bytes=0-1"}, timeout=10)
+        
+        total_size = 0
+        is_range_supported = False
+        
+        if head_req.status_code == 206:
+            cr = head_req.headers.get('Content-Range', '')
+            match = re.search(r'/(\d+)', cr)
+            if match:
+                total_size = int(match.group(1))
+                is_range_supported = True
+                
+        # Nếu Server không hỗ trợ tải nhiều luồng / không trả về size, dùng Proxy 1 luồng cơ bản
+        if not is_range_supported or total_size == 0:
+            if client_range:
+                headers['Range'] = client_range
+            res = scraper_instance.session.get(target_url, headers=headers, timeout=15, stream=True)
+            resp_headers = {k: v for k, v in res.headers.items() if k.lower() not in ['content-encoding', 'transfer-encoding', 'connection', 'access-control-allow-origin']}
+            resp_headers['Access-Control-Allow-Origin'] = '*'
+            
+            def generate_fallback():
+                for chunk in res.iter_content(chunk_size=128*1024):
+                    if chunk:
+                        yield chunk
+                        global global_last_request_time
+                        global_last_request_time = time.time()
+                res.close()
+            return Response(generate_fallback(), status=res.status_code, headers=resp_headers)
+            
+        # Bước 2: Proxy Đa luồng (Hoạt động giống IDM để tăng tốc stream)
+        start = 0
+        end = total_size - 1
+        
+        if client_range:
+            match = re.match(r'bytes=(\d+)-(\d*)', client_range)
+            if match:
+                start = int(match.group(1))
+                if match.group(2): end = int(match.group(2))
+                    
+        if start > end or start >= total_size:
+            return Response(status=416, headers={'Content-Range': f'bytes */{total_size}'})
+        if end >= total_size:
+            end = total_size - 1
+            
+        chunk_size = 256 * 1024  # 0.5MB mỗi khối (tối ưu cho 720p và tua cực mượt)
+        ranges_to_fetch = []
+        curr = start
+        while curr <= end:
+            next_curr = min(curr + chunk_size - 1, end)
+            ranges_to_fetch.append((curr, next_curr))
+            curr = next_curr + 1
+            
+        resp_headers = {
+            'Content-Type': head_req.headers.get('Content-Type', 'video/mp4'),
+            'Accept-Ranges': 'bytes',
+            'Content-Length': str(end - start + 1),
+            'Access-Control-Allow-Origin': '*'
+        }
+        status_code = 200
+        if client_range:
+            status_code = 206
+            resp_headers['Content-Range'] = f'bytes {start}-{end}/{total_size}'
+            
+        def fetch_range(r):
+            for _ in range(3): # Thử tối đa 3 lần nếu có lỗi tải khối này
+                try:
+                    res = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=15)
+                    if res.status_code in (200, 206): return res.content
+                except Exception:
+                    time.sleep(1)
+            return None
+            
+        def generate_multithread():
+            global global_last_request_time
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=6) # Sử dụng 8 luồng tải song song (cân bằng hoàn hảo)
+            try:
+                window_size = 8 # Giữ ở RAM tối đa 8 khối (8 * 0.5MB = 4MB) siêu nhẹ
+                idx = 0
+                while idx < len(ranges_to_fetch):
+                    batch = ranges_to_fetch[idx:idx+window_size]
+                    futures = [executor.submit(fetch_range, b) for b in batch]
+                    for f in futures:
+                        data = f.result()
+                        if data:
+                            # Trả về từng mảnh nhỏ 128KB để player dễ dàng hiển thị dần
+                            for i in range(0, len(data), 128*1024):
+                                yield data[i:i+128*1024]
+                                global_last_request_time = time.time()
+                        else:
+                            return # Ngắt quá trình stream nếu gặp block lỗi nặng
+                    idx += window_size
+            finally:
+                if sys.version_info >= (3, 9): executor.shutdown(wait=False, cancel_futures=True)
+                else: executor.shutdown(wait=False)
+                
+        return Response(generate_multithread(), status=status_code, headers=resp_headers)
+    except Exception as e:
+        print(f"[Proxy] Error fetching {target_url}: {e}")
+        return Response(status=500)
+
+@app.route('/api/sync', methods=['GET'])
+def sync_api():
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT url_pattern FROM sync_tasks")
+        tasks = cursor.fetchall()
+    for task in tasks:
+        scraper_instance.sync_list_page(task[0], 1)
+    return jsonify({"success": True})
+
+@app.route('/api/video_url', methods=['GET'])
+def video_url_api():
+    vid_id = request.args.get('id', '')
+    force_refresh = request.args.get('refresh', '0').lower() in ['1', 'true', 'yes']
+    url = scraper_instance.get_video_url(vid_id, force_refresh=force_refresh)
+    if url:
+        return jsonify({"success": True, "url": url})
+    return jsonify({"success": False, "error": "Cannot extract URL"})
+
+@app.route('/api/video_details', methods=['GET'])
+def video_details_api():
+    vid_id = request.args.get('id', '')
+    if not vid_id:
+        return jsonify({"success": False, "error": "Missing id"})
+    
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT id, title, cover, url, release_date, actress, genre, maker, details FROM javtiful_videos WHERE id = ?", (vid_id,))
+        row = cursor.fetchone()
+        
+    if row:
+        return jsonify({
+            "success": True,
+            "data": {
+                "id": row[0],
+                "title": row[1],
+                "cover": row[2] if row[2] else f"/api/media?id={row[0]}",
+                "url": row[3],
+                "release_date": row[4] if row[4] else '',
+                "actress": row[5] if row[5] else '',
+                "genre": row[6] if row[6] else '',
+                "maker": row[7] if row[7] else '',
+                "details": row[8] if row[8] else ''
+            }
+        })
+    return jsonify({"success": False, "error": "Not found"})
+
+@app.route('/api/search_suggestions', methods=['GET'])
+def search_suggestions():
+    q = request.args.get('q', '').strip().lower()
+    identifier = get_identifier()
+    suggestions = []
+    
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        if identifier:
+            if not q:
+                cursor.execute("SELECT keyword FROM search_history WHERE username = ? ORDER BY searched_at DESC LIMIT 10", (identifier,))
+            else:
+                cursor.execute("SELECT keyword FROM search_history WHERE username = ? AND keyword LIKE ? ORDER BY searched_at DESC LIMIT 10", (identifier, f'%{q}%'))
+            for r in cursor.fetchall():
+                suggestions.append({"text": r[0], "type": "history"})
+            
+    if not q:
+        with db_lock:
+            cursor = db_conn_instance.cursor()
+            cursor.execute("SELECT keyword FROM tags_summary WHERE type='actress' ORDER BY count DESC LIMIT 10")
+            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "actress"})
+            
+            cursor.execute("SELECT keyword FROM tags_summary WHERE type='genre' ORDER BY count DESC LIMIT 10")
+            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "genre"})
+            
+            cursor.execute("SELECT keyword FROM tags_summary WHERE type='maker' ORDER BY count DESC LIMIT 10")
+            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "maker"})
+            
+        return jsonify({"success": True, "suggestions": suggestions})
+    
+    else:
+        words = q.replace('"', '').split()
+        if not words:
+            return jsonify({"success": True, "suggestions": suggestions})
+            
+        safe_key_and = ' AND '.join([f'"{w}"*' for w in words])
+        safe_key_or = ' OR '.join([f'"{w}"*' for w in words])
+        
+        with db_lock:
+            cursor = db_conn_instance.cursor()
+            try:
+                cursor.execute('''
+                    SELECT keyword, type, count
+                    FROM tags_fts
+                    WHERE tags_fts MATCH ?
+                    ORDER BY count DESC
+                    LIMIT 30
+                ''', (safe_key_and,))
+                tag_rows = cursor.fetchall()
+            except Exception as e:
+                print("FTS tags search error:", e)
+                tag_rows = []
+                
+            # Fuzzy Search (Tìm kiếm mờ) bổ sung nếu FTS không trả về đủ kết quả
+            if len(tag_rows) < 15:
+                load_tags_cache_if_needed(cursor)
+                seen_tags = set([r[0] for r in tag_rows])
+                q_low = q.lower()
+                q_sorted = " ".join(sorted(q_low.split()))
+                q_words = q_low.split()
+                
+                fuzzy_matches = []
+                for kw, t, c, low, sorted_low in tags_cache:
+                    if kw in seen_tags:
+                        continue
+                    # Nếu chứa chuỗi hoặc chứa đủ các từ khóa, gán điểm tuyệt đối
+                    if q_low in low:
+                        fuzzy_matches.append((1.0, c, kw, t))
+                    elif all(w in low for w in q_words):
+                        fuzzy_matches.append((0.95, c, kw, t))
+                    else:
+                        # Dùng difflib đo độ tương đồng, ngưỡng >= 0.75 để chặn nhiễu
+                        matcher = difflib.SequenceMatcher(None, q_sorted, sorted_low)
+                        if matcher.quick_ratio() >= 0.75:
+                            score = matcher.ratio()
+                            if score >= 0.75:
+                                fuzzy_matches.append((score, c, kw, t))
+                                
+                fuzzy_matches.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                for score, c, kw, t in fuzzy_matches[:15]:
+                    tag_rows.append((kw, t, c))
+                    seen_tags.add(kw)
+
+            match_actress = []
+            match_genre = []
+            match_maker = []
+            match_title = []
+            
+            for row in tag_rows:
+                k, t, c = row
+                if t == 'actress': match_actress.append({"text": k, "count": c})
+                elif t == 'genre': match_genre.append({"text": k, "count": c})
+                elif t == 'maker': match_maker.append({"text": k, "count": c})
+                
+            try:
+                cursor.execute('''
+                    SELECT v.title, v.id
+                    FROM javtiful_videos v
+                    JOIN javtiful_videos_fts ON v.rowid = javtiful_videos_fts.rowid
+                    WHERE javtiful_videos_fts MATCH ?
+                    ORDER BY bm25(javtiful_videos_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC LIMIT 10
+                ''', (f"title : ({safe_key_or})",))
+                for row in cursor.fetchall():
+                    t = row[0].strip()
+                    if t:
+                        match_title.append({"text": t[:80] + ("..." if len(t)>80 else ""), "type": "title", "id": row[1]})
+            except Exception as e:
+                print("FTS title search error:", e)
+                
+        chips = []
+        for a in match_actress[:5]: chips.append({"text": a["text"], "type": "actress"})
+        for g in match_genre[:5]: chips.append({"text": g["text"], "type": "genre"})
+        for m in match_maker[:5]: chips.append({"text": m["text"], "type": "maker"})
+            
+        for c in chips[:10]:
+            suggestions.append(c)
+            
+        for t in match_title:
+            suggestions.append(t)
+            
+        return jsonify({"success": True, "suggestions": suggestions})
+
+@app.route('/api/search_history', methods=['POST', 'DELETE'])
+def manage_search_history():
+    identifier = get_identifier()
+    if not identifier:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+        
+    payload = request.get_json(silent=True) or {}
+    keyword = payload.get('keyword', '').strip()
+    
+    if not keyword:
+        return jsonify({"success": False, "error": "Missing keyword"}), 400
+        
+    if request.method == 'POST':
+        now_ts = int(time.time())
+        with db_lock:
+            cursor = db_conn_instance.cursor()
+            cursor.execute("INSERT OR REPLACE INTO search_history (username, keyword, searched_at) VALUES (?, ?, ?)", (identifier, keyword, now_ts))
+            cursor.execute("DELETE FROM search_history WHERE username = ? AND keyword IN (SELECT keyword FROM search_history WHERE username = ? ORDER BY searched_at DESC LIMIT -1 OFFSET 20)", (identifier, identifier))
+            db_conn_instance.commit()
+        return jsonify({"success": True})
+        
+    elif request.method == 'DELETE':
+        with db_lock:
+            cursor = db_conn_instance.cursor()
+            cursor.execute("DELETE FROM search_history WHERE username = ? AND keyword = ?", (identifier, keyword))
+            db_conn_instance.commit()
+        return jsonify({"success": True})
+
+@app.route('/api/identity/check', methods=['POST'])
+def identity_check():
+    payload = request.get_json(silent=True) or {}
+    query = payload.get('query', '').strip()
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT username FROM identities WHERE username = ? OR email = ?", (query, query))
+        row = cursor.fetchone()
+    return jsonify({"exists": bool(row)})
+
+@app.route('/api/identity/send_otp', methods=['POST'])
+def identity_send_otp():
+    payload = request.get_json(silent=True) or {}
+    query = payload.get('query', '').strip()
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT email FROM identities WHERE username = ? OR email = ?", (query, query))
+        row = cursor.fetchone()
+    if not row or not row[0]:
+        return jsonify({"success": False, "error": "Tài khoản không tồn tại hoặc chưa liên kết email."})
+    
+    user_email = row[0]
+    import random
+    otp = str(random.randint(100000, 999999))
+    expire = int(time.time()) + 300
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("UPDATE identities SET otp = ?, otp_expire = ? WHERE email = ?", (otp, expire, user_email))
+        db_conn_instance.commit()
+    
+    args_email = getattr(app_args, 'email', None)
+    args_email_pass = getattr(app_args, 'emailPass', None)
+        
+    if not args_email or not args_email_pass:
+        return jsonify({"success": False, "error": "Server chưa cấu hình email."})
+        
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        msg = MIMEText(f"Mã OTP đăng nhập của bạn là: {otp}\nCó hiệu lực trong 5 phút.")
+        msg['Subject'] = 'Mã OTP Định Danh Javtiful Player'
+        msg['From'] = args_email
+        msg['To'] = user_email
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(args_email, args_email_pass.strip())
+        server.send_message(msg)
+        server.quit()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/api/identity/register', methods=['POST'])
+def identity_register():
+    payload = request.get_json(silent=True) or {}
+    username = payload.get('username', '').strip()
+    password = payload.get('password', '')
+    session_id = payload.get('session_id', '') or request.headers.get('Session-Id', '')
+    
+    if not username or not password:
+        return jsonify({"success": False, "error": "Thiếu thông tin."})
+        
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+                
+        try:
+            cursor.execute("INSERT INTO identities (username, email, password, session_id, created_at, verified) VALUES (?, ?, ?, ?, ?, ?)", 
+                           (username, None, password, session_id, int(time.time()), 0))
+            if session_id:
+                cursor.execute("INSERT OR REPLACE INTO user_sessions (username, session_id) VALUES (?, ?)", (username, session_id))
+                cursor.execute("UPDATE OR IGNORE history SET username = ? WHERE username = ?", (username, session_id))
+                cursor.execute("DELETE FROM history WHERE username = ?", (session_id,))
+                cursor.execute("UPDATE OR IGNORE favorites SET username = ? WHERE username = ?", (username, session_id))
+                cursor.execute("DELETE FROM favorites WHERE username = ?", (session_id,))
+            db_conn_instance.commit()
+            token = create_jwt({"username": username})
+            return jsonify({"success": True, "username": username, "token": token})
+        except sqlite3.IntegrityError:
+            return jsonify({"success": False, "error": "Username đã tồn tại."})
+
+@app.route('/api/identity/login', methods=['POST'])
+def identity_login():
+    payload = request.get_json(silent=True) or {}
+    query = payload.get('query', '').strip()
+    password = payload.get('password', '')
+    otp = payload.get('otp', '')
+    session_id = payload.get('session_id', '') or request.headers.get('Session-Id', '')
+    
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        if password:
+            cursor.execute("SELECT username FROM identities WHERE (username = ? OR email = ?) AND password = ?", (query, query, password))
+            row = cursor.fetchone()
+            if row:
+                cursor.execute("UPDATE identities SET session_id = ? WHERE username = ?", (session_id, row[0]))
+                if session_id:
+                    cursor.execute("INSERT OR REPLACE INTO user_sessions (username, session_id) VALUES (?, ?)", (row[0], session_id))
+                    cursor.execute("UPDATE OR IGNORE history SET username = ? WHERE username = ?", (row[0], session_id))
+                    cursor.execute("DELETE FROM history WHERE username = ?", (session_id,))
+                    cursor.execute("UPDATE OR IGNORE favorites SET username = ? WHERE username = ?", (row[0], session_id))
+                    cursor.execute("DELETE FROM favorites WHERE username = ?", (session_id,))
+                db_conn_instance.commit()
+                token = create_jwt({"username": row[0]})
+                return jsonify({"success": True, "username": row[0], "token": token})
+            else:
+                return jsonify({"success": False, "error": "Sai thông tin đăng nhập."})
+        elif otp:
+            cursor.execute("SELECT username, otp_expire FROM identities WHERE (username = ? OR email = ?) AND otp = ?", (query, query, otp))
+            row = cursor.fetchone()
+            if row:
+                if row[1] < int(time.time()):
+                    return jsonify({"success": False, "error": "OTP đã hết hạn."})
+                else:
+                    cursor.execute("UPDATE identities SET session_id = ?, otp = NULL, verified = 1 WHERE username = ?", (session_id, row[0]))
+                    if session_id:
+                        cursor.execute("INSERT OR REPLACE INTO user_sessions (username, session_id) VALUES (?, ?)", (row[0], session_id))
+                        cursor.execute("UPDATE OR IGNORE history SET username = ? WHERE username = ?", (row[0], session_id))
+                        cursor.execute("DELETE FROM history WHERE username = ?", (session_id,))
+                        cursor.execute("UPDATE OR IGNORE favorites SET username = ? WHERE username = ?", (row[0], session_id))
+                        cursor.execute("DELETE FROM favorites WHERE username = ?", (session_id,))
+                    db_conn_instance.commit()
+                    token = create_jwt({"username": row[0]})
+                    return jsonify({"success": True, "username": row[0], "token": token})
+            else:
+                return jsonify({"success": False, "error": "OTP không hợp lệ."})
+        else:
+            return jsonify({"success": False, "error": "Thiếu password hoặc OTP."})
+
+@app.route('/api/identity/verify_email', methods=['POST'])
+def identity_verify_email():
+    payload = request.get_json(silent=True) or {}
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    token = auth_header.split(' ')[1]
+    jwt_payload = verify_jwt(token)
+    if not jwt_payload or 'username' not in jwt_payload:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    
+    username = jwt_payload['username']
+    otp = payload.get('otp', '')
+    
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT otp_expire FROM identities WHERE username = ? AND otp = ?", (username, otp))
+        row = cursor.fetchone()
+        if row:
+            if row[0] < int(time.time()):
+                return jsonify({"success": False, "error": "OTP đã hết hạn."})
+            else:
+                cursor.execute("UPDATE identities SET otp = NULL, verified = 1 WHERE username = ?", (username,))
+                db_conn_instance.commit()
+                return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "error": "OTP không hợp lệ."})
+
+@app.route('/api/identity/update_profile', methods=['POST'])
+def identity_update_profile():
+    payload = request.get_json(silent=True) or {}
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    token = auth_header.split(' ')[1]
+    jwt_payload = verify_jwt(token)
+    if not jwt_payload or 'username' not in jwt_payload:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+        
+    current_username = jwt_payload['username']
+    new_password = payload.get('password', '')
+    new_email = payload.get('email', '').strip()
+    
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        try:
+            if new_email:
+                cursor.execute("SELECT username FROM identities WHERE email = ? AND username != ?", (new_email, current_username))
+                if cursor.fetchone():
+                    return jsonify({"success": False, "error": "Email đã được sử dụng."})
+                    
+                cursor.execute("SELECT email FROM identities WHERE username = ?", (current_username,))
+                row = cursor.fetchone()
+                if not row or row[0] != new_email:
+                    cursor.execute("UPDATE identities SET email = ?, verified = 0 WHERE username = ?", (new_email, current_username))
+                    
+            if new_password:
+                cursor.execute("SELECT verified FROM identities WHERE username = ?", (current_username,))
+                v_row = cursor.fetchone()
+                if not v_row or v_row[0] != 1:
+                    return jsonify({"success": False, "error": "Cần xác thực email để đổi mật khẩu."})
+                cursor.execute("UPDATE identities SET password = ? WHERE username = ?", (new_password, current_username))
+            db_conn_instance.commit()
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)})
+
+@app.route('/api/identity/reset_password', methods=['POST'])
+def identity_reset_password():
+    payload = request.get_json(silent=True) or {}
+    query = payload.get('query', '').strip()
+    otp = payload.get('otp', '')
+    new_password = payload.get('new_password', '')
+    
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT username, otp_expire FROM identities WHERE (username = ? OR email = ?) AND otp = ?", (query, query, otp))
+        row = cursor.fetchone()
+        if row:
+            if row[1] < int(time.time()):
+                return jsonify({"success": False, "error": "OTP đã hết hạn."})
+            else:
+                cursor.execute("UPDATE identities SET password = ?, otp = NULL, verified = 1 WHERE username = ?", (new_password, row[0]))
+                db_conn_instance.commit()
+                return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "error": "OTP không hợp lệ."})
+
+@app.route('/api/favorites/toggle', methods=['POST'])
+def favorites_toggle():
+    payload = request.get_json(silent=True) or {}
+    identifier = get_identifier()
+    if not identifier:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+        
+    video_id = payload.get('video_id')
+    action = payload.get('action', 'toggle')
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT 1 FROM favorites WHERE username = ? AND video_id = ?", (identifier, video_id))
+        exists = cursor.fetchone()
+        if exists:
+            if action == 'add':
+                return jsonify({"success": True, "added": True})
+            cursor.execute("DELETE FROM favorites WHERE username = ? AND video_id = ?", (identifier, video_id))
+            db_conn_instance.commit()
+            return jsonify({"success": True, "added": False})
+        else:
+            if action == 'remove':
+                return jsonify({"success": True, "added": False})
+            now_dt = time.strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute("INSERT INTO favorites (username, video_id, added_at) VALUES (?, ?, ?)", (identifier, video_id, now_dt))
+            db_conn_instance.commit()
+            return jsonify({"success": True, "added": True})
+
+@app.route('/api/favorites/status', methods=['GET'])
+def favorites_status():
+    identifier = get_identifier()
+    if not identifier:
+        return jsonify({"is_favorited": False})
+        
+    video_id = request.args.get('video_id')
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT 1 FROM favorites WHERE username = ? AND video_id = ?", (identifier, video_id))
+        exists = cursor.fetchone()
+    return jsonify({"is_favorited": bool(exists)})
+
+@app.route('/api/history/record', methods=['POST'])
+def history_record():
+    payload = request.get_json(silent=True) or {}
+    identifier = get_identifier()
+    if not identifier:
+        return jsonify({"success": False, "error": "No identifier provided"}), 400
+        
+    video_id = payload.get('video_id')
+    now_ts = int(time.time())
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT watch_count FROM history WHERE username = ? AND video_id = ?", (identifier, video_id))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("UPDATE history SET watch_count = ?, last_watched = ? WHERE username = ? AND video_id = ?", (row[0] + 1, now_ts, identifier, video_id))
+        else:
+            cursor.execute("INSERT INTO history (username, video_id, watch_count, last_watched) VALUES (?, ?, ?, ?)", (identifier, video_id, 1, now_ts))
+            
+        cursor.execute("INSERT INTO history_logs (video_id, watched_at) VALUES (?, ?)", (video_id, now_ts))
+        db_conn_instance.commit()
+        return jsonify({"success": True})
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_html(path):
+    try:
+        html_path = 'index.html'
+        if not os.path.isabs(html_path):
+            html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), html_path)
+        with open(html_path, 'rb') as f:
+            content = f.read()
+        return Response(content, mimetype='text/html; charset=utf-8')
+    except Exception as e:
+        return Response(f"HTML not found: index.html ({e})", status=404)
+
+def migrate_old_database(db_conn, old_db_path):
+    if not os.path.exists(old_db_path):
+        print(f"[Migration] Không tìm thấy file database cũ tại {old_db_path}")
+        return
+# 
+    print(f"[Migration] Đang gắn (attach) database cũ từ {old_db_path}...")
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute("ATTACH DATABASE ? AS old_db", (old_db_path,))
+        
+        tables_to_sync = [
+            'javtiful_videos', 'media', 'identities', 'user_sessions', 
+            'favorites', 'history', 'sync_tasks', 'history_logs', 'search_history'
+        ]
+        
+        for table in tables_to_sync:
+            print(f"[Migration] Đang đồng bộ bảng: {table}...")
+            try:
+                cursor.execute(f"PRAGMA table_info({table})")
+                new_cols = [row[1] for row in cursor.fetchall()]
+                
+                cursor.execute(f"PRAGMA old_db.table_info({table})")
+                old_cols = [row[1] for row in cursor.fetchall()]
+                
+                if not old_cols:
+                    print(f"[Migration] Bảng {table} không tồn tại trong DB cũ, bỏ qua.")
+                    continue
+                    
+                common_cols = [col for col in new_cols if col in old_cols]
+                cols_str = ", ".join(common_cols)
+                
+                cursor.execute(f"INSERT OR IGNORE INTO {table} ({cols_str}) SELECT {cols_str} FROM old_db.{table}")
+                db_conn.commit()
+                print(f"[Migration] Đã đồng bộ bảng {table}.")
+            except Exception as e:
+                print(f"[Migration] Lỗi khi đồng bộ bảng {table}: {e}")
+        
+        cursor.execute("DETACH DATABASE old_db")
+        print("[Migration] Hoàn tất đồng bộ dữ liệu từ database cũ!")
+    except Exception as e:
+        print(f"[Migration] Lỗi trong quá trình migration: {e}")
+
+def start_reloader():
+    def reloader_thread():
+        mtime = os.path.getmtime(__file__)
+        while True:
+            time.sleep(2)
+            if os.path.getmtime(__file__) != mtime:
+                print("\n[AutoReloader] Phát hiện thay đổi code, tự động khởi động lại...")
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+    threading.Thread(target=reloader_thread, daemon=True).start()
+
+def load_source_module(source_name):
+    file_path = f"./source-{source_name}.py"
+    if not os.path.exists(file_path):
+        print(f"Lỗi: Không tìm thấy file {file_path}")
+        sys.exit(1)
+    
+    spec = importlib.util.spec_from_file_location(f"source_{source_name}", file_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-port', type=int, default=5010, help="Port to run the HTTP server on")
+    parser.add_argument('-sqlite3', type=str, default='javtiful.db', help="Path to the SQLite3 database file")
+    parser.add_argument('-upgrade-all', action='store_true', help="Start scanning from page 1 instead of backlog")
+    parser.add_argument('-emailPass', type=str, default="szywozapustydcuw", help="App password for email")
+    parser.add_argument('-email', type=str, default="infor.dkeeps@gmail.com", help="Email to send OTP from")
+    parser.add_argument('-old-sqlite3', type=str, default="", help="Path to an old SQLite3 database to migrate data from")
+    parser.add_argument('-limit-bufer', '-limit-buffer', type=str, default='200M', dest='limit_buffer', help="Limit memory buffer size to avoid Termux killing the process")
+    parser.add_argument('-source', type=str, default='javtiful', help="Nguồn crawl dữ liệu (ví dụ: javtiful, missav)")
+    
+    args = parser.parse_args()
+    
+    global db_conn_instance, scraper_instance, app_args
+    app_args = args
+    
+    start_reloader()
+    
+    db_conn_instance = get_db_connection(args.sqlite3, args.limit_buffer)
+    if args.old_sqlite3:
+        migrate_old_database(db_conn_instance, args.old_sqlite3)
+        
+    rebuild_tags_fts(db_conn_instance)
+    
+    source_module = load_source_module(args.source)
+    scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer)
+    threading.Thread(target=background_db_worker, args=(db_conn_instance,), daemon=True).start()
+    scanner = BackgroundScanner(scraper_instance, upgrade_all=args.upgrade_all)
+    scanner.start()
+    print(f"Javtiful Player worker started at http://localhost:{args.port}")
+        
+    app.run(host='0.0.0.0', port=args.port, threaded=True, use_reloader=False)
+
+if __name__ == '__main__':
+    main()
