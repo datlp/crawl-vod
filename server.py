@@ -145,6 +145,9 @@ def flush_db_buffer(db_conn):
                 cursor.execute("INSERT OR REPLACE INTO media (id, data, content_type) VALUES (?, ?, ?)", (media_id, m['data'], m['content_type']))
                 
             db_conn.commit()
+            
+        details_ids = ",".join(urls_to_save.keys())
+        custom_log("System", f"✔️ Buffer ghi xuống DB: {len(videos_to_save)} videos | {len(urls_to_save)} details: {details_ids}")
     except Exception as e:
         custom_log("System", f"❌ Lỗi khi ghi DB: {e}")
         try:
