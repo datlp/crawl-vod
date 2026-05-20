@@ -14,6 +14,7 @@ import concurrent.futures
 import importlib.util
 import builtins
 import difflib
+import signal
 from urllib.parse import urlparse, parse_qs, quote
 
 
@@ -1574,8 +1575,10 @@ def system_monitor_worker():
     while True:
         try:
             cpu = psutil.cpu_percent(interval=None)
-            mem = psutil.virtual_memory()
-            custom_log("System", f"Tài nguyên: CPU {cpu}% | RAM {mem.percent}% ({mem.used//1048576}MB/{mem.total//1048576}MB)")
+            process = psutil.Process(os.getpid())
+            ram_mb = process.memory_info().rss / 1048576.0
+            nltk_mb = sys.getsizeof(sys.modules.get('nltk')) / 1048576.0 if 'nltk' in sys.modules else 0.0
+            custom_log("System", f"✔️RAM chiếm dụng: {ram_mb:.2f}M |  CPU: {cpu}%")
         except Exception: pass
         time.sleep(5)
 
@@ -1621,7 +1624,22 @@ def main():
     scanner.start()
     custom_log("System", f"✔️ {args.source.capitalize()} Player worker started at http://localhost:{args.port}")
         
-    app.run(host='0.0.0.0', port=args.port, threaded=True, use_reloader=False)
+    def graceful_exit(sig, frame):
+        custom_log("System", "⚠️ Nhận tín hiệu dừng (Ctrl+C), đang lưu dữ liệu an toàn...")
+        if db_conn_instance:
+            flush_db_buffer(db_conn_instance)
+            try: db_conn_instance.close()
+            except Exception: pass
+        custom_log("System", "✔️ Đã thoát an toàn.")
+        sys.exit(0)
+        
+    signal.signal(signal.SIGINT, graceful_exit)
+    signal.signal(signal.SIGTERM, graceful_exit)
+
+    try:
+        app.run(host='0.0.0.0', port=args.port, threaded=True, use_reloader=False)
+    except KeyboardInterrupt:
+        graceful_exit(None, None)
 
 if __name__ == '__main__':
     main()
