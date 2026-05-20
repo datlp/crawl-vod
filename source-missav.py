@@ -1,6 +1,7 @@
 import time
 import datetime
 import re
+import json
 import threading
 from urllib.parse import urlparse
 from curl_cffi import requests as curl_requests
@@ -238,26 +239,29 @@ class Scraper:
                         cursor.execute("SELECT actress_ids, genre_ids, maker_ids FROM movies WHERE dvd = ?", (dvd,))
                         movie_row = cursor.fetchone()
                         
-                        a_ids = []
-                        for a in actress_arr:
-                            cursor.execute("INSERT OR IGNORE INTO actresses (name, other_names, sources) VALUES (?, '[]', ?)", (a, self.source_name))
-                            cursor.execute("SELECT id FROM actresses WHERE name = ? AND sources = ?", (a, self.source_name))
-                            a_id = cursor.fetchone()
-                            if a_id: a_ids.append(str(a_id[0]))
+                        def process_tags(items, table, is_actress=False):
+                            ids = []
+                            for item in items:
+                                if not item: continue
+                                cursor.execute(f"SELECT id, sources FROM {table} WHERE name = ?", (item,))
+                                row = cursor.fetchone()
+                                if row:
+                                    t_id = row[0]
+                                    ids.append(str(t_id))
+                                    try: curr = json.loads(row[1]) if row[1] and row[1].startswith('[') else ([row[1]] if row[1] else [])
+                                    except: curr = [row[1]] if row[1] else []
+                                    if self.source_name not in curr:
+                                        curr.append(self.source_name)
+                                        cursor.execute(f"UPDATE {table} SET sources = ? WHERE id = ?", (json.dumps(curr), t_id))
+                                else:
+                                    if is_actress: cursor.execute(f"INSERT INTO {table} (name, other_names, sources) VALUES (?, '[]', ?)", (item, json.dumps([self.source_name])))
+                                    else: cursor.execute(f"INSERT INTO {table} (name, sources) VALUES (?, ?)", (item, json.dumps([self.source_name])))
+                                    ids.append(str(cursor.lastrowid))
+                            return ids
                             
-                        g_ids = []
-                        for g in genre_arr:
-                            cursor.execute("INSERT OR IGNORE INTO genres (name, sources) VALUES (?, ?)", (g, self.source_name))
-                            cursor.execute("SELECT id FROM genres WHERE name = ? AND sources = ?", (g, self.source_name))
-                            g_id = cursor.fetchone()
-                            if g_id: g_ids.append(str(g_id[0]))
-                            
-                        m_ids = []
-                        if maker:
-                            cursor.execute("INSERT OR IGNORE INTO makers (name, sources) VALUES (?, ?)", (maker, self.source_name))
-                            cursor.execute("SELECT id FROM makers WHERE name = ? AND sources = ?", (maker, self.source_name))
-                            m_id = cursor.fetchone()
-                            if m_id: m_ids.append(str(m_id[0]))
+                        a_ids = process_tags(actress_arr, "actresses", True)
+                        g_ids = process_tags(genre_arr, "genres")
+                        m_ids = process_tags([maker] if maker else [], "makers")
                             
                         if movie_row:
                             ex_a_ids = [x.strip() for x in (movie_row[0] or "").split(',') if x.strip()]

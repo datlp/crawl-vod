@@ -262,7 +262,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
             name TEXT,
             other_names TEXT,
             sources TEXT,
-            UNIQUE(name, sources)
+            UNIQUE(name)
         )
     ''')
     
@@ -271,7 +271,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
             sources TEXT,
-            UNIQUE(name, sources)
+            UNIQUE(name)
         )
     ''')
     
@@ -280,7 +280,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
             sources TEXT,
-            UNIQUE(name, sources)
+            UNIQUE(name)
         )
     ''')
     
@@ -313,43 +313,42 @@ def get_db_connection(db_path, limit_buffer='200M'):
         
     cursor.execute("PRAGMA table_info(movies)")
     m_cols = [row[1] for row in cursor.fetchall()]
-    if 'actresses' in m_cols:
-        custom_log("System", "⏳ Migrating actresses to new table...")
-        cursor.execute("SELECT dvd, actresses FROM movies WHERE actresses IS NOT NULL AND actresses != ''")
-        for dvd, a_str in cursor.fetchall():
-            a_list = [x.strip() for x in a_str.split(',') if x.strip()]
-            a_ids = []
-            for a in a_list:
-                cursor.execute("INSERT OR IGNORE INTO actresses (name, other_names, sources) VALUES (?, '[]', ?)", (a, app_args.source))
-                cursor.execute("SELECT id FROM actresses WHERE name = ? AND sources = ?", (a, app_args.source))
-                row = cursor.fetchone()
-                if row:
-                    a_ids.append(str(row[0]))
-            if a_ids:
-                cursor.execute("UPDATE movies SET actress_ids = ? WHERE dvd = ?", (",".join(set(a_ids)), dvd))
-        try:
-            conn.execute("ALTER TABLE movies DROP COLUMN actresses")
-        except Exception:
-            pass
+    
+    sources_list = [s.strip() for s in app_args.source.split(',') if s.strip()]
+    sources_json = json.dumps(sources_list)
 
-    if 'genres' in m_cols:
-        custom_log("System", "⏳ Migrating genres to new table...")
-        cursor.execute("SELECT dvd, genres FROM movies WHERE genres IS NOT NULL AND genres != ''")
-        for dvd, g_str in cursor.fetchall():
-            g_list = [x.strip() for x in g_str.split(',') if x.strip()]
-            g_ids = []
-            for g in g_list:
-                cursor.execute("INSERT OR IGNORE INTO genres (name, sources) VALUES (?, ?)", (g, app_args.source))
-                cursor.execute("SELECT id FROM genres WHERE name = ? AND sources = ?", (g, app_args.source))
-                row = cursor.fetchone()
-                if row:
-                    g_ids.append(str(row[0]))
-            if g_ids:
-                cursor.execute("UPDATE movies SET genre_ids = ? WHERE dvd = ?", (",".join(set(g_ids)), dvd))
-        try:
-            conn.execute("ALTER TABLE movies DROP COLUMN genres")
-        except Exception:
-            pass
+    def migrate_tags(col_name, table_name, id_col, is_actress=False):
+        if col_name in m_cols:
+            custom_log("System", f"⏳ Migrating {col_name} to new table...")
+            cursor.execute(f"SELECT dvd, {col_name} FROM movies WHERE {col_name} IS NOT NULL AND {col_name} != ''")
+            for dvd, t_str in cursor.fetchall():
+                t_list = [x.strip() for x in t_str.split(',') if x.strip()]
+                t_ids = []
+                for t in t_list:
+                    cursor.execute(f"SELECT id, sources FROM {table_name} WHERE name = ?", (t,))
+                    row = cursor.fetchone()
+                    if row:
+                        t_ids.append(str(row[0]))
+                        try: curr = json.loads(row[1]) if row[1] and row[1].startswith('[') else ([row[1]] if row[1] else [])
+                        except: curr = [row[1]] if row[1] else []
+                        updated = False
+                        for s in sources_list:
+                            if s not in curr:
+                                curr.append(s)
+                                updated = True
+                        if updated:
+                            cursor.execute(f"UPDATE {table_name} SET sources = ? WHERE id = ?", (json.dumps(curr), row[0]))
+                    else:
+                        if is_actress: cursor.execute(f"INSERT INTO {table_name} (name, other_names, sources) VALUES (?, '[]', ?)", (t, sources_json))
+                        else: cursor.execute(f"INSERT INTO {table_name} (name, sources) VALUES (?, ?)", (t, sources_json))
+                        t_ids.append(str(cursor.lastrowid))
+                if t_ids:
+                    cursor.execute(f"UPDATE movies SET {id_col} = ? WHERE dvd = ?", (",".join(set(t_ids)), dvd))
+            try: conn.execute(f"ALTER TABLE movies DROP COLUMN {col_name}")
+            except Exception: pass
+            
+    migrate_tags('actresses', 'actresses', 'actress_ids', True)
+    migrate_tags('genres', 'genres', 'genre_ids')
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS dvd_release (
@@ -476,24 +475,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
     ''')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_history_logs_time ON history_logs(watched_at)')
 
-    if 'makers' in m_cols:
-        custom_log("System", "⏳ Migrating makers to new table...")
-        cursor.execute("SELECT dvd, makers FROM movies WHERE makers IS NOT NULL AND makers != ''")
-        for dvd, m_str in cursor.fetchall():
-            m_list = [x.strip() for x in m_str.split(',') if x.strip()]
-            m_ids = []
-            for m in m_list:
-                cursor.execute("INSERT OR IGNORE INTO makers (name, sources) VALUES (?, ?)", (m, app_args.source))
-                cursor.execute("SELECT id FROM makers WHERE name = ? AND sources = ?", (m, app_args.source))
-                row = cursor.fetchone()
-                if row:
-                    m_ids.append(str(row[0]))
-            if m_ids:
-                cursor.execute("UPDATE movies SET maker_ids = ? WHERE dvd = ?", (",".join(set(m_ids)), dvd))
-        try:
-            conn.execute("ALTER TABLE movies DROP COLUMN makers")
-        except Exception:
-            pass
+    migrate_tags('makers', 'makers', 'maker_ids')
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS search_history (
@@ -1829,7 +1811,7 @@ def get_actresses():
             cursor.execute("SELECT id, name, sources FROM actresses WHERE name LIKE ? ORDER BY name ASC LIMIT 50", (f'%{q}%',))
         else:
             cursor.execute("SELECT id, name, sources FROM actresses ORDER BY name ASC LIMIT 50")
-        items = [{"id": r[0], "name": r[1], "sources": r[2]} for r in cursor.fetchall()]
+        items = [{"id": r[0], "name": r[1], "sources": json.loads(r[2]) if r[2] and r[2].startswith('[') else ([r[2]] if r[2] else [])} for r in cursor.fetchall()]
     return jsonify({"success": True, "items": items})
 
 @app.route('/api/genres', methods=['GET'])
@@ -1841,7 +1823,7 @@ def get_genres():
             cursor.execute("SELECT id, name, sources FROM genres WHERE name LIKE ? ORDER BY name ASC LIMIT 50", (f'%{q}%',))
         else:
             cursor.execute("SELECT id, name, sources FROM genres ORDER BY name ASC LIMIT 50")
-        items = [{"id": r[0], "name": r[1], "sources": r[2]} for r in cursor.fetchall()]
+        items = [{"id": r[0], "name": r[1], "sources": json.loads(r[2]) if r[2] and r[2].startswith('[') else ([r[2]] if r[2] else [])} for r in cursor.fetchall()]
     return jsonify({"success": True, "items": items})
 
 @app.route('/api/makers', methods=['GET'])
@@ -1853,7 +1835,7 @@ def get_makers():
             cursor.execute("SELECT id, name, sources FROM makers WHERE name LIKE ? ORDER BY name ASC LIMIT 50", (f'%{q}%',))
         else:
             cursor.execute("SELECT id, name, sources FROM makers ORDER BY name ASC LIMIT 50")
-        items = [{"id": r[0], "name": r[1], "sources": r[2]} for r in cursor.fetchall()]
+        items = [{"id": r[0], "name": r[1], "sources": json.loads(r[2]) if r[2] and r[2].startswith('[') else ([r[2]] if r[2] else [])} for r in cursor.fetchall()]
     return jsonify({"success": True, "items": items})
 
 @app.route('/api/history/record', methods=['POST'])
