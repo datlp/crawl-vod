@@ -112,7 +112,7 @@ def extract_clean_keywords_bulletproof(text):
     words = [w for w in words if w not in basic_stopwords and not w.isdigit() and len(w) > 2]
     return list(dict.fromkeys(words))
 
-VIDEOS_TABLE = "javtiful_videos"
+VIDEOS_TABLE = "videos"
 
 def flush_db_buffer(db_conn):
     with memory_lock:
@@ -139,14 +139,16 @@ def flush_db_buffer(db_conn):
                 if dvd:
                     cursor.execute("INSERT OR IGNORE INTO movies (dvd, actress_ids, genre_ids, maker_ids) VALUES (?, '', '', '')", (dvd,))
                     
+                source_val = vid.get('source', 'javtiful').lower()
                 cursor.execute(f'''
-                    INSERT INTO {VIDEOS_TABLE} (id, title, added_at, dvd)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO {VIDEOS_TABLE} (id, source, title, added_at, dvd)
+                    VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         title = excluded.title,
                         added_at = excluded.added_at,
-                        dvd = excluded.dvd
-                ''', (vid['id'], vid['title'], vid['added_at'], dvd))
+                        dvd = excluded.dvd,
+                        source = excluded.source
+                ''', (vid['id'], source_val, vid['title'], vid['added_at'], dvd))
                 
                 cursor.execute("INSERT INTO dvd_release (video_id, dvd, release_date, release_date_raw) VALUES (?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET dvd = excluded.dvd, release_date = CASE WHEN excluded.release_date != '' THEN excluded.release_date ELSE release_date END, release_date_raw = CASE WHEN excluded.release_date_raw != '' THEN excluded.release_date_raw ELSE release_date_raw END", (vid['id'], dvd, release_date, release_date_raw))
                 
@@ -206,6 +208,7 @@ def get_db_connection(db_path, limit_buffer='200M'):
     conn.execute(f'''
         CREATE TABLE IF NOT EXISTS {VIDEOS_TABLE} (
             id TEXT PRIMARY KEY,
+            source TEXT,
             title TEXT,
             url TEXT,
             added_at TEXT,
@@ -214,6 +217,10 @@ def get_db_connection(db_path, limit_buffer='200M'):
             details_fetched INTEGER DEFAULT 0
         )
     ''')
+    try:
+        conn.execute(f"ALTER TABLE {VIDEOS_TABLE} ADD COLUMN source TEXT DEFAULT 'javtiful'")
+    except sqlite3.OperationalError:
+        pass
     try:
         conn.execute(f"ALTER TABLE {VIDEOS_TABLE} ADD COLUMN dvd TEXT")
     except sqlite3.OperationalError:
@@ -224,6 +231,30 @@ def get_db_connection(db_path, limit_buffer='200M'):
     
     cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE})")
     v_cols = [row[1] for row in cursor.fetchall()]
+
+    for old_table in ['javtiful_videos', 'missav_videos']:
+        try:
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{old_table}'")
+            if cursor.fetchone():
+                custom_log("System", f"⏳ Migrating {old_table} to videos...")
+                cursor.execute(f"PRAGMA table_info({old_table})")
+                cols = [row[1] for row in cursor.fetchall()]
+                source_val = 'javtiful' if 'javtiful' in old_table else 'missav'
+                
+                if 'source' not in cols:
+                    conn.execute(f"ALTER TABLE {old_table} ADD COLUMN source TEXT DEFAULT '{source_val}'")
+                    cols.append('source')
+                    
+                sel_cols = ['id', 'source', 'title', 'url', 'added_at', 'details', 'dvd', 'details_fetched']
+                avail_cols = [c for c in sel_cols if c in cols]
+                
+                insert_cols = ", ".join(avail_cols)
+                conn.execute(f"INSERT OR IGNORE INTO {VIDEOS_TABLE} ({insert_cols}) SELECT {insert_cols} FROM {old_table}")
+                conn.execute(f"DROP TABLE {old_table}")
+                
+                conn.execute(f"DROP TABLE IF EXISTS {old_table}_fts")
+        except Exception as e:
+            custom_log("System", f"❌ Lỗi migrate {old_table}: {e}")
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS actresses (
@@ -752,7 +783,7 @@ import logging
 log = logging.getLogger('werkzeug')
 log.disabled = True
 
-scraper_instance = None
+scrapers = {}
 db_conn_instance = None
 app_args = None
 
@@ -963,7 +994,7 @@ def get_videos():
         else:
             order_clause = "ORDER BY dr.release_date DESC, v.added_at DESC"
             
-        query = f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
+        query = f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw, v.source FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
         cursor.execute(query, params + [per_page, offset])
         rows = cursor.fetchall()
         
@@ -980,7 +1011,8 @@ def get_videos():
             "maker": row[7] if len(row) > 7 else '',
             "details": row[8] if len(row) > 8 else '',
             "dvd": row[9] if len(row) > 9 else '',
-            "release_date_raw": row[10] if len(row) > 10 else ''
+            "release_date_raw": row[10] if len(row) > 10 else '',
+            "source": row[11] if len(row) > 11 else 'javtiful'
         })
     return jsonify({"items": videos, "total": total, "page": page})
 
@@ -1035,7 +1067,7 @@ def get_related():
     with db_lock:
         cursor = db_conn_instance.cursor()
         sql = f'''
-            SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw
+            SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw, v.source
             FROM {VIDEOS_TABLE} v
             LEFT JOIN movies m ON v.dvd = m.dvd
             LEFT JOIN dvd_release dr ON v.id = dr.video_id
@@ -1065,7 +1097,8 @@ def get_related():
             "maker": row[7] if row[7] else '',
             "details": row[8] if row[8] else '',
             "dvd": row[9] if len(row) > 9 and row[9] else '',
-            "release_date_raw": row[10] if len(row) > 10 and row[10] else ''
+            "release_date_raw": row[10] if len(row) > 10 and row[10] else '',
+            "source": row[11] if len(row) > 11 and row[11] else 'javtiful'
         })
     return jsonify({"items": videos})
 
@@ -1087,13 +1120,15 @@ def get_media():
         return Response(row[0], mimetype=row[1] or 'image/jpeg', headers={'Cache-Control': 'public, max-age=31536000'})
     else:
         cover_url = None
+        source = 'javtiful'
         with db_lock:
             cursor = db_conn_instance.cursor()
-            cursor.execute("SELECT cover FROM dvd_cover WHERE video_id = ?", (vid_id,))
+            cursor.execute("SELECT v.source, dc.cover FROM dvd_cover dc JOIN videos v ON dc.video_id = v.id WHERE dc.video_id = ?", (vid_id,))
             vrow = cursor.fetchone()
             
         if vrow and vrow[0]:
-            cover_url = vrow[0]
+            source = vrow[0].lower() if vrow[0] else 'javtiful'
+            cover_url = vrow[1]
             if cover_url.startswith('//'):
                 cover_url = 'https:' + cover_url
         
@@ -1110,8 +1145,9 @@ def get_media():
                     return Response(media_in_buffer['data'], mimetype=media_in_buffer['content_type'] or 'image/jpeg', headers={'Cache-Control': 'public, max-age=31536000'})
             
             downloading_media.add(vid_id)
+            scraper = scrapers.get(source) or list(scrapers.values())[0]
             try:
-                res = scraper_instance.session.get(cover_url, headers={"Referer": getattr(scraper_instance, 'referer', '')}, timeout=10)
+                res = scraper.session.get(cover_url, headers={"Referer": getattr(scraper, 'referer', '')}, timeout=10)
                 if res.status_code == 200:
                     content_type = res.headers.get('Content-Type', 'image/jpeg')
                     with memory_lock:
@@ -1133,14 +1169,20 @@ def proxy_video():
     if not target_url:
         return Response(status=400)
         
+    scraper = list(scrapers.values())[0]
+    for s in scrapers.values():
+        if s.referer and urlparse(s.referer).netloc in target_url:
+            scraper = s
+            break
+            
     client_range = request.headers.get('Range')
-    headers = {"Referer": getattr(scraper_instance, 'referer', '')}
+    headers = {"Referer": getattr(scraper, 'referer', '')}
         
     try:
         is_m3u8 = target_url.split('?')[0].endswith('.m3u8')
         
         if is_m3u8:
-            res = scraper_instance.session.get(target_url, headers=headers, timeout=15)
+            res = scraper.session.get(target_url, headers=headers, timeout=15)
             content = res.text
             base_url = target_url.rsplit('/', 1)[0] + '/'
             
@@ -1184,7 +1226,7 @@ def proxy_video():
             return Response(body, status=res.status_code, headers=resp_headers)
 
         # Bước 1: Request 2 byte đầu tiên để lấy Content-Length và kiểm tra HTTP Range
-        head_req = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": "bytes=0-1"}, timeout=10)
+        head_req = scraper.session.get(target_url, headers={"Referer": getattr(scraper, 'referer', ''), "Range": "bytes=0-1"}, timeout=10)
         
         total_size = 0
         is_range_supported = False
@@ -1200,7 +1242,7 @@ def proxy_video():
         if not is_range_supported or total_size == 0 or total_size < 5 * 1024 * 1024 or target_url.split('?')[0].endswith('.ts'):
             if client_range:
                 headers['Range'] = client_range
-            res = scraper_instance.session.get(target_url, headers=headers, timeout=15, stream=True)
+            res = scraper.session.get(target_url, headers=headers, timeout=15, stream=True)
             resp_headers = {k: v for k, v in res.headers.items() if k.lower() not in ['content-encoding', 'transfer-encoding', 'connection', 'access-control-allow-origin']}
             resp_headers['Access-Control-Allow-Origin'] = '*'
             
@@ -1250,7 +1292,7 @@ def proxy_video():
         def fetch_range(r):
             for _ in range(3): # Thử tối đa 3 lần nếu có lỗi tải khối này
                 try:
-                    res = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=15)
+                    res = scraper.session.get(target_url, headers={"Referer": getattr(scraper, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=15)
                     if res.status_code in (200, 206): return res.content
                 except Exception:
                     time.sleep(1)
@@ -1306,14 +1348,31 @@ def sync_api():
         cursor.execute("SELECT url_pattern FROM sync_tasks")
         tasks = cursor.fetchall()
     for task in tasks:
-        scraper_instance.sync_list_page(task[0], 1)
+        scraper = list(scrapers.values())[0]
+        for s in scrapers.values():
+            if s.referer and urlparse(s.referer).netloc in task[0]:
+                scraper = s
+                break
+        scraper.sync_list_page(task[0], 1)
     return jsonify({"success": True})
 
 @app.route('/api/video_url', methods=['GET'])
 def video_url_api():
     vid_id = request.args.get('id', '')
     force_refresh = request.args.get('refresh', '0').lower() in ['1', 'true', 'yes']
-    url = scraper_instance.get_video_url(vid_id, force_refresh=force_refresh)
+    
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute("SELECT source FROM videos WHERE id = ?", (vid_id,))
+        row = cursor.fetchone()
+        
+    if not row:
+        return jsonify({"success": False, "error": "Video not found"})
+        
+    source = row[0].lower() if row[0] else 'javtiful'
+    scraper = scrapers.get(source) or list(scrapers.values())[0]
+    
+    url = scraper.get_video_url(vid_id, force_refresh=force_refresh)
     if url:
         return jsonify({"success": True, "url": url})
     return jsonify({"success": False, "error": "Cannot extract URL"})
@@ -1326,7 +1385,7 @@ def video_details_api():
     
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd LEFT JOIN dvd_release dr ON v.id = dr.video_id LEFT JOIN dvd_cover dc ON v.id = dc.video_id WHERE v.id = ?", (vid_id,))
+        cursor.execute(f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw, v.source FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd LEFT JOIN dvd_release dr ON v.id = dr.video_id LEFT JOIN dvd_cover dc ON v.id = dc.video_id WHERE v.id = ?", (vid_id,))
         row = cursor.fetchone()
         
     if row:
@@ -1343,7 +1402,8 @@ def video_details_api():
                 "maker": row[7] if row[7] else '',
                 "details": row[8] if row[8] else '',
                 "dvd": row[9] if row[9] else '',
-                "release_date_raw": row[10] if row[10] else ''
+                "release_date_raw": row[10] if row[10] else '',
+                "source": row[11] if row[11] else 'javtiful'
             }
         })
     return jsonify({"success": False, "error": "Not found"})
@@ -1754,6 +1814,42 @@ def favorites_status():
         exists = cursor.fetchone()
     return jsonify({"is_favorited": bool(exists)})
 
+@app.route('/api/actresses', methods=['GET'])
+def get_actresses():
+    q = request.args.get('q', '').strip()
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        if q:
+            cursor.execute("SELECT id, name, sources FROM actresses WHERE name LIKE ? ORDER BY name ASC LIMIT 50", (f'%{q}%',))
+        else:
+            cursor.execute("SELECT id, name, sources FROM actresses ORDER BY name ASC LIMIT 50")
+        items = [{"id": r[0], "name": r[1], "sources": r[2]} for r in cursor.fetchall()]
+    return jsonify({"success": True, "items": items})
+
+@app.route('/api/genres', methods=['GET'])
+def get_genres():
+    q = request.args.get('q', '').strip()
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        if q:
+            cursor.execute("SELECT id, name, sources FROM genres WHERE name LIKE ? ORDER BY name ASC LIMIT 50", (f'%{q}%',))
+        else:
+            cursor.execute("SELECT id, name, sources FROM genres ORDER BY name ASC LIMIT 50")
+        items = [{"id": r[0], "name": r[1], "sources": r[2]} for r in cursor.fetchall()]
+    return jsonify({"success": True, "items": items})
+
+@app.route('/api/makers', methods=['GET'])
+def get_makers():
+    q = request.args.get('q', '').strip()
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        if q:
+            cursor.execute("SELECT id, name, sources FROM makers WHERE name LIKE ? ORDER BY name ASC LIMIT 50", (f'%{q}%',))
+        else:
+            cursor.execute("SELECT id, name, sources FROM makers ORDER BY name ASC LIMIT 50")
+        items = [{"id": r[0], "name": r[1], "sources": r[2]} for r in cursor.fetchall()]
+    return jsonify({"success": True, "items": items})
+
 @app.route('/api/history/record', methods=['POST'])
 def history_record():
     payload = request.get_json(silent=True) or {}
@@ -1787,7 +1883,8 @@ def serve_html(path):
             content = f.read()
 
         if app_args and hasattr(app_args, 'source'):
-            source_name = app_args.source.capitalize()
+            sources_list = [s.strip().capitalize() for s in app_args.source.split(',')]
+            source_name = " & ".join(sources_list)
             new_title = f"{source_name} Player"
             content = re.sub(b'<title>.*?</title>', f'<title>{new_title}</title>'.encode('utf-8'), content, count=1, flags=re.IGNORECASE)
 
@@ -1832,6 +1929,25 @@ def migrate_old_database(db_conn, old_db_path):
             except Exception as e:
                 custom_log("System", f"❌ Lỗi khi đồng bộ bảng {table}: {e}")
         
+        for old_table in ['javtiful_videos', 'missav_videos']:
+            try:
+                cursor.execute(f"SELECT name FROM old_db.sqlite_master WHERE type='table' AND name='{old_table}'")
+                if cursor.fetchone():
+                    custom_log("System", f"⏳ Đang đồng bộ bảng cũ {old_table} sang videos...")
+                    source_val = 'javtiful' if 'javtiful' in old_table else 'missav'
+                    cursor.execute(f"PRAGMA old_db.table_info({old_table})")
+                    old_cols = [row[1] for row in cursor.fetchall()]
+                    
+                    sel_cols = ['id', 'title', 'url', 'added_at', 'details', 'dvd', 'details_fetched']
+                    avail_cols = [c for c in sel_cols if c in old_cols]
+                    
+                    if avail_cols:
+                        cols_str = ", ".join(avail_cols)
+                        cursor.execute(f"INSERT OR IGNORE INTO {VIDEOS_TABLE} ({cols_str}, source) SELECT {cols_str}, '{source_val}' FROM old_db.{old_table}")
+                        db_conn.commit()
+            except Exception as e:
+                custom_log("System", f"❌ Lỗi khi đồng bộ bảng cũ {old_table}: {e}")
+                
         cursor.execute("DETACH DATABASE old_db")
         custom_log("System", "✔️ Hoàn tất đồng bộ dữ liệu từ database cũ!")
     except Exception as e:
@@ -1891,7 +2007,7 @@ def main():
     parser.add_argument('-email', type=str, default="infor.dkeeps@gmail.com", help="Email to send OTP from")
     parser.add_argument('-old-sqlite3', type=str, default="", help="Path to an old SQLite3 database to migrate data from")
     parser.add_argument('-limit-bufer', '-limit-buffer', type=str, default='200M', dest='limit_buffer', help="Limit memory buffer size to avoid Termux killing the process")
-    parser.add_argument('-source', type=str, default='javtiful', help="Nguồn crawl dữ liệu (ví dụ: javtiful, missav)")
+    parser.add_argument('-source', type=str, default='javtiful,missav', help="Các nguồn crawl, phân tách bằng dấu phẩy (ví dụ: javtiful,missav)")
     parser.add_argument('-news-threads', type=int, default=0, help="Số luồng quét video mới (mặc định 0)")
     parser.add_argument('-detail-threads', type=int, default=0, help="Số luồng lấy chi tiết video (mặc định 0)")
     parser.add_argument('-videos-threads', type=int, default=0, help="Số luồng quét video backlog (mặc định 0)")
@@ -1900,13 +2016,15 @@ def main():
     
     if args.sqlite3 is None:
         if os.name == 'nt':
-            args.sqlite3 = f"D:\\Database\\{args.source}.db"
+            args.sqlite3 = "D:\\Database\\database.db"
         else:
-            args.sqlite3 = f"/sdcard/Projects/Database/{args.source}.db"
+            args.sqlite3 = "/sdcard/Projects/Database/database.db"
     
-    global db_conn_instance, scraper_instance, app_args, VIDEOS_TABLE
+    global db_conn_instance, scrapers, app_args
     app_args = args
-    VIDEOS_TABLE = f"{args.source}_videos"
+    
+    sources = [s.strip().lower() for s in args.source.split(',') if s.strip()]
+    if not sources: sources = ['javtiful']
     
     # Xóa cache trong bộ nhớ khi khởi động hoặc tải lại để đảm bảo không có dữ liệu cũ
     global tags_cache
@@ -1927,18 +2045,25 @@ def main():
         
     rebuild_tags_fts(db_conn_instance)
     
-    source_module = load_source_module(args.source)
-    scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE)
+    scrapers = {}
+    for src in sources:
+        source_module = load_source_module(src)
+        scraper = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE)
+        scrapers[src] = scraper
+        
+        scanner = BackgroundScanner(
+            scraper, 
+            upgrade_all=args.upgrade_all,
+            news_threads=args.news_threads,
+            detail_threads=args.detail_threads,
+            videos_threads=args.videos_threads
+        )
+        scanner.start()
+        
     threading.Thread(target=background_db_worker, args=(db_conn_instance,), daemon=True).start()
-    scanner = BackgroundScanner(
-        scraper_instance, 
-        upgrade_all=args.upgrade_all,
-        news_threads=args.news_threads,
-        detail_threads=args.detail_threads,
-        videos_threads=args.videos_threads
-    )
-    scanner.start()
-    custom_log("System", f"✔️ {args.source.capitalize()} Player worker started at http://localhost:{args.port}")
+    
+    sources_str = " & ".join([s.capitalize() for s in sources])
+    custom_log("System", f"✔️ {sources_str} Player workers started at http://localhost:{args.port}")
         
     def graceful_exit(sig, frame):
         custom_log("System", "⚠️ Nhận tín hiệu dừng (Ctrl+C), đang lưu dữ liệu an toàn...")

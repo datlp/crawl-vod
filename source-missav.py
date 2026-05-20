@@ -109,7 +109,7 @@ class Scraper:
                     for vid in set(videos):
                         vid_id = vid[0]
                         self.db_buffer['videos'][vid_id] = {
-                            'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4], 'release_date_raw': vid[5], 'dvd': vid[6]
+                            'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4], 'release_date_raw': vid[5], 'dvd': vid[6], 'source': self.source_name
                         }
             custom_log(self.source_name, f"{self.source_name} {page} {len(videos)} video{'s' if len(videos) != 1 else ''}")
             return new_count, len(videos), total_pages
@@ -240,22 +240,22 @@ class Scraper:
                         
                         a_ids = []
                         for a in actress_arr:
-                            cursor.execute("INSERT OR IGNORE INTO actresses (name, other_names, source) VALUES (?, '[]', ?)", (a, self.source_name))
-                            cursor.execute("SELECT id FROM actresses WHERE name = ? AND source = ?", (a, self.source_name))
+                            cursor.execute("INSERT OR IGNORE INTO actresses (name, other_names, sources) VALUES (?, '[]', ?)", (a, self.source_name))
+                            cursor.execute("SELECT id FROM actresses WHERE name = ? AND sources = ?", (a, self.source_name))
                             a_id = cursor.fetchone()
                             if a_id: a_ids.append(str(a_id[0]))
                             
                         g_ids = []
                         for g in genre_arr:
-                            cursor.execute("INSERT OR IGNORE INTO genres (name, source) VALUES (?, ?)", (g, self.source_name))
-                            cursor.execute("SELECT id FROM genres WHERE name = ? AND source = ?", (g, self.source_name))
+                            cursor.execute("INSERT OR IGNORE INTO genres (name, sources) VALUES (?, ?)", (g, self.source_name))
+                            cursor.execute("SELECT id FROM genres WHERE name = ? AND sources = ?", (g, self.source_name))
                             g_id = cursor.fetchone()
                             if g_id: g_ids.append(str(g_id[0]))
                             
                         m_ids = []
                         if maker:
-                            cursor.execute("INSERT OR IGNORE INTO makers (name, source) VALUES (?, ?)", (maker, self.source_name))
-                            cursor.execute("SELECT id FROM makers WHERE name = ? AND source = ?", (maker, self.source_name))
+                            cursor.execute("INSERT OR IGNORE INTO makers (name, sources) VALUES (?, ?)", (maker, self.source_name))
+                            cursor.execute("SELECT id FROM makers WHERE name = ? AND sources = ?", (maker, self.source_name))
                             m_id = cursor.fetchone()
                             if m_id: m_ids.append(str(m_id[0]))
                             
