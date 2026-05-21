@@ -672,7 +672,7 @@ def get_counts():
         cursor = db_conn_instance.cursor()
         search_where_v = ""
         search_params = []
-        fts_join = ""
+        from_main = f"{VIDEOS_TABLE} v"
         
         if search_key:
             match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
@@ -681,33 +681,33 @@ def get_counts():
                 val = match_field.group(2).strip()
                 safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
                 if safe_val:
-                    fts_join = f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                    from_main = f"{VIDEOS_TABLE}_fts JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
                     search_where_v = f"{VIDEOS_TABLE}_fts MATCH ?"
                     search_params.append(f"{field} : ({safe_val})")
             else:
                 safe_key = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
                 if safe_key:
-                    fts_join = f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                    from_main = f"{VIDEOS_TABLE}_fts JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
                     search_where_v = f"{VIDEOS_TABLE}_fts MATCH ?"
                     search_params.append(safe_key)
 
         where_all = ("WHERE " + search_where_v) if search_where_v else ""
-        cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE} v {fts_join} {where_all}", search_params)
+        cursor.execute(f"SELECT COUNT(*) FROM {from_main} {where_all}", search_params)
         count_all = cursor.fetchone()[0]
         
         count_fav = 0
         count_recent = 0
         if identifier:
             where_fav = "WHERE f.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
-            cursor.execute(f"SELECT COUNT(*) FROM favorites f JOIN {VIDEOS_TABLE} v ON f.video_id = v.id {fts_join} {where_fav}", [identifier] + search_params)
+            cursor.execute(f"SELECT COUNT(*) FROM {from_main} JOIN favorites f ON f.video_id = v.id {where_fav}", [identifier] + search_params)
             count_fav = cursor.fetchone()[0]
             
             where_hist = "WHERE h.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
-            cursor.execute(f"SELECT COUNT(*) FROM history h JOIN {VIDEOS_TABLE} v ON h.video_id = v.id {fts_join} {where_hist}", [identifier] + search_params)
+            cursor.execute(f"SELECT COUNT(*) FROM {from_main} JOIN history h ON h.video_id = v.id {where_hist}", [identifier] + search_params)
             count_recent = cursor.fetchone()[0]
         
         where_glob = ("WHERE " + search_where_v) if search_where_v else ""
-        cursor.execute(f"SELECT COUNT(DISTINCT h.video_id) FROM history h JOIN {VIDEOS_TABLE} v ON h.video_id = v.id {fts_join} {where_glob}", search_params)
+        cursor.execute(f"SELECT COUNT(DISTINCT h.video_id) FROM {from_main} JOIN history h ON h.video_id = v.id {where_glob}", search_params)
         count_global = cursor.fetchone()[0]
 
     return jsonify({
@@ -735,6 +735,7 @@ def get_videos():
         params = []
         from_clause = f"{VIDEOS_TABLE} v"
         
+                
         if tab == 'favorites':
             if not identifier:
                 return jsonify({"items": [], "total": 0, "page": page})
@@ -866,8 +867,8 @@ def get_related():
         cursor = db_conn_instance.cursor()
         sql = f'''
             SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd
-            FROM {VIDEOS_TABLE} v
-            JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid
+            FROM {VIDEOS_TABLE}_fts
+            JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid
             WHERE {VIDEOS_TABLE}_fts MATCH ? AND v.id != ?
             ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.release_date DESC
             LIMIT 12
@@ -1351,9 +1352,9 @@ def search_suggestions():
                         if fts_query_for_history:
                             cursor.execute(f'''
                                 SELECT v.title, v.id, v.cover
-                                FROM history h
-                                JOIN {VIDEOS_TABLE} v ON h.video_id = v.id
-                                JOIN {VIDEOS_TABLE}_fts fts ON v.rowid = fts.rowid
+                                FROM {VIDEOS_TABLE}_fts fts
+                                JOIN {VIDEOS_TABLE} v ON v.rowid = fts.rowid
+                                JOIN history h ON h.video_id = v.id
                                 WHERE h.username = ? AND fts.{VIDEOS_TABLE}_fts MATCH ?
                                 ORDER BY bm25(fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, h.last_watched DESC
                                 LIMIT 5
@@ -1374,8 +1375,8 @@ def search_suggestions():
             try:
                 cursor.execute(f'''
                     SELECT v.title, v.id, v.cover
-                    FROM {VIDEOS_TABLE} v
-                    JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid
+                    FROM {VIDEOS_TABLE}_fts
+                    JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid
                     WHERE {VIDEOS_TABLE}_fts MATCH ?
                     ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC LIMIT 10
                 ''', (f"title : ({safe_key_or})",))
