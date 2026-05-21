@@ -319,7 +319,21 @@ class Scraper:
             return None
             
         movie_id = id_match.group(1)
-        api_url = f"https://{self.domain}/wp-json/sextop1/player/?id={movie_id}&server=1"
+        
+        servers_to_try = [1, 2, 3, 4]
+        if force_refresh:
+            try:
+                with self.db_lock:
+                    cursor = self.db_conn.cursor()
+                    cursor.execute("SELECT server FROM play_configs WHERE video_id = ?", (vid_id,))
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        last_server = int(row[0])
+                        if last_server in servers_to_try:
+                            servers_to_try.remove(last_server)
+                            servers_to_try.append(last_server)
+            except Exception:
+                pass
         
         headers = {
             "accept": "application/json, text/javascript, */*; q=0.01",
@@ -329,30 +343,32 @@ class Scraper:
             "user-agent": self.user_agent
         }
         
-        try:
-            res_api = self.session.get(api_url, headers=headers, timeout=15)
-            if res_api.status_code == 200:
-                data_html = res_api.json().get("data", "")
-                m3u8_match = re.search(r"file:\s*'([^']+index\.m3u8)'", data_html)
-                if m3u8_match:
-                    m3u8_url = m3u8_match.group(1).replace(r"\/", "/")
-                    
-                    jw_key = ""
-                    key_match = re.search(r'jwplayer\.key\s*=\s*["\']([^"\']+)["\']', data_html)
-                    if key_match:
-                        jw_key = key_match.group(1)
-                        m3u8_url = f"{m3u8_url}#jwkey={jw_key}"
+        for server_num in servers_to_try:
+            api_url = f"https://{self.domain}/wp-json/sextop1/player/?id={movie_id}&server={server_num}"
+            try:
+                res_api = self.session.get(api_url, headers=headers, timeout=15)
+                if res_api.status_code == 200:
+                    data_html = res_api.json().get("data", "")
+                    m3u8_match = re.search(r"file:\s*'([^']+index\.m3u8)'", data_html)
+                    if m3u8_match:
+                        m3u8_url = m3u8_match.group(1).replace(r"\/", "/")
                         
-                    with self.db_lock:
-                        cursor = self.db_conn.cursor()
-                        cursor.execute("INSERT OR REPLACE INTO play_configs (video_id, jwplayer_key, server) VALUES (?, ?, ?)", (vid_id, jw_key, "1"))
-                        self.db_conn.commit()
-                        
-                    with self.memory_lock:
-                        self.db_buffer['video_urls'][vid_id] = m3u8_url
-                    return m3u8_url
-        except Exception as e:
-            custom_log(self.source_name, f"❌ Lỗi lấy API Link: {e}")
+                        jw_key = ""
+                        key_match = re.search(r'jwplayer\.key\s*=\s*["\']([^"\']+)["\']', data_html)
+                        if key_match:
+                            jw_key = key_match.group(1)
+                            m3u8_url = f"{m3u8_url}#jwkey={jw_key}"
+                            
+                        with self.db_lock:
+                            cursor = self.db_conn.cursor()
+                            cursor.execute("INSERT OR REPLACE INTO play_configs (video_id, jwplayer_key, server) VALUES (?, ?, ?)", (vid_id, jw_key, str(server_num)))
+                            self.db_conn.commit()
+                            
+                        with self.memory_lock:
+                            self.db_buffer['video_urls'][vid_id] = m3u8_url
+                        return m3u8_url
+            except Exception as e:
+                custom_log(self.source_name, f"❌ Lỗi lấy API Link server {server_num}: {e}")
             
         return None
 

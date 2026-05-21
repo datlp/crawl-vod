@@ -240,6 +240,21 @@ class Scraper:
 
         custom_log(self.source_name, f"⏳ Fetching video URL for {vid_id}")
 
+        servers_to_try = [2, 1, 3, 4]
+        if force_refresh:
+            try:
+                with self.db_lock:
+                    cursor = self.db_conn.cursor()
+                    cursor.execute("SELECT server FROM play_configs WHERE video_id = ?", (vid_id,))
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        last_server = int(row[0])
+                        if last_server in servers_to_try:
+                            servers_to_try.remove(last_server)
+                            servers_to_try.append(last_server)
+            except Exception:
+                pass
+
         fail_count = 0
         while fail_count < 3:
             try:
@@ -247,7 +262,7 @@ class Scraper:
                 referer_url = f"https://{self.domain}/video/{vid_id}/"
                 mp4_url = None
                 
-                for server_num in [2, 1, 3, 4]:
+                for server_num in servers_to_try:
                     payload = {
                         'vlxx_server': '0',
                         'id': numeric_id,
