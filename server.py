@@ -998,12 +998,16 @@ def proxy_video():
             resp_headers['Access-Control-Allow-Origin'] = '*'
             
             def generate_fallback():
-                for chunk in res.iter_content(chunk_size=128*1024):
-                    if chunk:
-                        yield chunk
-                        global global_last_request_time
-                        global_last_request_time = time.time()
-                res.close()
+                try:
+                    for chunk in res.iter_content(chunk_size=128*1024):
+                        if chunk:
+                            yield chunk
+                            global global_last_request_time
+                            global_last_request_time = time.time()
+                except GeneratorExit:
+                    pass
+                finally:
+                    res.close()
             return Response(generate_fallback(), status=res.status_code, headers=resp_headers)
             
         # Bước 2: Proxy Đa luồng (Hoạt động giống IDM để tăng tốc stream)
@@ -1021,7 +1025,12 @@ def proxy_video():
         if end >= total_size:
             end = total_size - 1
             
-        chunk_size = 256 * 1024  # 0.5MB mỗi khối (tối ưu cho 720p và tua cực mượt)
+        source_name_upper = getattr(scraper_instance, 'source_name', '').upper()
+        if source_name_upper == 'VLXX':
+            chunk_size = 1024 * 1024  # 1MB mỗi khối cho VLXX (Google Photos thường block nếu request nhiều chunk nhỏ)
+        else:
+            chunk_size = 256 * 1024   # 0.25MB cho các server khác
+            
         ranges_to_fetch = []
         curr = start
         while curr <= end:
@@ -1040,27 +1049,45 @@ def proxy_video():
             status_code = 206
             resp_headers['Content-Range'] = f'bytes {start}-{end}/{total_size}'
             
+        abort_event = threading.Event()
+            
         def fetch_range(r):
             for _ in range(3): # Thử tối đa 3 lần nếu có lỗi tải khối này
+                if abort_event.is_set():
+                    return None
                 try:
-                    res = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=15)
-                    if res.status_code in (200, 206): return res.content
+                    # Dùng stream=True để ngắt kết nối lập tức (I/O Blocking fix) khi client hủy
+                    res = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=15, stream=True)
+                    if res.status_code in (200, 206):
+                        data = bytearray()
+                        for chunk in res.iter_content(chunk_size=128*1024):
+                            if abort_event.is_set():
+                                res.close()
+                                return None
+                            if chunk:
+                                data.extend(chunk)
+                        return bytes(data)
                 except Exception:
                     time.sleep(1)
             return None
             
         def generate_multithread():
             global global_last_request_time
-            max_workers = 9
+            if source_name_upper == 'VLXX':
+                max_workers = 4 # Giảm luồng cho VLXX tránh rate limit Google
+                window_size = max_workers * 2
+            else:
+                max_workers = 9
+                window_size = max_workers * 2
+                
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
             try:
-                window_size = max_workers * 2 # Nạp trước một số khối (khoảng 4.5MB RAM) để luồng không bị rảnh rỗi
                 futures = {}
                 submit_idx = 0
                 
                 def submit_next():
                     nonlocal submit_idx
-                    if submit_idx < len(ranges_to_fetch):
+                    if submit_idx < len(ranges_to_fetch) and not abort_event.is_set():
                         futures[submit_idx] = executor.submit(fetch_range, ranges_to_fetch[submit_idx])
                         submit_idx += 1
                         
@@ -1082,8 +1109,11 @@ def proxy_video():
                         submit_next()
                         yield_idx += 1
                     else:
-                        return # Ngắt quá trình stream nếu gặp block lỗi nặng
+                        break # Ngắt quá trình stream nếu gặp block lỗi nặng hoặc client abort
+            except GeneratorExit:
+                abort_event.set()
             finally:
+                abort_event.set()
                 if sys.version_info >= (3, 9): executor.shutdown(wait=False, cancel_futures=True)
                 else: executor.shutdown(wait=False)
                 
