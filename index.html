@@ -1930,10 +1930,11 @@
         let fastSeekInterval = null;
         let originalPlaybackRate = 1;
         let originalWasPlaying = false;
+        let isFastSeekingActive = false;
         const fastSeekIndicator = document.getElementById('fast-seek-indicator');
 
         function startFastSeek(player, speed) {
-            if (fastSeekIndicator.style.display === 'block') {
+            if (isFastSeekingActive) {
                 if (fastSeekInterval) {
                     clearInterval(fastSeekInterval);
                     fastSeekInterval = null;
@@ -1941,12 +1942,12 @@
             } else {
                 originalPlaybackRate = player.playbackRate();
                 originalWasPlaying = !player.paused();
+                isFastSeekingActive = true;
             }
             
             if (speed > 0) {
                 player.playbackRate(speed);
                 if (!originalWasPlaying) player.play();
-                fastSeekIndicator.innerHTML = '⏩ x' + speed;
             } else {
                 player.pause(); // Dừng video để tua ngược
                 fastSeekInterval = setInterval(() => {
@@ -1955,13 +1956,13 @@
                     player.currentTime(newTime);
                     if (newTime === 0) stopFastSeek();
                 }, 100);
-                fastSeekIndicator.innerHTML = '⏪ x' + Math.abs(speed);
             }
-            fastSeekIndicator.style.display = 'block';
         }
 
         function stopFastSeek() {
-            fastSeekIndicator.style.display = 'none';
+            if (!isFastSeekingActive) return;
+            isFastSeekingActive = false;
+            
             if (!activePlayer) return;
             const player = activePlayer;
             
