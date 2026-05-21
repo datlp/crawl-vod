@@ -962,11 +962,30 @@
             updateSearchVisuals();
         });
 
+        let isInteractingWithSuggestions = false;
+        const searchSuggestionsContainer = document.getElementById('search-suggestions');
+
+        const setInteracting = () => { isInteractingWithSuggestions = true; };
+        const clearInteracting = () => { setTimeout(() => { isInteractingWithSuggestions = false; }, 300); };
+
+        searchSuggestionsContainer.addEventListener('touchstart', setInteracting, { passive: true });
+        searchSuggestionsContainer.addEventListener('mousedown', setInteracting, { passive: true });
+        searchSuggestionsContainer.addEventListener('touchend', clearInteracting, { passive: true });
+        searchSuggestionsContainer.addEventListener('mouseup', clearInteracting, { passive: true });
+
+        searchSuggestionsContainer.addEventListener('touchmove', () => {
+            if (document.activeElement === videoSearchInput) {
+                videoSearchInput.blur();
+            }
+        }, { passive: true });
+
         videoSearchInput.addEventListener('blur', () => {
             updateSearchVisuals();
             setTimeout(() => {
-                const sug = document.getElementById('search-suggestions');
-                if(sug) sug.style.display = 'none';
+                if (!isInteractingWithSuggestions) {
+                    const sug = document.getElementById('search-suggestions');
+                    if(sug) sug.style.display = 'none';
+                }
             }, 200);
         });
 
@@ -976,6 +995,15 @@
                 performSearch();
             }
         });
+
+        const hideSuggestionsOutside = (e) => {
+            if (!e.target.closest('#search-container')) {
+                const sug = document.getElementById('search-suggestions');
+                if (sug) sug.style.display = 'none';
+            }
+        };
+        document.addEventListener('touchstart', hideSuggestionsOutside, { passive: true });
+        document.addEventListener('mousedown', hideSuggestionsOutside, { passive: true });
 
         function showToast(msg, type = 'info') {
             const container = document.getElementById('toastContainer');
