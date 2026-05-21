@@ -411,6 +411,7 @@
         let currentPlayingVideo = null;
         let currentRenderId = 0;
         let lastNavTime = 0;
+        let currentFetchId = 0;
         
         let isSeekingUI = false;
         let seekThrottleTimeout = null;
@@ -984,6 +985,8 @@
                 videos = [];
                 currentPage = 1;
                 hasMore = true;
+                isLoading = false;
+                currentFetchId++;
                 currentVideoIndex = -1;
                 currentDetailIndex = -1;
                 galleryGrid.innerHTML = '';
@@ -1505,6 +1508,8 @@
             videos = [];
             currentPage = 1;
             hasMore = true;
+            isLoading = false;
+            currentFetchId++;
             currentVideoIndex = -1;
             currentDetailIndex = -1;
             galleryGrid.innerHTML = '';
@@ -1525,6 +1530,9 @@
                 p.delete('id');
                 history.pushState(null, '', `/?${p.toString()}`);
                 handleNavigation();
+            } else {
+                const sug = document.getElementById('search-suggestions');
+                if(sug) sug.style.display = 'none';
             }
         });
 
@@ -1605,10 +1613,14 @@
             isLoading = true;
             document.getElementById('load-more').style.display = 'block';
 
+            const fetchId = currentFetchId;
+
             try {
                 let url = `${API_URL}?page=${currentPage}&search_key=${encodeURIComponent(searchKey || '')}&tab=${currentTab || 'all'}`;
                 const data = await apiFetch(url);
                 
+                if (fetchId !== currentFetchId) return;
+
                 if (data.total !== undefined) {
                     document.getElementById('video-search').placeholder = `Tìm kiếm trong ${data.total} videos...`;
                 }
@@ -1671,8 +1683,10 @@
             } catch (error) {
                 console.error('Fetch error:', error);
             } finally {
-                isLoading = false;
-                document.getElementById('load-more').style.display = 'none';
+                if (fetchId === currentFetchId) {
+                    isLoading = false;
+                    document.getElementById('load-more').style.display = 'none';
+                }
             }
         }
 
