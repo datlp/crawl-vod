@@ -1,12 +1,21 @@
 import os
 import re
 import sys
+import subprocess
 from bs4 import BeautifulSoup
 import httpx
 import uvicorn
 from fastapi import FastAPI, Request, HTTPException, Response
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+
+try:
+    from playwright.async_api import async_playwright
+except ImportError:
+    print("Đang cài đặt thư viện Playwright để lắng nghe network...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright"])
+    subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+    from playwright.async_api import async_playwright
 
 app = FastAPI(title="JAV.GURU Engine - Multi-Movie Automation Proxy")
 
@@ -42,67 +51,246 @@ async def extract_and_proxy_m3u8(guru_url: str):
     print(f"-> URL Gốc: {guru_url}")
     print(f"=======================================================")
 
+    m3u8_real_url = None
+    iframe_url = None
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent=HEADERS["User-Agent"]
+        )
+        page = await context.new_page()
+
+        async def handle_response(response):
+            nonlocal m3u8_real_url
+            if m3u8_real_url:
+                return
+                
+            url = response.url
+            
+            # Pattern cho các link stream: m3u8, mp4 của SB/ST, hls, token stream, index-f3...
+            stream_pattern = r'\.m3u8|\.mp4(?:\?stream=1)?|/hls|token=[^\&]+&expiry=|\.urlset/.*\.txt'
+            
+            # Bắt trực tiếp link luồng
+            if re.search(stream_pattern, url) and "blank.mp4" not in url:
+                print(f"  [NETWORK INTERCEPT] Phát hiện link Stream trực tiếp từ: {url}")
+                m3u8_real_url = url
+                return
+
+            # Lắng nghe các gói tin API trả về (Fallback)
+            if response.request.resource_type in ["xhr", "fetch"]:
+                # Bỏ qua các gói tin của hệ thống chống bot Cloudflare
+                if "challenge-platform" in url or "lenge-platform" in url:
+                    return
+
+                try:
+                    text = await response.text()
+                    
+                    # LOG CHI TIẾT CÁC GÓI API GỌI VỀ
+                    content_type = response.headers.get("content-type", "unknown")
+                    print(f"  [DEBUG API] Yêu cầu: {response.request.method} {url}")
+                    print(f"  ↳ Định dạng trả về (Content-Type): {content_type}")
+                    
+                    if "application/json" in content_type or text.startswith("{") or text.startswith("["):
+                        try:
+                            import json
+                            parsed = json.loads(text)
+                            print(f"  ↳ Dữ liệu (JSON): {str(parsed)[:250]}...")
+                        except:
+                            print(f"  ↳ Dữ liệu (Dạng Text): {text[:250]}...")
+                    else:
+                        print(f"  ↳ Dữ liệu (Dạng Text): {text[:250]}...")
+                            
+                    text_normalized = text.replace(r'\/', '/')
+                    api_pattern = r'(https?://[^\'"]+(?:\.m3u8|\.mp4|/hls|token=[^\&]+&expiry=|\.urlset/[^\'"]+\.txt)[^\'"]*)'
+                    match = re.search(api_pattern, text_normalized)
+                    if match and not m3u8_real_url and "blank.mp4" not in match.group(1):
+                        print(f"  [NETWORK INTERCEPT] Phân tích API Response từ: {url}")
+                        m3u8_real_url = match.group(1)
+                        print(f"  ↳ [PASS] Bắt được Link Stream từ API: {m3u8_real_url}")
+                except Exception:
+                    pass
+
+        page.on("response", handle_response)
+
+        try:
+            # BƯỚC 1: CÀO TẦNG CHI TIẾT GURU BẰNG PLAYWRIGHT
+            print("[Bước 1/5] Đang mở trình duyệt Playwright và truy cập JAV.GURU...")
+            await page.goto(guru_url, wait_until="domcontentloaded", timeout=30000)
+            print("  ↳ [PASS] Đã tải xong trang JAV.GURU.")
+
+            # BƯỚC 2: CLICK VÀO SERVER SB / ST NẾU CÓ
+            print("[Bước 2/5] Đang quét và click chọn Server SB / ST...")
+            selector = "ul#section-li li a"
+            server_buttons = await page.query_selector_all(selector)
+            clicked = False
+            for btn in server_buttons:
+                btn_text = await btn.inner_text()
+                btn_href = await btn.get_attribute("href")
+                if "STREAM SB" in btn_text or "STREAM ST" in btn_text:
+                    print(f"  [ACTION] Đã tìm thấy DOM thông qua querySelector: '{selector}'")
+                    print(f"  ↳ Text: '{btn_text.strip()}' | Href: '{btn_href}'")
+                    print(f"  ↳ Tiến hành click vào thẻ này để kích hoạt luồng gọi API Video...")
+                    await btn.click()
+                    clicked = True
+                    break
+            
+            if not clicked:
+                print(f"  [INFO] Không tìm thấy nút STREAM SB/ST qua selector '{selector}', dùng server mặc định...")
+
+            # BƯỚC 3: QUÉT NETWORK VÀ CHỜ YÊU CẦU API (10s)
+            print("[Bước 3/5] Lắng nghe luồng mạng tìm link Stream...")
+            for _ in range(20):
+                if m3u8_real_url:
+                    break
+                await page.wait_for_timeout(500)
+
+            if not m3u8_real_url:
+                print("  [INFO] Chưa bắt được request. Đang quét tìm Iframe để đi sâu vào trong...")
+                
+                # Lấy tất cả SRC của iframe thành chuỗi text trước để tránh lỗi "Execution context was destroyed" khi chuyển trang
+                iframe_elements = await page.query_selector_all('iframe')
+                iframe_urls = []
+                for el in iframe_elements:
+                    try:
+                        src = await el.get_attribute('src')
+                        if src and "creative.mnaspm.com" not in src:
+                            iframe_urls.append(src)
+                    except Exception: pass
+                    
+                for iframe_src in iframe_urls:
+                    if m3u8_real_url: break
+                    
+                    iframe_url = iframe_src if iframe_src.startswith('http') else 'https:' + iframe_src
+                    print(f"  ↳ [PASS] Tìm thấy Iframe: {iframe_url}")
+                    
+                    print("[Bước 4/5] Truy cập trực tiếp vào Iframe để kích hoạt Network...")
+                    try:
+                        await page.goto(iframe_url, wait_until="domcontentloaded", timeout=20000)
+                        
+                        page_html = await page.content()
+                        
+                        # XỬ LÝ CLOUDFLARE CHALLENGE BÊN TRONG IFRAME
+                        if "__CF$cv$params" in page_html or "challenge-platform" in page_html:
+                            print(f"  [INFO] 🛡️ Iframe đang bị Cloudflare chặn! Đợi 10s để Vệ sĩ Playwright giải mã...")
+                            await page.wait_for_timeout(10000)
+                            page_html = await page.content() # Nạp lại mã nguồn sau khi CF tự động reload
+                            
+                        # Bóc mã nguồn HTML khi đi vào đúng iframe searcho
+                        if "searcho/?xd=" in iframe_url:
+                            print("  [DEBUG HTML] Đã load thẳng vào Iframe searcho, in mã nguồn:")
+                            print("  ----------------------------------------------------")
+                            print(f"{page_html[:100000]}...\n  ----------------------------------------------------")
+                    except Exception as e:
+                        print(f"    ↳ Lỗi load iframe: {e}")
+                        continue
+                    
+                    # Cố gắng click vào giữa màn hình để kích hoạt nếu Player yêu cầu tương tác
+                    print("  [ACTION] Click giả lập vào Player để kích hoạt Network...")
+                    try:
+                        await page.mouse.click(640, 360)
+                        await page.wait_for_timeout(500)
+                        await page.mouse.click(640, 360)
+                    except Exception:
+                        pass
+                        
+                    print("  ↳ Chờ đợi gói tin API từ Iframe...")
+                    for _ in range(10):
+                        if m3u8_real_url: break
+                        await page.wait_for_timeout(1000)
+                        
+                    if not m3u8_real_url:
+                        print("  ↳ Quét tìm Iframe lồng nhau (Nested Iframe)...")
+                        nested_iframes = await page.query_selector_all('iframe')
+                        nested_urls = []
+                        for n in nested_iframes:
+                            try:
+                                n_src = await n.get_attribute('src')
+                                if n_src and "creative.mnaspm.com" not in n_src:
+                                    nested_urls.append(n_src)
+                            except Exception: pass
+                            
+                        for n_src in nested_urls:
+                            if m3u8_real_url: break
+                            n_url = n_src if n_src.startswith('http') else 'https:' + n_src
+                            print(f"    ↳ [PASS] Tìm thấy Nested Iframe: {n_url}")
+                            try:
+                                await page.goto(n_url, wait_until="domcontentloaded", timeout=20000)
+                                
+                                n_html = await page.content()
+                                
+                                # XỬ LÝ CLOUDFLARE BÊN TRONG NESTED IFRAME
+                                if "__CF$cv$params" in n_html or "challenge-platform" in n_html:
+                                    print(f"    [INFO] 🛡️ Nested Iframe đang bị Cloudflare chặn! Đợi 10s để giải mã...")
+                                    await page.wait_for_timeout(10000)
+                                    n_html = await page.content()
+                                
+                                # Bóc mã nguồn HTML của Nested Iframe
+                                if "searcho/?xd=" in n_url:
+                                    print("    [DEBUG HTML] Đã load thẳng vào Nested Iframe searcho, in mã nguồn:")
+                                    print("    ----------------------------------------------------")
+                                    print(f"{n_html[:1500]}...\n    ----------------------------------------------------")
+                                    
+                                try:
+                                    await page.mouse.click(640, 360)
+                                    await page.wait_for_timeout(500)
+                                    await page.mouse.click(640, 360)
+                                except Exception: pass
+                                
+                                for _ in range(10):
+                                    if m3u8_real_url: break
+                                    await page.wait_for_timeout(1000)
+                            except Exception: pass
+
+            if not m3u8_real_url:
+                print("  [INFO] Đang dùng Fallback DOM để quét thẻ <video>...")
+                try:
+                    for _ in range(3):
+                        if m3u8_real_url: break
+                        video_tags = await page.query_selector_all('video')
+                        for v in video_tags:
+                            src = await v.get_attribute('src')
+                            if src and src.startswith('http'):
+                                print(f"  [DOM INTERCEPT] Tìm thấy thẻ <video src=...>: {src}")
+                                m3u8_real_url = src
+                                break
+                        await page.wait_for_timeout(1000)
+                except Exception:
+                    pass
+
+            if not m3u8_real_url:
+                print("❌ [THẤT BẠI] Không bắt được link stream từ Network.")
+                raise HTTPException(status_code=404, detail="Không bắt được link stream gốc")
+
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
+            print(f"💥 [CRASH] Lỗi Playwright: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            await browser.close()
+
     async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
         try:
-            # BƯỚC 1: CÀO TẦNG CHI TIẾT GURU
-            print("[Bước 1/5] Đang truy cập trang chi tiết JAV.GURU...")
-            res_page = await client.get(guru_url, headers=HEADERS)
+            # BƯỚC 5: TẢI LUỒNG TEXT GỐC VÀ XỬ LÝ URL
+            print(f"[Bước 5/5] Đang xử lý link Stream: {m3u8_real_url}")
             
-            if res_page.status_code != 200:
-                print(f"❌ [THẤT BẠI] Bước 1 lỗi. HTTP Status Code: {res_page.status_code}")
-                raise HTTPException(status_code=res_page.status_code, detail="Lỗi truy cập trang Guru gốc")
-            print("  ↳ [PASS] Đã tải xong HTML trang chi tiết.")
-
-            # BƯỚC 2: QUÉT IFRAME PLAYER TRANG CHI TIẾT
-            print("[Bước 2/5] Đang quét tìm thẻ Iframe phát phim...")
-            iframe_match = re.search(r'<iframe\s+src="([^"]+)"', res_page.text) or re.search(r"iframe\s+src='([^']+)'", res_page.text)
-            
-            if not iframe_match:
-                print("❌ [THẤT BẠI] Bước 2 lỗi. Không tìm thấy chuỗi regex khớp với thẻ <iframe> trong HTML.")
-                raise HTTPException(status_code=404, detail="Không tìm thấy thẻ Iframe phát phim")
+            # Nếu là link MP4 hoặc token stream, ta trả về Redirect để Player tự phát
+            if ".mp4" in m3u8_real_url or "token=" in m3u8_real_url:
+                print(f"✅ [CASE SUCCESS] HOÀN THÀNH BÓC TÁCH CHO PHIM: {movie_name}! Trả về Redirect link.")
+                return RedirectResponse(url=m3u8_real_url)
                 
-            iframe_url = iframe_match.group(1)
-            if iframe_url.startswith("//"):
-                iframe_url = "https:" + iframe_url
-            print(f"  ↳ [PASS] Tìm thấy Link Iframe: {iframe_url}")
-
-            # BƯỚC 3: CÀO TRANG NHÚNG IFRAME (GẮN REFERER)
-            print("[Bước 3/5] Đang truy cập ngầm vào trang nhúng Iframe...")
-            headers_iframe = HEADERS.copy()
-            headers_iframe["Referer"] = guru_url # Ép Referer cha để tránh chặn chống cào
-            res_iframe = await client.get(iframe_url, headers=headers_iframe)
-            
-            if res_iframe.status_code != 200:
-                print(f"❌ [THẤT BẠI] Bước 3 lỗi. Server Iframe từ chối (HTTP {res_iframe.status_code}). Có thể bị dính Cloudflare.")
-                raise HTTPException(status_code=res_iframe.status_code, detail="Lỗi truy cập vào trang nhúng iframe")
-            print("  ↳ [PASS] Đã đọc được kết cấu trang nguồn Player.")
-
-            # BƯỚC 4: LỘT TRẦN LINK M3U8 TỪ TRANG IFRAME
-            print("[Bước 4/5] Đang dùng Regex trích xuất link luồng phát .m3u8 gốc...")
-            stream_match = re.search(r'"file"\s*:\s*"([^"]+)"', res_iframe.text) or \
-                           re.search(r"file\s*:\s*'([^']+)'", res_iframe.text) or \
-                           re.search(r'src\s*:\s*"([^"]+\.m3u8[^"]*)"', res_iframe.text)
-            
-            if not stream_match:
-                print("❌ [THẤT BẠI] Bước 4 lỗi. Không tìm thấy chuỗi '.m3u8' trong script cấu hình của Player nguồn.")
-                # Gợi ý: Ghi lại mã nguồn iframe ra file để check xem họ có đổi cấu trúc sang mã hóa Base64 không
-                with open("debug_iframe_source.html", "w", encoding="utf-8") as debug_file:
-                    debug_file.write(res_iframe.text)
-                print("  ↳ [HỖ TRỢ DEBUG] Đã xuất mã nguồn Iframe ra file 'debug_iframe_source.html' để bạn tiện phân tích mẫu script mới.")
-                raise HTTPException(status_code=404, detail="Không tìm thấy link m3u8 gốc")
-                
-            m3u8_real_url = stream_match.group(1).replace(r"\/", "/")
-            print(f"  ↳ [PASS] Trích xuất thành công Link M3u8 gốc: {m3u8_real_url}")
-
-            # BƯỚC 5: TẢI LUỒNG TEXT M3U8 GỐC & VÁ ĐƯỜNG DẪN TƯƠNG ĐỐI
-            print("[Bước 5/5] Đang nạp nội dung file m3u8 và đồng bộ hóa đường dẫn...")
             headers_m3u8 = HEADERS.copy()
-            headers_m3u8["Referer"] = iframe_url
+            if iframe_url:
+                headers_m3u8["Referer"] = iframe_url
+            else:
+                headers_m3u8["Referer"] = guru_url
+                
             res_m3u8 = await client.get(m3u8_real_url, headers=headers_m3u8)
             
             if res_m3u8.status_code != 200:
-                print(f"❌ [THẤT BẠI] Bước 5 lỗi. Link m3u8 gốc trả về lỗi HTTP {res_m3u8.status_code}")
-                raise HTTPException(status_code=res_m3u8.status_code, detail="Không thể tải ruột file m3u8")
+                print(f"❌ [THẤT BẠI] Bước 5 lỗi. Link stream gốc trả về lỗi HTTP {res_m3u8.status_code}")
+                raise HTTPException(status_code=res_m3u8.status_code, detail="Không thể tải ruột file stream")
                 
             # Sửa lỗi đường dẫn tương đối (Vá link .ts rác thành link tuyệt đối chứa domain)
             m3u8_content = res_m3u8.text
@@ -118,11 +306,13 @@ async def extract_and_proxy_m3u8(guru_url: str):
             
             final_m3u8_text = "\n".join(clean_lines)
             
-            print(f"✅ [CASE SUCCESS] HOÀN THÀNH BÓC TÁCH CHO PHIM: {movie_name}! Đã trả dòng m3u8 về cho Client.")
+            print(f"✅ [CASE SUCCESS] HOÀN THÀNH BÓC TÁCH CHO PHIM: {movie_name}! Đã trả dòng text stream về cho Client.")
             return Response(content=final_m3u8_text, media_type="application/x-mpegURL")
             
         except Exception as e:
-            print(f"💥 [CRASH] Lỗi hệ thống ngoài tầm kiểm soát: {str(e)}")
+            if isinstance(e, HTTPException):
+                raise e
+            print(f"💥 [CRASH] Lỗi hệ thống HTTPX: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/proxy-segment")
