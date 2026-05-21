@@ -738,7 +738,7 @@
                 
                 const delBtn = item.querySelector('.delete-history-btn');
                 if (delBtn) {
-                    delBtn.onmousedown = (e) => {
+                    delBtn.onclick = (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         
@@ -770,7 +770,7 @@
                     };
                 }
                 
-                item.onmousedown = (e) => {
+                item.onclick = (e) => {
                     if (e.target.closest('.delete-history-btn')) return;
                     e.preventDefault();
                     
@@ -832,7 +832,7 @@
                     chip.className = `detail-chip chip-${typeClass}`;
                     chip.innerHTML = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 4px;">${icon}</span>${s.text}`;
                     
-                    chip.onmousedown = (e) => {
+                    chip.onclick = (e) => {
                         e.preventDefault();
                         videoSearchInput.value = `${typeClass}:"${s.text}"`;
                         clearSearchBtn.style.display = 'block';
@@ -877,7 +877,7 @@
                         </div>
                     `;
                     
-                    item.onmousedown = (e) => {
+                    item.onclick = (e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         videoSearchInput.value = s.text;
