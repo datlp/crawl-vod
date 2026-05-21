@@ -462,6 +462,11 @@
             <div id="gallery-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none;">
                 <button id="tabAll" class="mui-tab active">Tất cả <span class="tab-badge" id="badge-all">0</span></button>
                 <button id="tabGlobalFrequent" class="mui-tab">Top thế giới <span class="tab-badge" id="badge-global_frequent">0</span></button>
+                <div style="width: 1px; background: rgba(255,255,255,0.12); margin: 10px 4px;"></div>
+                <a id="linkJavtiful" class="mui-tab" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> Javtiful</a>
+                <a id="linkMissav" class="mui-tab" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> MissAV</a>
+                <a id="linkVlxx" class="mui-tab" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> VLXX</a>
+                <a id="linkSextop1" class="mui-tab" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> Sextop1</a>
             </div>
             <div id="gallery-grid" class="gallery-grid"></div>
             <div id="load-more" style="text-align: center; padding: 15px; color: #aaa; font-size: 14px; display: none;">Đang tải thêm...</div>
@@ -3247,6 +3252,7 @@
 
         // Khởi tạo ứng dụng
         async function initApp() {
+            setupExternalLinks();
             await initSessionId();
             
             const urlParams = new URLSearchParams(window.location.search);
@@ -3267,6 +3273,34 @@
             handleNavigation();
             updateIdentityDisplay();
         }
+
+        function setupExternalLinks() {
+            const hostname = window.location.hostname;
+            const protocol = window.location.protocol;
+            const port = window.location.port || (protocol === 'https:' ? '443' : '80');
+
+            const links = [
+                { id: 'linkJavtiful', port: '5004', name: 'Javtiful' },
+                { id: 'linkMissav', port: '5003', name: 'MissAV' },
+                { id: 'linkVlxx', port: '5002', name: 'VLXX' },
+                { id: 'linkSextop1', port: '5001', name: 'Sextop1' }
+            ];
+
+            links.forEach(link => {
+                const el = document.getElementById(link.id);
+                if (el) {
+                    el.href = `${protocol}//${hostname}:${link.port}`;
+                    if (port === link.port) {
+                        el.classList.add('active');
+                        el.removeAttribute('target');
+                        el.href = 'javascript:void(0)';
+                        el.style.cursor = 'default';
+                        el.innerHTML = `<span class="material-symbols-outlined" style="font-size: 16px;">check_circle</span> ${link.name}`;
+                    }
+                }
+            });
+        }
+
         initApp();
         
     </script>
