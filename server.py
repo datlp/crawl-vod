@@ -17,6 +17,7 @@ import difflib
 import signal
 import queue
 import unicodedata
+import contextlib
 from urllib.parse import urlparse, parse_qs, quote
 
 
@@ -114,6 +115,19 @@ def extract_clean_keywords_bulletproof(text):
     return list(dict.fromkeys(words))
 
 VIDEOS_TABLE = "javtiful_videos"
+
+@contextlib.contextmanager
+def sqlite_timeout(conn, timeout=2.0):
+    start = time.time()
+    def handler():
+        if time.time() - start > timeout:
+            return 1
+        return 0
+    conn.set_progress_handler(handler, 10000)
+    try:
+        yield
+    finally:
+        conn.set_progress_handler(None, 0)
 
 def flush_db_buffer(db_conn):
     with memory_lock:
@@ -651,57 +665,64 @@ def get_counts():
     search_key = request.args.get('search_key', '').strip()
     identifier = get_identifier()
     
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        search_where_v = ""
-        search_params = []
-        from_main = f"{VIDEOS_TABLE} v"
+    try:
+        with db_lock:
+            with sqlite_timeout(db_conn_instance, 2.0):
+                cursor = db_conn_instance.cursor()
+                search_where_v = ""
+                search_params = []
+                from_main = f"{VIDEOS_TABLE} v"
+                
+                if search_key:
+                    match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
+                    if match_field:
+                        field = match_field.group(1).lower()
+                        val = match_field.group(2).strip()
+                        safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
+                        if safe_val:
+                            from_main = f"{VIDEOS_TABLE}_fts JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                            search_where_v = f"{VIDEOS_TABLE}_fts MATCH ?"
+                            search_params.append(f"{field} : ({safe_val})")
+                    else:
+                        safe_key = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
+                        if safe_key:
+                            from_main = f"{VIDEOS_TABLE}_fts JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                            search_where_v = f"{VIDEOS_TABLE}_fts MATCH ?"
+                            search_params.append(safe_key)
         
-        if search_key:
-            match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
-            if match_field:
-                field = match_field.group(1).lower()
-                val = match_field.group(2).strip()
-                safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
-                if safe_val:
-                    from_main = f"{VIDEOS_TABLE}_fts JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
-                    search_where_v = f"{VIDEOS_TABLE}_fts MATCH ?"
-                    search_params.append(f"{field} : ({safe_val})")
-            else:
-                safe_key = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
-                if safe_key:
-                    from_main = f"{VIDEOS_TABLE}_fts JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
-                    search_where_v = f"{VIDEOS_TABLE}_fts MATCH ?"
-                    search_params.append(safe_key)
-
-        where_all = ("WHERE " + search_where_v) if search_where_v else ""
-        cursor.execute(f"SELECT COUNT(*) FROM {from_main} {where_all}", search_params)
-        count_all = cursor.fetchone()[0]
+                where_all = ("WHERE " + search_where_v) if search_where_v else ""
+                cursor.execute(f"SELECT COUNT(*) FROM {from_main} {where_all}", search_params)
+                count_all = cursor.fetchone()[0]
+                
+                count_fav = 0
+                count_recent = 0
+                if identifier:
+                    where_fav = "WHERE f.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
+                    cursor.execute(f"SELECT COUNT(*) FROM {from_main} JOIN favorites f ON f.video_id = v.id {where_fav}", [identifier] + search_params)
+                    count_fav = cursor.fetchone()[0]
+                    
+                    where_hist = "WHERE h.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
+                    cursor.execute(f"SELECT COUNT(*) FROM {from_main} JOIN history h ON h.video_id = v.id {where_hist}", [identifier] + search_params)
+                    count_recent = cursor.fetchone()[0]
+                
+                where_glob = ("WHERE " + search_where_v) if search_where_v else ""
+                cursor.execute(f"SELECT COUNT(DISTINCT h.video_id) FROM {from_main} JOIN history h ON h.video_id = v.id {where_glob}", search_params)
+                count_global = cursor.fetchone()[0]
         
-        count_fav = 0
-        count_recent = 0
-        if identifier:
-            where_fav = "WHERE f.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
-            cursor.execute(f"SELECT COUNT(*) FROM {from_main} JOIN favorites f ON f.video_id = v.id {where_fav}", [identifier] + search_params)
-            count_fav = cursor.fetchone()[0]
-            
-            where_hist = "WHERE h.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
-            cursor.execute(f"SELECT COUNT(*) FROM {from_main} JOIN history h ON h.video_id = v.id {where_hist}", [identifier] + search_params)
-            count_recent = cursor.fetchone()[0]
-        
-        where_glob = ("WHERE " + search_where_v) if search_where_v else ""
-        cursor.execute(f"SELECT COUNT(DISTINCT h.video_id) FROM {from_main} JOIN history h ON h.video_id = v.id {where_glob}", search_params)
-        count_global = cursor.fetchone()[0]
-
-    return jsonify({
-        "all": count_all,
-        "favorites": count_fav,
-        "recent": count_recent,
-        "frequent": count_recent,
-        "global_frequent": count_global,
-        "trending_day": 0,
-        "trending_month": 0
-    })
+        return jsonify({
+            "all": count_all,
+            "favorites": count_fav,
+            "recent": count_recent,
+            "frequent": count_recent,
+            "global_frequent": count_global,
+            "trending_day": 0,
+            "trending_month": 0
+        })
+    except sqlite3.OperationalError as e:
+        if 'interrupted' in str(e).lower():
+            custom_log("API", "⚠️ Query timeout trong /api/counts (>2s). Bỏ qua.")
+            return jsonify({"all": 0, "favorites": 0, "recent": 0, "frequent": 0, "global_frequent": 0, "trending_day": 0, "trending_month": 0})
+        raise
 
 @app.route('/api/videos', methods=['GET'])
 def get_videos():
@@ -712,99 +733,106 @@ def get_videos():
     offset = (page - 1) * per_page
     identifier = get_identifier()
 
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        where_clauses = []
-        params = []
-        from_clause = f"{VIDEOS_TABLE} v"
-        
+    try:
+        with db_lock:
+            with sqlite_timeout(db_conn_instance, 2.0):
+                cursor = db_conn_instance.cursor()
+                where_clauses = []
+                params = []
+                from_clause = f"{VIDEOS_TABLE} v"
                 
-        if tab == 'favorites':
-            if not identifier:
-                return jsonify({"items": [], "total": 0, "page": page})
-            from_clause = f"{VIDEOS_TABLE} v JOIN favorites f ON v.id = f.video_id"
-            where_clauses.append("f.username = ?")
-            params.append(identifier)
-        elif tab in ['recent', 'frequent']:
-            if not identifier:
-                return jsonify({"items": [], "total": 0, "page": page})
-            from_clause = f"{VIDEOS_TABLE} v JOIN history h ON v.id = h.video_id"
-            where_clauses.append("h.username = ?")
-            params.append(identifier)
-        elif tab == 'global_frequent':
-            from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, SUM(watch_count) as total_watches FROM history GROUP BY video_id) h ON v.id = h.video_id"
-        elif tab == 'trending_day':
-            day_ago = int(time.time()) - 86400
-            from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
-            params.append(day_ago)
-        elif tab == 'trending_month':
-            month_ago = int(time.time()) - 30*86400
-            from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
-            params.append(month_ago)
-
-        safe_key = ""
-        if search_key:
-            match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
-            if match_field:
-                field = match_field.group(1).lower()
-                val = match_field.group(2).strip()
-                safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
-                if safe_val:
-                    from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
-                    where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
-                    safe_key = f"{field} : ({safe_val})"
-                    params.append(safe_key)
-            else:
-                safe_key_fmt = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
-                if safe_key_fmt:
-                    from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
-                    where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
-                    safe_key = safe_key_fmt
-                    params.append(safe_key)
+                        
+                if tab == 'favorites':
+                    if not identifier:
+                        return jsonify({"items": [], "total": 0, "page": page})
+                    from_clause = f"{VIDEOS_TABLE} v JOIN favorites f ON v.id = f.video_id"
+                    where_clauses.append("f.username = ?")
+                    params.append(identifier)
+                elif tab in ['recent', 'frequent']:
+                    if not identifier:
+                        return jsonify({"items": [], "total": 0, "page": page})
+                    from_clause = f"{VIDEOS_TABLE} v JOIN history h ON v.id = h.video_id"
+                    where_clauses.append("h.username = ?")
+                    params.append(identifier)
+                elif tab == 'global_frequent':
+                    from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, SUM(watch_count) as total_watches FROM history GROUP BY video_id) h ON v.id = h.video_id"
+                elif tab == 'trending_day':
+                    day_ago = int(time.time()) - 86400
+                    from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
+                    params.append(day_ago)
+                elif tab == 'trending_month':
+                    month_ago = int(time.time()) - 30*86400
+                    from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
+                    params.append(month_ago)
+        
+                safe_key = ""
+                if search_key:
+                    match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
+                    if match_field:
+                        field = match_field.group(1).lower()
+                        val = match_field.group(2).strip()
+                        safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
+                        if safe_val:
+                            from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                            where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
+                            safe_key = f"{field} : ({safe_val})"
+                            params.append(safe_key)
+                    else:
+                        safe_key_fmt = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
+                        if safe_key_fmt:
+                            from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                            where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
+                            safe_key = safe_key_fmt
+                            params.append(safe_key)
+                        
+                where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
                 
-        where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
-        
-        if tab == 'global_frequent' and not search_key:
-            cursor.execute("SELECT COUNT(DISTINCT video_id) FROM history")
-            total = cursor.fetchone()[0]
-        else:
-            cursor.execute(f"SELECT COUNT(*) FROM {from_clause} {where_sql}", params)
-            total = cursor.fetchone()[0]
-            
-        if tab == 'favorites':
-            order_clause = "ORDER BY v.release_date DESC, f.added_at DESC"
-        elif tab == 'recent':
-            order_clause = "ORDER BY h.last_watched DESC, v.release_date DESC"
-        elif tab == 'frequent':
-            order_clause = "ORDER BY h.watch_count DESC, v.release_date DESC"
-        elif tab == 'global_frequent':
-            order_clause = "ORDER BY h.total_watches DESC, v.release_date DESC"
-        elif tab in ['trending_day', 'trending_month']:
-            order_clause = "ORDER BY h.c DESC, v.release_date DESC"
-        elif safe_key:
-            order_clause = f"ORDER BY v.release_date DESC, bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.added_at DESC"
-        else:
-            order_clause = "ORDER BY v.release_date DESC, v.added_at DESC"
-            
-        query = f"SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
-        cursor.execute(query, params + [per_page, offset])
-        rows = cursor.fetchall()
-        
-    videos = []
-    for row in rows:
-        videos.append({
-            "id": row[0],
-            "title": row[1],
-            "cover": f"/api/media?id={row[0]}",
-            "url": row[3],
-            "release_date": row[4] if len(row) > 4 else '',
-            "actress": row[5] if len(row) > 5 else '',
-            "genre": row[6] if len(row) > 6 else '',
-            "maker": row[7] if len(row) > 7 else '',
-            "details": row[8] if len(row) > 8 else '',
-            "dvd": row[9] if len(row) > 9 else ''
-        })
-    return jsonify({"items": videos, "total": total, "page": page})
+                if tab == 'global_frequent' and not search_key:
+                    cursor.execute("SELECT COUNT(DISTINCT video_id) FROM history")
+                    total = cursor.fetchone()[0]
+                else:
+                    cursor.execute(f"SELECT COUNT(*) FROM {from_clause} {where_sql}", params)
+                    total = cursor.fetchone()[0]
+                    
+                if tab == 'favorites':
+                    order_clause = "ORDER BY v.release_date DESC, f.added_at DESC"
+                elif tab == 'recent':
+                    order_clause = "ORDER BY h.last_watched DESC, v.release_date DESC"
+                elif tab == 'frequent':
+                    order_clause = "ORDER BY h.watch_count DESC, v.release_date DESC"
+                elif tab == 'global_frequent':
+                    order_clause = "ORDER BY h.total_watches DESC, v.release_date DESC"
+                elif tab in ['trending_day', 'trending_month']:
+                    order_clause = "ORDER BY h.c DESC, v.release_date DESC"
+                elif safe_key:
+                    order_clause = f"ORDER BY v.release_date DESC, bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.added_at DESC"
+                else:
+                    order_clause = "ORDER BY v.release_date DESC, v.added_at DESC"
+                    
+                query = f"SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
+                cursor.execute(query, params + [per_page, offset])
+                rows = cursor.fetchall()
+                
+        videos = []
+        for row in rows:
+            videos.append({
+                "id": row[0],
+                "title": row[1],
+                "cover": f"/api/media?id={row[0]}",
+                "url": row[3],
+                "release_date": row[4] if len(row) > 4 else '',
+                "actress": row[5] if len(row) > 5 else '',
+                "genre": row[6] if len(row) > 6 else '',
+                "maker": row[7] if len(row) > 7 else '',
+                "details": row[8] if len(row) > 8 else '',
+                "dvd": row[9] if len(row) > 9 else ''
+            })
+        return jsonify({"items": videos, "total": total, "page": page})
+    except sqlite3.OperationalError as e:
+        if 'interrupted' in str(e).lower():
+            custom_log("API", "⚠️ Query timeout trong /api/videos (>2s). Bỏ qua.")
+            return jsonify({"items": [], "total": 0, "page": page})
+        raise
 
 @app.route('/api/related', methods=['GET'])
 def get_related():
@@ -812,72 +840,73 @@ def get_related():
     if not vid_id:
         return jsonify({"items": []})
         
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE} WHERE id = ?", (vid_id,))
-        row = cursor.fetchone()
-        
-    if not row:
-        return jsonify({"items": []})
-        
-    title, actress, genre, maker = row
-    
-    if hasattr(scraper_instance, 'clean_keywords'):
-        keywords = scraper_instance.clean_keywords(title) if title else []
-    else:
-        keywords = extract_clean_keywords_bulletproof(title) if title else []
-            
-    query_parts = []
-    if actress:
-        actresses = [a.strip() for a in actress.split(',')]
-        query_parts.append(' OR '.join([f'actress : "{a}"' for a in actresses if a]))
-    if genre:
-        genres = [g.strip() for g in genre.split(',')]
-        query_parts.append(' OR '.join([f'genre : "{g}"' for g in genres if g]))
-    if maker:
-        query_parts.append(f'maker : "{maker}"')
-        
-    if keywords:
-        kw_str = ' OR '.join([f'"{k}"*' for k in keywords[:5]])
-        query_parts.append(f'title : ({kw_str})')
-        
-    fts_query = ' OR '.join([p for p in query_parts if p])
-    
-    if not fts_query:
-        return jsonify({"items": []})
-        
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        sql = f'''
-            SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd
-            FROM {VIDEOS_TABLE}_fts
-            JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid
-            WHERE {VIDEOS_TABLE}_fts MATCH ? AND v.id != ?
-            ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.release_date DESC
-            LIMIT 12
-        '''
-        try:
-            cursor.execute(sql, (fts_query, vid_id))
-            rows = cursor.fetchall()
-        except Exception as e:
-            custom_log("System", f"❌ FTS Related Error: {e}")
-            rows = []
-            
-    videos = []
-    for row in rows:
-        videos.append({
-            "id": row[0],
-            "title": row[1],
-            "cover": f"/api/media?id={row[0]}",
-            "url": row[3],
-            "release_date": row[4] if row[4] else '',
-            "actress": row[5] if row[5] else '',
-            "genre": row[6] if row[6] else '',
-            "maker": row[7] if row[7] else '',
-            "details": row[8] if row[8] else '',
-            "dvd": row[9] if len(row) > 9 and row[9] else ''
-        })
-    return jsonify({"items": videos})
+    try:
+        with db_lock:
+            with sqlite_timeout(db_conn_instance, 2.0):
+                cursor = db_conn_instance.cursor()
+                cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE} WHERE id = ?", (vid_id,))
+                row = cursor.fetchone()
+                
+                if not row:
+                    return jsonify({"items": []})
+                    
+                title, actress, genre, maker = row
+                
+                if hasattr(scraper_instance, 'clean_keywords'):
+                    keywords = scraper_instance.clean_keywords(title) if title else []
+                else:
+                    keywords = extract_clean_keywords_bulletproof(title) if title else []
+                        
+                query_parts = []
+                if actress:
+                    actresses = [a.strip() for a in actress.split(',')]
+                    query_parts.append(' OR '.join([f'actress : "{a}"' for a in actresses if a]))
+                if genre:
+                    genres = [g.strip() for g in genre.split(',')]
+                    query_parts.append(' OR '.join([f'genre : "{g}"' for g in genres if g]))
+                if maker:
+                    query_parts.append(f'maker : "{maker}"')
+                    
+                if keywords:
+                    kw_str = ' OR '.join([f'"{k}"*' for k in keywords[:5]])
+                    query_parts.append(f'title : ({kw_str})')
+                    
+                fts_query = ' OR '.join([p for p in query_parts if p])
+                
+                if not fts_query:
+                    return jsonify({"items": []})
+                    
+                sql = f'''
+                    SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd
+                    FROM {VIDEOS_TABLE}_fts
+                    JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid
+                    WHERE {VIDEOS_TABLE}_fts MATCH ? AND v.id != ?
+                    ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.release_date DESC
+                    LIMIT 12
+                '''
+                cursor.execute(sql, (fts_query, vid_id))
+                rows = cursor.fetchall()
+                
+        videos = []
+        for row in rows:
+            videos.append({
+                "id": row[0],
+                "title": row[1],
+                "cover": f"/api/media?id={row[0]}",
+                "url": row[3],
+                "release_date": row[4] if row[4] else '',
+                "actress": row[5] if row[5] else '',
+                "genre": row[6] if row[6] else '',
+                "maker": row[7] if row[7] else '',
+                "details": row[8] if row[8] else '',
+                "dvd": row[9] if len(row) > 9 and row[9] else ''
+            })
+        return jsonify({"items": videos})
+    except sqlite3.OperationalError as e:
+        if 'interrupted' in str(e).lower():
+            custom_log("API", "⚠️ Query timeout trong /api/related (>2s). Bỏ qua.")
+            return jsonify({"items": []})
+        raise
 
 @app.route('/api/media', methods=['GET'])
 def get_media():
@@ -1212,185 +1241,184 @@ def search_suggestions():
     identifier = get_identifier()
     suggestions = []
     
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        if identifier:
-            if not q:
-                cursor.execute("SELECT keyword FROM search_history WHERE username = ? ORDER BY searched_at DESC LIMIT 10", (identifier,))
-            else:
-                cursor.execute("SELECT keyword FROM search_history WHERE username = ? AND keyword LIKE ? ORDER BY searched_at DESC LIMIT 10", (identifier, f'%{q}%'))
-            for r in cursor.fetchall():
-                suggestions.append({"text": r[0], "type": "history"})
-            
-    if not q:
-        if identifier:
-            with db_lock:
+    try:
+        with db_lock:
+            with sqlite_timeout(db_conn_instance, 2.0):
                 cursor = db_conn_instance.cursor()
-                try:
-                    cursor.execute(f'''
-                        SELECT v.title, v.id, v.cover
-                        FROM history h
-                        JOIN {VIDEOS_TABLE} v ON h.video_id = v.id
-                        WHERE h.username = ?
-                        ORDER BY h.last_watched DESC
-                        LIMIT 5
-                    ''', (identifier,))
-                    for row in cursor.fetchall():
-                        t = row[0].strip()
-                        if t:
-                            suggestions.append({
-                                "text": t[:80] + ("..." if len(t)>80 else ""),
-                                "type": "watch_history",
-                                "id": row[1],
-                                "cover": f"/api/media?id={row[1]}"
-                            })
-                except Exception as e:
-                    custom_log("System", f"❌ Lỗi gợi ý lịch sử xem (q rỗng): {e}")
-
-    if not q:
-        with db_lock:
-            cursor = db_conn_instance.cursor()
-            cursor.execute("SELECT keyword FROM tags_summary WHERE type='actress' ORDER BY count DESC LIMIT 10")
-            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "actress"})
-            
-            cursor.execute("SELECT keyword FROM tags_summary WHERE type='genre' ORDER BY count DESC LIMIT 10")
-            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "genre"})
-            
-            cursor.execute("SELECT keyword FROM tags_summary WHERE type='maker' ORDER BY count DESC LIMIT 10")
-            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "maker"})
-            
-        return jsonify({"success": True, "suggestions": suggestions})
-    
-    else:
-        words = q.replace('"', '').split()
-        if not words:
-            return jsonify({"success": True, "suggestions": suggestions})
-            
-        safe_key_and = ' AND '.join([f'"{w}"*' for w in words])
-        safe_key_or = ' OR '.join([f'"{w}"*' for w in words])
-        
-        with db_lock:
-            cursor = db_conn_instance.cursor()
-            try:
-                cursor.execute('''
-                    SELECT keyword, type, count
-                    FROM tags_fts
-                    WHERE tags_fts MATCH ?
-                    ORDER BY count DESC
-                    LIMIT 30
-                ''', (safe_key_and,))
-                tag_rows = cursor.fetchall()
-            except Exception as e:
-                custom_log("System", f"❌ FTS tags search error: {e}")
-                tag_rows = []
                 
-            # Fuzzy Search (Tìm kiếm mờ) bổ sung nếu FTS không trả về đủ kết quả
-            if len(tag_rows) < 15:
-                load_tags_cache_if_needed(cursor)
-                seen_tags = set([r[0] for r in tag_rows])
-                q_low = q.lower()
-                q_no_accents = remove_accents(q_low)
-                q_sorted = " ".join(sorted(q_no_accents.split()))
-                q_words = q_no_accents.split()
-                
-                fuzzy_matches = []
-                for kw, t, c, low, low_no_accents, sorted_low in tags_cache:
-                    if kw in seen_tags:
-                        continue
-                    
-                    if q_no_accents in low_no_accents:
-                        fuzzy_matches.append((1.0, c, kw, t))
-                    elif all(w in low_no_accents for w in q_words):
-                        fuzzy_matches.append((0.95, c, kw, t))
+                if identifier:
+                    if not q:
+                        cursor.execute("SELECT keyword FROM search_history WHERE username = ? ORDER BY searched_at DESC LIMIT 10", (identifier,))
                     else:
-                        matcher = difflib.SequenceMatcher(None, q_sorted, sorted_low)
-                        if matcher.quick_ratio() >= 0.75:
-                            score = matcher.ratio()
-                            if score >= 0.75:
-                                fuzzy_matches.append((score, c, kw, t))
-                                
-                fuzzy_matches.sort(key=lambda x: (x[0], x[1]), reverse=True)
-                for score, c, kw, t in fuzzy_matches[:15]:
-                    tag_rows.append((kw, t, c))
-                    seen_tags.add(kw)
-
-            match_actress = []
-            match_genre = []
-            match_maker = []
-            
-            for row in tag_rows:
-                k, t, c = row
-                if t == 'actress': match_actress.append({"text": k, "count": c})
-                elif t == 'genre': match_genre.append({"text": k, "count": c})
-                elif t == 'maker': match_maker.append({"text": k, "count": c})
-
-            match_watch_history = []
-            if identifier:
-                try:
-                    with db_lock:
-                        cursor = db_conn_instance.cursor()
-                        fts_query_for_history = ' '.join([f'"{w}"*' for w in q.replace('"', '').split()])
-                        if fts_query_for_history:
+                        cursor.execute("SELECT keyword FROM search_history WHERE username = ? AND keyword LIKE ? ORDER BY searched_at DESC LIMIT 10", (identifier, f'%{q}%'))
+                    for r in cursor.fetchall():
+                        suggestions.append({"text": r[0], "type": "history"})
+                    
+                if not q:
+                    if identifier:
+                        try:
                             cursor.execute(f'''
                                 SELECT v.title, v.id, v.cover
-                                FROM {VIDEOS_TABLE}_fts fts
-                                JOIN {VIDEOS_TABLE} v ON v.rowid = fts.rowid
-                                JOIN history h ON h.video_id = v.id
-                                WHERE h.username = ? AND fts.{VIDEOS_TABLE}_fts MATCH ?
-                                ORDER BY bm25(fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, h.last_watched DESC
+                                FROM history h
+                                JOIN {VIDEOS_TABLE} v ON h.video_id = v.id
+                                WHERE h.username = ?
+                                ORDER BY h.last_watched DESC
                                 LIMIT 5
-                            ''', (identifier, f"({fts_query_for_history})"))
+                            ''', (identifier,))
                             for row in cursor.fetchall():
                                 t = row[0].strip()
                                 if t:
-                                    match_watch_history.append({
+                                    suggestions.append({
                                         "text": t[:80] + ("..." if len(t)>80 else ""),
                                         "type": "watch_history",
                                         "id": row[1],
                                         "cover": f"/api/media?id={row[1]}"
                                     })
-                except Exception as e:
-                    custom_log("System", f"❌ Lỗi FTS lịch sử xem: {e}")
+                        except Exception as e:
+                            custom_log("System", f"❌ Lỗi gợi ý lịch sử xem (q rỗng): {e}")
+        
+                    cursor.execute("SELECT keyword FROM tags_summary WHERE type='actress' ORDER BY count DESC LIMIT 10")
+                    for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "actress"})
+                    
+                    cursor.execute("SELECT keyword FROM tags_summary WHERE type='genre' ORDER BY count DESC LIMIT 10")
+                    for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "genre"})
+                    
+                    cursor.execute("SELECT keyword FROM tags_summary WHERE type='maker' ORDER BY count DESC LIMIT 10")
+                    for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "maker"})
+                    
+                    return jsonify({"success": True, "suggestions": suggestions})
                 
-            match_title = []
-            try:
-                cursor.execute(f'''
-                    SELECT v.title, v.id, v.cover
-                    FROM {VIDEOS_TABLE}_fts
-                    JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid
-                    WHERE {VIDEOS_TABLE}_fts MATCH ?
-                    ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC LIMIT 10
-                ''', (f"title : ({safe_key_or})",))
-                for row in cursor.fetchall():
-                    t = row[0].strip()
-                    if t:
-                        match_title.append({
-                            "text": t[:80] + ("..." if len(t)>80 else ""), 
-                            "type": "title", 
-                            "id": row[1],
-                            "cover": f"/api/media?id={row[1]}"
-                        })
-            except Exception as e:
-                custom_log("System", f"❌ FTS title search error: {e}")
-                
-            history_ids = {item['id'] for item in match_watch_history}
-            unique_match_title = [item for item in match_title if item['id'] not in history_ids]
-
-        chips = []
-        for a in match_actress[:5]: chips.append({"text": a["text"], "type": "actress"})
-        for g in match_genre[:5]: chips.append({"text": g["text"], "type": "genre"})
-        for m in match_maker[:5]: chips.append({"text": m["text"], "type": "maker"})
-            
-        for c in chips[:15]:
-            suggestions.append(c)
-            
-        for wh in match_watch_history:
-            suggestions.append(wh)
-
-        for t in unique_match_title:
-            suggestions.append(t)
-            
-        return jsonify({"success": True, "suggestions": suggestions})
+                else:
+                    words = q.replace('"', '').split()
+                    if not words:
+                        return jsonify({"success": True, "suggestions": suggestions})
+                        
+                    safe_key_and = ' AND '.join([f'"{w}"*' for w in words])
+                    safe_key_or = ' OR '.join([f'"{w}"*' for w in words])
+                    
+                    try:
+                        cursor.execute('''
+                            SELECT keyword, type, count
+                            FROM tags_fts
+                            WHERE tags_fts MATCH ?
+                            ORDER BY count DESC
+                            LIMIT 30
+                        ''', (safe_key_and,))
+                        tag_rows = cursor.fetchall()
+                    except Exception as e:
+                        custom_log("System", f"❌ FTS tags search error: {e}")
+                        tag_rows = []
+                        
+                    # Fuzzy Search (Tìm kiếm mờ) bổ sung nếu FTS không trả về đủ kết quả
+                    if len(tag_rows) < 15:
+                        load_tags_cache_if_needed(cursor)
+                        seen_tags = set([r[0] for r in tag_rows])
+                        q_low = q.lower()
+                        q_no_accents = remove_accents(q_low)
+                        q_sorted = " ".join(sorted(q_no_accents.split()))
+                        q_words = q_no_accents.split()
+                        
+                        fuzzy_matches = []
+                        for kw, t, c, low, low_no_accents, sorted_low in tags_cache:
+                            if kw in seen_tags:
+                                continue
+                            
+                            if q_no_accents in low_no_accents:
+                                fuzzy_matches.append((1.0, c, kw, t))
+                            elif all(w in low_no_accents for w in q_words):
+                                fuzzy_matches.append((0.95, c, kw, t))
+                            else:
+                                matcher = difflib.SequenceMatcher(None, q_sorted, sorted_low)
+                                if matcher.quick_ratio() >= 0.75:
+                                    score = matcher.ratio()
+                                    if score >= 0.75:
+                                        fuzzy_matches.append((score, c, kw, t))
+                                        
+                        fuzzy_matches.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                        for score, c, kw, t in fuzzy_matches[:15]:
+                            tag_rows.append((kw, t, c))
+                            seen_tags.add(kw)
+        
+                    match_actress = []
+                    match_genre = []
+                    match_maker = []
+                    
+                    for row in tag_rows:
+                        k, t, c = row
+                        if t == 'actress': match_actress.append({"text": k, "count": c})
+                        elif t == 'genre': match_genre.append({"text": k, "count": c})
+                        elif t == 'maker': match_maker.append({"text": k, "count": c})
+        
+                    match_watch_history = []
+                    if identifier:
+                        try:
+                            fts_query_for_history = ' '.join([f'"{w}"*' for w in q.replace('"', '').split()])
+                            if fts_query_for_history:
+                                cursor.execute(f'''
+                                    SELECT v.title, v.id, v.cover
+                                    FROM {VIDEOS_TABLE}_fts fts
+                                    JOIN {VIDEOS_TABLE} v ON v.rowid = fts.rowid
+                                    JOIN history h ON h.video_id = v.id
+                                    WHERE h.username = ? AND fts.{VIDEOS_TABLE}_fts MATCH ?
+                                    ORDER BY bm25(fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, h.last_watched DESC
+                                    LIMIT 5
+                                ''', (identifier, f"({fts_query_for_history})"))
+                                for row in cursor.fetchall():
+                                    t = row[0].strip()
+                                    if t:
+                                        match_watch_history.append({
+                                            "text": t[:80] + ("..." if len(t)>80 else ""),
+                                            "type": "watch_history",
+                                            "id": row[1],
+                                            "cover": f"/api/media?id={row[1]}"
+                                        })
+                        except Exception as e:
+                            custom_log("System", f"❌ Lỗi FTS lịch sử xem: {e}")
+                        
+                    match_title = []
+                    try:
+                        cursor.execute(f'''
+                            SELECT v.title, v.id, v.cover
+                            FROM {VIDEOS_TABLE}_fts
+                            JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid
+                            WHERE {VIDEOS_TABLE}_fts MATCH ?
+                            ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC LIMIT 10
+                        ''', (f"title : ({safe_key_or})",))
+                        for row in cursor.fetchall():
+                            t = row[0].strip()
+                            if t:
+                                match_title.append({
+                                    "text": t[:80] + ("..." if len(t)>80 else ""), 
+                                    "type": "title", 
+                                    "id": row[1],
+                                    "cover": f"/api/media?id={row[1]}"
+                                })
+                    except Exception as e:
+                        custom_log("System", f"❌ FTS title search error: {e}")
+                        
+                    history_ids = {item['id'] for item in match_watch_history}
+                    unique_match_title = [item for item in match_title if item['id'] not in history_ids]
+        
+                chips = []
+                for a in match_actress[:5]: chips.append({"text": a["text"], "type": "actress"})
+                for g in match_genre[:5]: chips.append({"text": g["text"], "type": "genre"})
+                for m in match_maker[:5]: chips.append({"text": m["text"], "type": "maker"})
+                    
+                for c in chips[:15]:
+                    suggestions.append(c)
+                    
+                for wh in match_watch_history:
+                    suggestions.append(wh)
+        
+                for t in unique_match_title:
+                    suggestions.append(t)
+                    
+                return jsonify({"success": True, "suggestions": suggestions})
+    except sqlite3.OperationalError as e:
+        if 'interrupted' in str(e).lower():
+            custom_log("API", "⚠️ Query timeout trong /api/search_suggestions (>2s). Bỏ qua.")
+            return jsonify({"success": True, "suggestions": []})
+        raise
 
 @app.route('/api/search_history', methods=['POST', 'DELETE'])
 def manage_search_history():
