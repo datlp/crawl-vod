@@ -2445,7 +2445,35 @@
             }, {passive: true});
         }
         attachPageSwipeToBack(profilePage, closeProfilePage);
-        attachPageSwipeToBack(galleryPage, closeGalleryPage);
+
+        let galleryStartX = 0;
+        let galleryStartY = 0;
+        const galleryTabsOrder = ['all', 'favorites', 'recent', 'frequent', 'global_frequent'];
+        galleryPage.addEventListener('touchstart', e => {
+            galleryStartX = e.changedTouches[0].clientX;
+            galleryStartY = e.changedTouches[0].clientY;
+        }, {passive: true});
+        galleryPage.addEventListener('touchend', e => {
+            if (e.target.closest('#gallery-tabs') || e.target.closest('#search-suggestions') || Math.abs(e.changedTouches[0].clientX - galleryStartX) < 10) return; 
+            const dx = e.changedTouches[0].clientX - galleryStartX;
+            const dy = e.changedTouches[0].clientY - galleryStartY;
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+                const currentIndex = galleryTabsOrder.indexOf(currentTab || 'all');
+                if (dx > 0) {
+                    if (currentIndex > 0) {
+                        switchGalleryTab(galleryTabsOrder[currentIndex - 1]);
+                        document.getElementById(tabMapping[galleryTabsOrder[currentIndex - 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
+                    } else {
+                        closeGalleryPage();
+                    }
+                } else {
+                    if (currentIndex < galleryTabsOrder.length - 1) {
+                        switchGalleryTab(galleryTabsOrder[currentIndex + 1]);
+                        document.getElementById(tabMapping[galleryTabsOrder[currentIndex + 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
+                    }
+                }
+            }
+        }, {passive: true});
 
         let detailStartX = 0;
         let detailStartY = 0;
