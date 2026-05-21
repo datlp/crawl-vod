@@ -109,9 +109,9 @@
         #submit-search { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 16px; }
         
         #search-suggestions {
-            position: fixed; top: 58px; left: 0; right: 0; bottom: 0; background: #111;
+            position: fixed; top: 58px; left: 0; right: 0; background: #111;
             border: none; border-radius: 0; padding-bottom: 20px;
-            max-height: none; overflow-y: auto; z-index: 150; box-shadow: none;
+            overflow-y: auto; z-index: 150; box-shadow: none;
         }
         .suggestion-item {
             display: flex; align-items: center; padding: 10px 15px; cursor: pointer;
@@ -453,6 +453,23 @@
         const clearSearchBtn = document.getElementById('clear-search');
         const submitSearchBtn = document.getElementById('submit-search');
         const btnPlayPause = document.getElementById('btn-play-pause');
+        
+        function updateSuggestionHeight() {
+            const sug = document.getElementById('search-suggestions');
+            const searchContainer = document.getElementById('search-container');
+            if (sug && sug.style.display !== 'none' && searchContainer) {
+                const rect = searchContainer.getBoundingClientRect();
+                const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+                sug.style.top = rect.bottom + 'px';
+                sug.style.height = (viewportHeight - rect.bottom) + 'px';
+            }
+        }
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', updateSuggestionHeight);
+            window.visualViewport.addEventListener('scroll', updateSuggestionHeight);
+        } else {
+            window.addEventListener('resize', updateSuggestionHeight);
+        }
 
         let searchTimeout = null;
         let activePlayer = null;
@@ -668,6 +685,7 @@
             }
             
             container.style.display = 'block';
+            updateSuggestionHeight();
         }
 
         let suggestionTimeout = null;
