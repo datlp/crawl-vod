@@ -1050,6 +1050,32 @@
             }
         }, { passive: true });
 
+        let sugStartX = 0;
+        let sugStartY = 0;
+        const sugTabsOrder = ['all', 'actress', 'genre', 'maker'];
+        
+        searchSuggestionsContainer.addEventListener('touchstart', e => {
+            sugStartX = e.changedTouches[0].clientX;
+            sugStartY = e.changedTouches[0].clientY;
+        }, {passive: true});
+
+        searchSuggestionsContainer.addEventListener('touchend', e => {
+            if (e.target.closest('#suggestion-tabs') || Math.abs(e.changedTouches[0].clientX - sugStartX) < 10) return; 
+            const dx = e.changedTouches[0].clientX - sugStartX;
+            const dy = e.changedTouches[0].clientY - sugStartY;
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+                const currentIndex = sugTabsOrder.indexOf(currentSugTab || 'all');
+                const tabMappingSug = { 'all': 'sugTabAll', 'actress': 'sugTabActress', 'genre': 'sugTabGenre', 'maker': 'sugTabMaker' };
+                if (dx > 0 && currentIndex > 0) {
+                    switchSugTab(sugTabsOrder[currentIndex - 1]);
+                    document.getElementById(tabMappingSug[sugTabsOrder[currentIndex - 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
+                } else if (dx < 0 && currentIndex < sugTabsOrder.length - 1) {
+                    switchSugTab(sugTabsOrder[currentIndex + 1]);
+                    document.getElementById(tabMappingSug[sugTabsOrder[currentIndex + 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
+                }
+            }
+        }, {passive: true});
+
         videoSearchInput.addEventListener('blur', () => {
             updateSearchVisuals();
             setTimeout(() => {
