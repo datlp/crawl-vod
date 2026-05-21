@@ -270,7 +270,7 @@
         .animate-heart {
             animation: heartBeat 0.8s ease-out forwards;
         }
-        #gallery-tabs::-webkit-scrollbar { display: none; }
+        #gallery-tabs::-webkit-scrollbar, #profile-tabs::-webkit-scrollbar { display: none; }
         .mui-tab {
             flex-shrink: 0; padding: 12px 24px; background: none; border: none; color: rgba(255,255,255,0.6); border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap;
             font-family: "Roboto", "Helvetica", "Arial", sans-serif; text-transform: uppercase; font-size: 0.875rem; font-weight: 500;
@@ -367,11 +367,17 @@
         </div>
 
         <div id="profile-page" class="page-view">
-            <div class="page-header">
+            <div class="page-header" style="flex-shrink: 0;">
                 <span id="close-profile-page" class="close-page material-symbols-outlined">arrow_back</span>
-                <h3 style="margin:0; font-size:16px;">Tài khoản</h3>
+                <h3 style="margin:0; font-size:16px;">Cá nhân</h3>
             </div>
-            <div id="profile-content" style="padding: 15px; overflow-y: auto;">
+            <div id="profile-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none; background: #121212; border-bottom: 1px solid rgba(255,255,255,0.12);">
+                <button id="tabProfileYou" class="mui-tab active">Tài khoản</button>
+                <button id="tabProfileRecent" class="mui-tab">Gần đây <span class="tab-badge" id="badge-recent">0</span></button>
+                <button id="tabProfileFav" class="mui-tab">Đã thích <span class="tab-badge" id="badge-favorites">0</span></button>
+                <button id="tabProfileFrequent" class="mui-tab">Xem nhiều <span class="tab-badge" id="badge-frequent">0</span></button>
+            </div>
+            <div id="profile-content-you" style="padding: 15px; overflow-y: auto; flex-grow: 1;">
                 <div id="sessionDisplay" style="margin-bottom: 10px; font-size: 14px; color: #aaa; word-break: break-all;"></div>
                 <button id="logoutBtn" class="mui-btn mui-btn-contained" style="display:none; width: 100%; margin-bottom: 16px;">Thoát</button>
                 <button id="identifyBtn" class="mui-btn mui-btn-error" style="width: 100%; margin-bottom: 16px;">Định danh</button>
@@ -426,6 +432,8 @@
                     </div>
                 </div>
             </div>
+            <div id="profile-gallery-grid" class="gallery-grid" style="display: none;"></div>
+            <div id="profile-load-more" style="text-align: center; padding: 15px; color: #aaa; font-size: 14px; display: none;">Đang tải thêm...</div>
         </div>
 
         <div id="gallery-page" class="page-view">
@@ -440,9 +448,6 @@
             </div>
             <div id="gallery-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none;">
                 <button id="tabAll" class="mui-tab active">Tất cả <span class="tab-badge" id="badge-all">0</span></button>
-                <button id="tabFav" class="mui-tab">Yêu thích <span class="tab-badge" id="badge-favorites">0</span></button>
-                <button id="tabRecent" class="mui-tab">Gần đây <span class="tab-badge" id="badge-recent">0</span></button>
-                <button id="tabFrequent" class="mui-tab">Xem nhiều <span class="tab-badge" id="badge-frequent">0</span></button>
                 <button id="tabGlobalFrequent" class="mui-tab">Top thế giới <span class="tab-badge" id="badge-global_frequent">0</span></button>
             </div>
             <div id="gallery-grid" class="gallery-grid"></div>
@@ -985,14 +990,25 @@
 
         const profilePage = document.getElementById('profile-page');
         document.getElementById('nav-profile').addEventListener('click', () => {
-            window.location.hash = 'profile';
+            const p = getBaseUrlParams();
+            if (!['favorites', 'recent', 'frequent'].includes(currentTab)) {
+                p.delete('tab');
+            }
+            history.pushState(null, '', `/?${p.toString()}#profile`);
+            handleNavigation();
         });
         function closeProfilePage() {
             const now = Date.now();
             if (now - lastNavTime < 500) return;
             lastNavTime = now;
-            if (window.location.hash === '#profile') history.back();
-            else profilePage.classList.remove('active');
+            if (window.location.hash === '#profile' || ['favorites', 'recent', 'frequent', 'you'].includes(currentTab)) {
+                const p = getBaseUrlParams();
+                p.delete('tab');
+                history.pushState(null, '', `/?${p.toString()}`);
+                handleNavigation();
+            } else {
+                profilePage.classList.remove('active');
+            }
         }
         document.getElementById('close-profile-page').addEventListener('click', closeProfilePage);
 
@@ -1035,7 +1051,7 @@
 
         function getBaseUrlParams() {
             const params = new URLSearchParams();
-            if (currentTab && currentTab !== 'all') params.set('tab', currentTab);
+            if (currentTab && currentTab !== 'all' && currentTab !== 'you') params.set('tab', currentTab);
             if (searchKey) params.set('searchKey', searchKey);
             return params;
         }
@@ -1044,13 +1060,23 @@
             Object.keys(tabMapping).forEach(key => {
                 const btn = document.getElementById(tabMapping[key]);
                 if (!btn) return;
-                const badge = document.getElementById(`badge-${key}`);
                 if (key === tabKey) {
                     btn.classList.add('active');
                 } else {
                     btn.classList.remove('active');
                 }
             });
+            
+            if (['favorites', 'recent', 'frequent', 'you'].includes(tabKey)) {
+                if (tabKey === 'you') {
+                    document.getElementById('profile-content-you').style.display = 'block';
+                    document.getElementById('profile-gallery-grid').style.display = 'none';
+                    document.getElementById('profile-load-more').style.display = 'none';
+                } else {
+                    document.getElementById('profile-content-you').style.display = 'none';
+                    document.getElementById('profile-gallery-grid').style.display = 'grid';
+                }
+            }
         }
 
         function updateBottomNav(activeId) {
@@ -1070,9 +1096,18 @@
             const urlTab = urlParams.get('tab') || 'all';
             const urlSearchKey = urlParams.get('searchKey') || '';
             
+            let targetTab = urlTab;
+            if (hash === '#profile') {
+                if (!['favorites', 'recent', 'frequent'].includes(urlTab)) {
+                    targetTab = 'you';
+                }
+            } else if (targetTab === 'you') {
+                targetTab = 'all';
+            }
+            
             let needReset = false;
-            if (urlTab !== currentTab) {
-                currentTab = urlTab;
+            if (targetTab !== currentTab) {
+                currentTab = targetTab;
                 updateTabUI(currentTab);
                 needReset = true;
             }
@@ -1104,27 +1139,39 @@
         }
 
         function executeNavigationState(watchId, videoId, focusId, hash) {
-            if (hash === '#profile') {
-                profilePage.classList.add('active');
-                galleryPage.classList.remove('active');
-                detailsPage.classList.remove('active');
-                updateBottomNav('nav-profile');
-                return;
-            } else {
-                profilePage.classList.remove('active');
-            }
-
             if (videoId) {
+                profilePage.classList.remove('active');
                 galleryPage.classList.remove('active');
                 detailsPage.classList.add('active');
                 updateBottomNav('');
                 showVideoDetailById(videoId);
             } else if (watchId) {
+                profilePage.classList.remove('active');
                 galleryPage.classList.remove('active');
                 detailsPage.classList.remove('active');
                 updateBottomNav('');
                 playVideoById(watchId);
+            } else if (hash === '#profile' || ['favorites', 'recent', 'frequent', 'you'].includes(currentTab)) {
+                profilePage.classList.add('active');
+                galleryPage.classList.remove('active');
+                detailsPage.classList.remove('active');
+                updateBottomNav('nav-profile');
+                
+                let targetGrid = document.getElementById('profile-gallery-grid');
+                let targetItem = null;
+                if (focusId) {
+                    targetItem = targetGrid.querySelector(`.gallery-item[data-id="${focusId}"]`);
+                }
+                if (!targetItem) {
+                    targetItem = targetGrid.querySelector('.gallery-item.active');
+                }
+                targetGrid.querySelectorAll('.gallery-item.focused').forEach(el => el.classList.remove('focused'));
+                if (targetItem) {
+                    if (focusId) targetItem.classList.add('focused');
+                    setTimeout(() => targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                }
             } else {
+                profilePage.classList.remove('active');
                 galleryPage.classList.add('active');
                 detailsPage.classList.remove('active');
                 updateBottomNav(searchKey ? 'nav-search' : 'nav-list');
@@ -1613,9 +1660,12 @@
             currentVideoIndex = -1;
             currentDetailIndex = -1;
             galleryGrid.innerHTML = '';
+            document.getElementById('profile-gallery-grid').innerHTML = '';
             document.getElementById('video-search').placeholder = 'Tìm kiếm videos...';
             fetchTabCounts();
-            fetchVideos();
+            if (currentTab !== 'you') {
+                fetchVideos();
+            }
         }
 
         clearSearchBtn.addEventListener('click', () => {
@@ -1643,19 +1693,30 @@
 
         const tabMapping = {
             'all': 'tabAll',
-            'favorites': 'tabFav',
-            'recent': 'tabRecent',
-            'frequent': 'tabFrequent',
-            'global_frequent': 'tabGlobalFrequent'
+            'global_frequent': 'tabGlobalFrequent',
+            'favorites': 'tabProfileFav',
+            'recent': 'tabProfileRecent',
+            'frequent': 'tabProfileFrequent',
+            'you': 'tabProfileYou'
         };
 
         function switchGalleryTab(tabKey) {
             const p = getBaseUrlParams();
+            if (tabKey === 'you') {
+                p.delete('tab');
+                history.pushState(null, '', `/?${p.toString()}#profile`);
+                handleNavigation();
+                return;
+            }
             p.set('tab', tabKey);
             p.delete('watch');
             p.delete('video');
             p.delete('id');
-            history.pushState(null, '', `/?${p.toString()}`);
+            let hash = '';
+            if (['favorites', 'recent', 'frequent'].includes(tabKey)) {
+                hash = '#profile';
+            }
+            history.pushState(null, '', `/?${p.toString()}${hash}`);
             handleNavigation();
         }
         Object.keys(tabMapping).forEach(key => {
@@ -1709,9 +1770,14 @@
         }
 
         async function fetchVideos() {
-            if (isLoading || !hasMore) return;
+            if (isLoading || !hasMore || currentTab === 'you') return;
             isLoading = true;
-            document.getElementById('load-more').style.display = 'block';
+            
+            const isProfileTab = ['favorites', 'recent', 'frequent'].includes(currentTab);
+            const loadMoreEl = document.getElementById(isProfileTab ? 'profile-load-more' : 'load-more');
+            const targetGrid = document.getElementById(isProfileTab ? 'profile-gallery-grid' : 'gallery-grid');
+            
+            loadMoreEl.style.display = 'block';
 
             const fetchId = currentFetchId;
 
@@ -1791,7 +1857,7 @@
                             history.pushState(null, '', `/?${p.toString()}`);
                             handleNavigation();
                         };
-                        galleryGrid.appendChild(item);
+                        targetGrid.appendChild(item);
                     });
                     currentPage++;
                 } else {
@@ -1799,6 +1865,9 @@
                     if (videos.length === 0) {
                         titleEl.innerText = 'Không tìm thấy kết quả';
                         mediaCounter.innerText = '0/0';
+                        if (isProfileTab) {
+                            targetGrid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: #888; padding: 20px;">Không có video nào</div>';
+                        }
                     }
                 }
             } catch (error) {
@@ -1806,7 +1875,7 @@
             } finally {
                 if (fetchId === currentFetchId) {
                     isLoading = false;
-                    document.getElementById('load-more').style.display = 'none';
+                    loadMoreEl.style.display = 'none';
                 }
             }
         }
@@ -2485,27 +2554,38 @@
             }
         }
 
-        function attachPageSwipeToBack(pageEl, closeHandler) {
-            let startX = 0;
-            let startY = 0;
-            pageEl.addEventListener('touchstart', e => {
-                startX = e.changedTouches[0].clientX;
-                startY = e.changedTouches[0].clientY;
-            }, {passive: true});
-            pageEl.addEventListener('touchend', e => {
-                if (e.target.closest('#gallery-tabs')) return; 
-                const dx = e.changedTouches[0].clientX - startX;
-                const dy = e.changedTouches[0].clientY - startY;
-                if (dx > Math.abs(dy) && dx > 50) {
-                    closeHandler();
+        let profileStartX = 0;
+        let profileStartY = 0;
+        const profileTabsOrder = ['you', 'recent', 'favorites', 'frequent'];
+        profilePage.addEventListener('touchstart', e => {
+            profileStartX = e.changedTouches[0].clientX;
+            profileStartY = e.changedTouches[0].clientY;
+        }, {passive: true});
+        profilePage.addEventListener('touchend', e => {
+            if (e.target.closest('#profile-tabs') || Math.abs(e.changedTouches[0].clientX - profileStartX) < 10) return; 
+            const dx = e.changedTouches[0].clientX - profileStartX;
+            const dy = e.changedTouches[0].clientY - profileStartY;
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+                const currentIndex = profileTabsOrder.indexOf(currentTab || 'you');
+                if (dx > 0) {
+                    if (currentIndex > 0) {
+                        switchGalleryTab(profileTabsOrder[currentIndex - 1]);
+                        document.getElementById(tabMapping[profileTabsOrder[currentIndex - 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
+                    } else {
+                        closeProfilePage();
+                    }
+                } else {
+                    if (currentIndex < profileTabsOrder.length - 1) {
+                        switchGalleryTab(profileTabsOrder[currentIndex + 1]);
+                        document.getElementById(tabMapping[profileTabsOrder[currentIndex + 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
+                    }
                 }
-            }, {passive: true});
-        }
-        attachPageSwipeToBack(profilePage, closeProfilePage);
+            }
+        }, {passive: true});
 
         let galleryStartX = 0;
         let galleryStartY = 0;
-        const galleryTabsOrder = ['all', 'favorites', 'recent', 'frequent', 'global_frequent'];
+        const galleryTabsOrder = ['all', 'global_frequent'];
         galleryPage.addEventListener('touchstart', e => {
             galleryStartX = e.changedTouches[0].clientX;
             galleryStartY = e.changedTouches[0].clientY;
@@ -2633,6 +2713,13 @@
 
         galleryGrid.addEventListener('scroll', () => {
             if (galleryGrid.scrollTop + galleryGrid.clientHeight >= galleryGrid.scrollHeight - 100) {
+                fetchVideos();
+            }
+        });
+        
+        document.getElementById('profile-gallery-grid').addEventListener('scroll', () => {
+            const grid = document.getElementById('profile-gallery-grid');
+            if (grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 100) {
                 fetchVideos();
             }
         });
