@@ -678,15 +678,24 @@
         let currentSugTab = 'all';
         let currentSuggestions = [];
         let currentSugQuery = '';
+        let currentSugPage = 1;
+        let isSugLoading = false;
+        let sugHasMore = true;
 
         function switchSugTab(tab) {
+            if (currentSugTab === tab) return;
             currentSugTab = tab;
             const tabMapping = { 'all': 'sugTabAll', 'actress': 'sugTabActress', 'genre': 'sugTabGenre', 'maker': 'sugTabMaker' };
             Object.keys(tabMapping).forEach(key => {
                 const btn = document.getElementById(tabMapping[key]);
                 if (btn) btn.classList.toggle('active', key === tab);
             });
-            renderSuggestionsContent();
+            currentSugPage = 1;
+            sugHasMore = true;
+            currentSuggestions = [];
+            const content = document.getElementById('suggestion-content');
+            if (content) content.innerHTML = '';
+            handleSuggestionFetch(true);
         }
 
         setTimeout(() => {
@@ -694,35 +703,54 @@
             document.getElementById('sugTabActress')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('actress'); });
             document.getElementById('sugTabGenre')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('genre'); });
             document.getElementById('sugTabMaker')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('maker'); });
+            
+            const sugContent = document.getElementById('suggestion-content');
+            if (sugContent) {
+                sugContent.addEventListener('scroll', () => {
+                    if (currentSugTab !== 'all' && sugHasMore && !isSugLoading) {
+                        if (sugContent.scrollTop + sugContent.clientHeight >= sugContent.scrollHeight - 100) {
+                            handleSuggestionFetch(true);
+                        }
+                    }
+                });
+            }
         }, 100);
 
-        function renderSuggestions(suggestions, query) {
-            currentSuggestions = suggestions;
-            currentSugQuery = query;
+        function renderSuggestions(newSuggestions, query, append = false) {
             const container = document.getElementById('search-suggestions');
-            if (suggestions.length === 0) {
-                container.style.display = 'none';
-                return;
+            if (!append) {
+                currentSuggestions = newSuggestions;
+                currentSugQuery = query;
+                if (newSuggestions.length === 0) {
+                    container.style.display = 'none';
+                    return;
+                }
+                container.style.display = 'flex';
+                updateSuggestionHeight();
+                renderSuggestionsContent(newSuggestions, false);
+            } else {
+                if (newSuggestions.length === 0) return;
+                currentSuggestions = currentSuggestions.concat(newSuggestions);
+                renderSuggestionsContent(newSuggestions, true);
             }
-            container.style.display = 'flex';
-            updateSuggestionHeight();
-            renderSuggestionsContent();
         }
 
-        function renderSuggestionsContent() {
+        function renderSuggestionsContent(items, append = false) {
             const container = document.getElementById('search-suggestions');
             const content = document.getElementById('suggestion-content');
             if (!content) return;
-            content.innerHTML = '';
             
-            const suggestions = currentSuggestions;
-            const historyItems = suggestions.filter(s => s.type === 'history');
-            const actresses = suggestions.filter(s => s.type === 'actress');
-            const genres = suggestions.filter(s => ['genre', 'trend_month_genre'].includes(s.type));
-            const makers = suggestions.filter(s => ['maker', 'studio'].includes(s.type));
-            const dates = suggestions.filter(s => s.type === 'releasedate');
-            const watchHistory = suggestions.filter(s => s.type === 'watch_history');
-            const titles = suggestions.filter(s => !['history', 'actress', 'genre', 'trend_month_genre', 'maker', 'studio', 'releasedate', 'watch_history'].includes(s.type));
+            if (!append) {
+                content.innerHTML = '';
+            }
+            
+            const historyItems = items.filter(s => s.type === 'history');
+            const actresses = items.filter(s => s.type === 'actress');
+            const genres = items.filter(s => ['genre', 'trend_month_genre'].includes(s.type));
+            const makers = items.filter(s => ['maker', 'studio'].includes(s.type));
+            const dates = items.filter(s => s.type === 'releasedate');
+            const watchHistory = items.filter(s => s.type === 'watch_history');
+            const titles = items.filter(s => !['history', 'actress', 'genre', 'trend_month_genre', 'maker', 'studio', 'releasedate', 'watch_history'].includes(s.type));
 
             const renderListItem = (s) => {
                 const item = document.createElement('div');
@@ -982,53 +1010,79 @@
                     content.lastChild.style.borderBottom = 'none';
                 }
             } else if (currentSugTab === 'actress') {
-                if (actresses.length > 0) {
-                    actresses.forEach(s => content.appendChild(renderListItem(s)));
-                } else {
+                if (items.length > 0) {
+                    items.forEach(s => content.appendChild(renderListItem(s)));
+                } else if (!append) {
                     content.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">Không có dữ liệu diễn viên</div>';
                 }
             } else if (currentSugTab === 'genre') {
-                if (genres.length > 0) {
-                    genres.forEach(s => content.appendChild(renderListItem(s)));
-                } else {
+                if (items.length > 0) {
+                    items.forEach(s => content.appendChild(renderListItem(s)));
+                } else if (!append) {
                     content.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">Không có dữ liệu thể loại</div>';
                 }
             } else if (currentSugTab === 'maker') {
-                if (makers.length > 0) {
-                    makers.forEach(s => content.appendChild(renderListItem(s)));
-                } else {
+                if (items.length > 0) {
+                    items.forEach(s => content.appendChild(renderListItem(s)));
+                } else if (!append) {
                     content.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">Không có dữ liệu nhà sản xuất</div>';
                 }
             }
         }
 
         let suggestionTimeout = null;
-        function handleSuggestionFetch() {
+        let currentSugFetchId = 0;
+
+        function handleSuggestionFetch(force = false) {
             const q = videoSearchInput.value.trim();
+            if (!force && q === currentSugQuery && currentSugPage === 1 && currentSuggestions.length > 0) return;
+            
             clearTimeout(suggestionTimeout);
             suggestionTimeout = setTimeout(async () => {
-                let suggestions = [];
+                if (currentSugPage === 1) {
+                    sugHasMore = true;
+                }
+                if (isSugLoading || !sugHasMore) return;
+                isSugLoading = true;
+                
+                const fetchId = ++currentSugFetchId;
+                
                 try {
-                    const res = await apiFetch(`/api/search_suggestions?q=${encodeURIComponent(q)}`);
-                    if (res.success && res.suggestions) suggestions = res.suggestions;
+                    const res = await apiFetch(`/api/search_suggestions?q=${encodeURIComponent(q)}&tab=${currentSugTab}&page=${currentSugPage}`);
+                    if (fetchId !== currentSugFetchId) return;
                     
-                    const seen = new Set();
-                    const uniqueSuggestions = [];
-                    for (const s of suggestions) {
-                        if (!seen.has(s.text.toLowerCase())) {
-                            seen.add(s.text.toLowerCase());
-                            uniqueSuggestions.push(s);
+                    if (res.success && res.suggestions) {
+                        if (res.suggestions.length === 0) {
+                            sugHasMore = false;
+                        } else {
+                            const uniqueSuggestions = [];
+                            const seen = new Set(currentSuggestions.map(s => s.text.toLowerCase()));
+                            for (const s of res.suggestions) {
+                                if (!seen.has(s.text.toLowerCase())) {
+                                    seen.add(s.text.toLowerCase());
+                                    uniqueSuggestions.push(s);
+                                }
+                            }
+                            renderSuggestions(uniqueSuggestions, q, currentSugPage > 1);
+                            currentSugPage++;
                         }
+                    } else {
+                        sugHasMore = false;
                     }
-                    renderSuggestions(uniqueSuggestions, q);
                 } catch (e) {
                     console.error(e);
+                } finally {
+                    if (fetchId === currentSugFetchId) {
+                        isSugLoading = false;
+                    }
                 }
             }, 150);
         }
 
         videoSearchInput.addEventListener('focus', function() {
             this.select();
+            currentSugPage = 1;
+            sugHasMore = true;
             handleSuggestionFetch();
             updateSearchVisuals();
         });
@@ -1900,6 +1954,8 @@
 
         videoSearchInput.addEventListener('input', (e) => {
             clearSearchBtn.style.display = e.target.value ? 'block' : 'none';
+            currentSugPage = 1;
+            sugHasMore = true;
             handleSuggestionFetch();
             updateSearchVisuals();
         });

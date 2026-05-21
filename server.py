@@ -1238,14 +1238,78 @@ def video_details_api():
 @app.route('/api/search_suggestions', methods=['GET'])
 def search_suggestions():
     q = request.args.get('q', '').strip().lower()
+    tab = request.args.get('tab', 'all')
+    page = int(request.args.get('page', 1))
     identifier = get_identifier()
     suggestions = []
     
+    per_page = 30
+    offset = (page - 1) * per_page
+
     try:
         with db_lock:
             with sqlite_timeout(db_conn_instance, 2.0):
                 cursor = db_conn_instance.cursor()
                 
+                if tab in ['actress', 'genre', 'maker']:
+                    if not q:
+                        cursor.execute("SELECT keyword FROM tags_summary WHERE type=? ORDER BY count DESC LIMIT ? OFFSET ?", (tab, per_page, offset))
+                        for r in cursor.fetchall():
+                            suggestions.append({"text": r[0], "type": tab})
+                    else:
+                        words = q.replace('"', '').split()
+                        if not words:
+                            return jsonify({"success": True, "suggestions": suggestions})
+                        safe_key_and = ' AND '.join([f'"{w}"*' for w in words])
+                        try:
+                            cursor.execute('''
+                                SELECT keyword
+                                FROM tags_fts
+                                WHERE tags_fts MATCH ? AND type=?
+                                ORDER BY count DESC
+                                LIMIT ? OFFSET ?
+                            ''', (safe_key_and, tab, per_page, offset))
+                            tag_rows = cursor.fetchall()
+                        except Exception as e:
+                            custom_log("System", f"❌ FTS tags search error: {e}")
+                            tag_rows = []
+
+                        if len(tag_rows) < 15 and page == 1:
+                            load_tags_cache_if_needed(cursor)
+                            seen_tags = set([r[0] for r in tag_rows])
+                            q_low = q.lower()
+                            q_no_accents = remove_accents(q_low)
+                            q_sorted = " ".join(sorted(q_no_accents.split()))
+                            q_words = q_no_accents.split()
+                            
+                            fuzzy_matches = []
+                            for kw, t, c, low, low_no_accents, sorted_low in tags_cache:
+                                if t != tab or kw in seen_tags:
+                                    continue
+                                if q_no_accents in low_no_accents:
+                                    fuzzy_matches.append((1.0, c, kw, t))
+                                elif all(w in low_no_accents for w in q_words):
+                                    fuzzy_matches.append((0.95, c, kw, t))
+                                else:
+                                    matcher = difflib.SequenceMatcher(None, q_sorted, sorted_low)
+                                    if matcher.quick_ratio() >= 0.75:
+                                        score = matcher.ratio()
+                                        if score >= 0.75:
+                                            fuzzy_matches.append((score, c, kw, t))
+                                            
+                            fuzzy_matches.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                            for score, c, kw, t in fuzzy_matches[:per_page - len(tag_rows)]:
+                                tag_rows.append((kw,))
+                                seen_tags.add(kw)
+
+                        for r in tag_rows:
+                            suggestions.append({"text": r[0], "type": tab})
+
+                    return jsonify({"success": True, "suggestions": suggestions})
+
+                if page > 1:
+                    return jsonify({"success": True, "suggestions": []})
+
                 if identifier:
                     if not q:
                         cursor.execute("SELECT keyword FROM search_history WHERE username = ? ORDER BY searched_at DESC LIMIT 10", (identifier,))
