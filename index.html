@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Javtiful Player</title>
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
     <style>
         body, html {
@@ -102,11 +103,11 @@
         #search-container { padding: 10px; background: #0a0a0a; border-bottom: 1px solid #333; display: flex; align-items: center; position: relative; z-index: 100; }
         #search-input-wrapper { position: relative; flex-grow: 1; }
         #video-search {
-            width: 100%; padding: 10px; padding-right: 60px; border-radius: 6px;
+            width: 100%; padding: 10px; padding-right: 70px; border-radius: 6px;
             border: 1px solid #333; background: #222; color: #fff; box-sizing: border-box; outline: none; font-size: 14px;
         }
-        #clear-search { position: absolute; right: 35px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 18px; display: none; }
-        #submit-search { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 16px; }
+        #clear-search { position: absolute; right: 40px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 20px; display: none; }
+        #submit-search { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 24px; }
         
         #search-suggestions {
             position: fixed; top: 58px; left: 0; right: 0; background: #111;
@@ -249,6 +250,9 @@
             border-color: #ff4081;
             color: #fff;
         }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
     </style>
 </head>
 <body>
@@ -271,14 +275,12 @@
         <div id="toastContainer" style="position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 100; pointer-events: none;"></div>
 
         <div id="heart-animation" style="position: absolute; display: none; pointer-events: none; z-index: 100;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="#ff4081" stroke="#ff4081" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
-            </svg>
+            <span class="material-symbols-outlined" style="font-size: 80px; color: #ff4081; font-variation-settings: 'FILL' 1;">favorite</span>
         </div>
 
         <div id="profile-page" class="page-view">
             <div class="page-header">
-                <span id="close-profile-page" class="close-page">&#8592;</span>
+                <span id="close-profile-page" class="close-page material-symbols-outlined">arrow_back</span>
                 <h3 style="margin:0; font-size:16px;">Tài khoản</h3>
             </div>
             <div id="profile-content" style="padding: 15px; overflow-y: auto;">
@@ -311,7 +313,7 @@
                     <div style="display: flex; flex-direction: column; gap: 10px; background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <label style="font-size: 14px; color: #ccc;">Email</label>
-                            <span id="emailVerifiedBadge" style="display:none; background: #43a047; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px;">Đã xác thực ✔</span>
+                            <span id="emailVerifiedBadge" style="display:none; background: #43a047; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px;"><span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 2px;">check_circle</span>Đã xác thực</span>
                             <span id="emailUnverifiedBadge" style="display:none; background: #e53935; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px;">Chưa xác thực</span>
                         </div>
                         <div style="display: flex; gap: 10px;">
@@ -340,11 +342,11 @@
 
         <div id="gallery-page" class="page-view">
             <div id="search-container" style="flex-shrink: 0;">
-                <span id="close-gallery-page" class="close-page" style="margin-left: 5px;">&#8592;</span>
+                <span id="close-gallery-page" class="close-page material-symbols-outlined" style="margin-left: 5px;">arrow_back</span>
                 <div id="search-input-wrapper">
                     <input type="text" id="video-search" placeholder="Tìm kiếm videos..." autocomplete="off">
-                    <span id="clear-search">&times;</span>
-                    <span id="submit-search">🔍</span>
+                    <span id="clear-search" class="material-symbols-outlined">close</span>
+                    <span id="submit-search" class="material-symbols-outlined">search</span>
                     <div id="search-suggestions" style="display: none;"></div>
                 </div>
             </div>
@@ -361,7 +363,7 @@
 
         <div id="details-page" class="page-view">
             <div class="page-header">
-                <span id="close-details-page" class="close-page">&#8592;</span>
+                <span id="close-details-page" class="close-page material-symbols-outlined">arrow_back</span>
                 <h3 style="margin:0; font-size:16px;">Chi tiết Video</h3>
             </div>
             <div id="details-content" style="padding: 15px; overflow-y: auto; flex-grow: 1;">
@@ -373,27 +375,27 @@
                 <div id="details-chips" class="chips-container"></div>
                 <div id="details-desc-wrapper" style="margin-bottom: 15px; font-size: 14px; line-height: 1.5; display: none;"><strong>Mô tả:</strong> <div id="details-desc" style="margin-top: 5px; color: #aaa;"></div></div>
                 <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
-                    <button id="btn-watch-now" style="padding: 10px; background: #43a047; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">▶ Xem ngay</button>
-                    <button id="btn-open-javtiful" style="padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">🌐 Javtiful</button>
-                    <button id="btn-search-list" style="padding: 10px; background: #1e88e5; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">🔍 Xem trong danh sách video</button>
+                    <button id="btn-watch-now" style="padding: 10px; background: #43a047; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;"><span class="material-symbols-outlined">play_circle</span> Xem ngay</button>
+                    <button id="btn-open-javtiful" style="padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;"><span class="material-symbols-outlined">language</span> Javtiful</button>
+                    <button id="btn-search-list" style="padding: 10px; background: #1e88e5; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;"><span class="material-symbols-outlined">list</span> Xem trong danh sách</button>
                 </div>
             </div>
         </div>
 
         <div id="image-viewer" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:150; justify-content:center; align-items:center; touch-action: none;">
             <img id="fullscreen-image" src="" style="max-width:100%; max-height:100%; object-fit:contain; transition: transform 0.1s ease-out; transform-origin: center;">
-            <div id="close-image-viewer" style="position:absolute; top:20px; right:20px; font-size:30px; color:#fff; cursor:pointer; z-index:151; width:40px; height:40px; display:flex; justify-content:center; align-items:center; background:rgba(0,0,0,0.5); border-radius:50%;">&times;</div>
+            <div id="close-image-viewer" style="position:absolute; top:20px; right:20px; color:#fff; cursor:pointer; z-index:151; width:40px; height:40px; display:flex; justify-content:center; align-items:center; background:rgba(0,0,0,0.5); border-radius:50%;"><span class="material-symbols-outlined" style="font-size: 24px;">close</span></div>
         </div>
 
         <div id="action-icons">
-            <div class="action-btn" id="btn-profile" title="Tài khoản">👤</div>
-            <div class="action-btn" id="btn-favorite" title="Yêu thích">🤍</div>
-            <div class="action-btn" id="btn-sync" title="Đồng bộ">🔄</div>
-            <div class="action-btn" id="btn-list" title="Danh sách">☰</div>
-            <div class="action-btn" id="btn-fullscreen" title="Toàn màn hình">⛶</div>
-            <div class="action-btn" id="btn-play-pause" title="Play/Pause">▶</div>
-            <div class="action-btn" id="btn-prev" title="Video trước">▲</div>
-            <div class="action-btn" id="btn-next" title="Video sau">▼</div>
+            <div class="action-btn" id="btn-profile" title="Tài khoản"><span class="material-symbols-outlined">person</span></div>
+            <div class="action-btn" id="btn-favorite" title="Yêu thích"><span class="material-symbols-outlined" id="fav-icon">favorite_border</span></div>
+            <div class="action-btn" id="btn-sync" title="Đồng bộ"><span class="material-symbols-outlined">sync</span></div>
+            <div class="action-btn" id="btn-list" title="Danh sách"><span class="material-symbols-outlined">format_list_bulleted</span></div>
+            <div class="action-btn" id="btn-fullscreen" title="Toàn màn hình"><span class="material-symbols-outlined">fullscreen</span></div>
+            <div class="action-btn" id="btn-play-pause" title="Play/Pause"><span class="material-symbols-outlined" id="play-pause-icon">play_arrow</span></div>
+            <div class="action-btn" id="btn-prev" title="Video trước"><span class="material-symbols-outlined">skip_previous</span></div>
+            <div class="action-btn" id="btn-next" title="Video sau"><span class="material-symbols-outlined">skip_next</span></div>
         </div>
         <div id="fast-seek-indicator" style="display: none; position: absolute; top: 15%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 20px; font-size: 16px; font-weight: bold; color: #fff; z-index: 50; pointer-events: none; backdrop-filter: blur(4px);"></div>
     </div>
@@ -527,10 +529,10 @@
                 const item = document.createElement('div');
                 item.className = 'suggestion-item';
                 
-                let icon = '🔍';
-                if (s.type === 'history') icon = '🕒';
-                else if (s.type === 'trend' || s.type === 'trend_day_title') icon = '📈';
-                else if (s.type === 'title') icon = '🎬';
+                let icon = 'search';
+                if (s.type === 'history') icon = 'history';
+                else if (s.type === 'trend' || s.type === 'trend_day_title') icon = 'trending_up';
+                else if (s.type === 'title') icon = 'movie';
                 
                 let typeText = s.type;
                 if (s.type === 'history') typeText = 'Lịch sử';
@@ -539,11 +541,11 @@
 
                 let deleteBtnHtml = '';
                 if (s.type === 'history') {
-                    deleteBtnHtml = `<div class="delete-history-btn" title="Xóa" style="color: #aaa; cursor: pointer; padding: 0 5px; font-size: 16px;">&times;</div>`;
+                    deleteBtnHtml = `<div class="delete-history-btn" title="Xóa" style="color: #aaa; cursor: pointer; padding: 0 5px; display: flex; align-items: center;"><span class="material-symbols-outlined" style="font-size: 20px;">close</span></div>`;
                 }
                 
                 item.innerHTML = `
-                    <div class="suggestion-icon">${icon}</div>
+                    <div class="suggestion-icon"><span class="material-symbols-outlined" style="font-size: 20px;">${icon}</span></div>
                     <div class="suggestion-text">${s.text}</div>
                     <div class="suggestion-type">${typeText}</div>
                     ${deleteBtnHtml}
@@ -555,7 +557,7 @@
                         e.preventDefault();
                         e.stopPropagation();
                         
-                        delBtn.innerHTML = '<span style="font-size: 12px;">⏳</span>';
+                        delBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">hourglass_empty</span>';
                         
                         setTimeout(async () => {
                             try {
@@ -565,7 +567,7 @@
                                     body: JSON.stringify({ keyword: s.text })
                                 });
                                 if (res.success) {
-                                    delBtn.innerHTML = '<span style="color: #4caf50; font-size: 12px;">✔️</span>';
+                                    delBtn.innerHTML = '<span class="material-symbols-outlined" style="color: #4caf50; font-size: 20px;">check</span>';
                                     setTimeout(() => {
                                         item.remove();
                                         if (container.children.length === 0) container.style.display = 'none';
@@ -574,9 +576,9 @@
                                     throw new Error(res.error || 'Error');
                                 }
                             } catch (err) {
-                                delBtn.innerHTML = '<span style="color: #e53935; font-size: 12px;">❌</span>';
+                                delBtn.innerHTML = '<span class="material-symbols-outlined" style="color: #e53935; font-size: 20px;">close</span>';
                                 setTimeout(() => {
-                                    delBtn.innerHTML = '&times;';
+                                    delBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">close</span>';
                                 }, 1000);
                             }
                         }, 400);
@@ -639,7 +641,7 @@
                 items.forEach(s => {
                     const chip = document.createElement('span');
                     chip.className = `detail-chip chip-${typeClass}`;
-                    chip.innerText = icon + ' ' + s.text;
+                    chip.innerHTML = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 4px;">${icon}</span>${s.text}`;
                     
                     chip.onmousedown = (e) => {
                         e.preventDefault();
@@ -714,16 +716,16 @@
                 container.appendChild(grp);
             }
 
-            const actressGroup = renderChipGroup('Diễn viên', actresses, 'actress', '👩');
+            const actressGroup = renderChipGroup('Diễn viên', actresses, 'actress', 'person');
             if (actressGroup) container.appendChild(actressGroup);
 
-            const genreGroup = renderChipGroup('Thể loại', genres, 'genre', '🏷️');
+            const genreGroup = renderChipGroup('Thể loại', genres, 'genre', 'label');
             if (genreGroup) container.appendChild(genreGroup);
 
-            const makerGroup = renderChipGroup('Nhà sản xuất', makers, 'maker', '🏢');
+            const makerGroup = renderChipGroup('Nhà sản xuất', makers, 'maker', 'business');
             if (makerGroup) container.appendChild(makerGroup);
 
-            const dateGroup = renderChipGroup('Ngày phát hành', dates, 'releasedate', '📅');
+            const dateGroup = renderChipGroup('Ngày phát hành', dates, 'releasedate', 'calendar_month');
             if (dateGroup) container.appendChild(dateGroup);
 
             const watchHistoryGrid = renderVideoGrid('Từ Lịch sử xem', watchHistory);
@@ -909,11 +911,13 @@
             const btnFav = document.getElementById('btn-favorite');
             if (btnFav) {
                 if (isFavorited) {
-                    btnFav.innerText = '❤️';
+                    btnFav.innerText = 'favorite';
                     btnFav.style.color = '#ff4081';
+                    btnFav.style.fontVariationSettings = "'FILL' 1";
                 } else {
-                    btnFav.innerText = '🤍';
+                    btnFav.innerText = 'favorite_border';
                     btnFav.style.color = '#fff';
+                    btnFav.style.fontVariationSettings = "'FILL' 0";
                 }
             }
         }
@@ -1641,12 +1645,12 @@
                         
                         let dateStr = '';
                         if (video.added_at) {
-                            dateStr = `🕒 ${formatTimeAgo(video.added_at)}`;
+                            dateStr = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 2px;">schedule</span>${formatTimeAgo(video.added_at)}`;
                         } else if (video.release_date) {
-                            dateStr = `📅 ${formatTimeAgo(video.release_date)}`;
+                            dateStr = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 2px;">calendar_today</span>${formatTimeAgo(video.release_date)}`;
                         }
                         
-                        let viewsStr = video.views ? `👁️ ${video.views}` : '';
+                        let viewsStr = video.views ? `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 2px;">visibility</span>${video.views}` : '';
 
                         item.innerHTML = `
                             <div class="gallery-item-thumb" style="background-image: url('${video.cover}')"></div>
@@ -1770,8 +1774,8 @@
                         }
                     });
 
-                    activePlayer.on('play', () => { btnPlayPause.innerText = '❚❚'; });
-                    activePlayer.on('pause', () => { btnPlayPause.innerText = '▶'; });
+                    activePlayer.on('play', () => { document.getElementById('play-pause-icon').innerText = 'pause'; });
+                    activePlayer.on('pause', () => { document.getElementById('play-pause-icon').innerText = 'play_arrow'; });
 
                     activePlayer.on('timeupdate', () => {
                         if (isDraggingSeek || isSeekingUI) return;
@@ -2473,7 +2477,7 @@
             container.style.gap = '12px';
             container.style.marginBottom = '15px';
             
-            const createBlock = (title, items, type) => {
+            const createBlock = (title, items, type, icon) => {
                 const block = document.createElement('div');
                 block.style.display = 'flex';
                 block.style.flexDirection = 'column';
@@ -2493,7 +2497,7 @@
                 if (!items || items.length === 0 || items[0] === 'N/A' || items[0] === 'Đang tải...') {
                     const emptyChip = document.createElement('span');
                     emptyChip.className = `detail-chip chip-${type}`;
-                    emptyChip.innerText = 'N/A';
+                    emptyChip.innerHTML = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 4px;">${icon}</span>N/A`;
                     emptyChip.style.cursor = 'default';
                     emptyChip.style.opacity = '0.5';
                     chipsDiv.appendChild(emptyChip);
@@ -2502,7 +2506,7 @@
                         if (!text) return;
                         const chip = document.createElement('span');
                         chip.className = `detail-chip chip-${type}`;
-                        chip.innerText = text;
+                        chip.innerHTML = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 4px;">${icon}</span>${text}`;
                         chip.onclick = () => {
                             const p = getBaseUrlParams();
                             p.set('searchKey', text);
@@ -2525,9 +2529,9 @@
             const genres = videoData.genre ? videoData.genre.split(',').map(s => s.trim()).filter(Boolean) : [];
             const makers = videoData.maker ? videoData.maker.split(',').map(s => s.trim()).filter(Boolean) : [];
 
-            container.appendChild(createBlock('Diễn viên', actresses, 'actress'));
-            container.appendChild(createBlock('Thể loại', genres, 'genre'));
-            container.appendChild(createBlock('Nhà sản xuất', makers, 'maker'));
+            container.appendChild(createBlock('Diễn viên', actresses, 'actress', 'person'));
+            container.appendChild(createBlock('Thể loại', genres, 'genre', 'label'));
+            container.appendChild(createBlock('Nhà sản xuất', makers, 'maker', 'business'));
         }
 
         async function showVideoDetail(index, fallbackVideo = null) {
