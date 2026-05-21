@@ -1609,8 +1609,12 @@
 
         function formatTime(seconds) {
             if (isNaN(seconds)) return "00:00";
-            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
             const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+            if (h > 0) {
+                return `${h}:${m}:${s}`;
+            }
             return `${m}:${s}`;
         }
 
@@ -1696,7 +1700,7 @@
                     });
                     
                     activePlayer.on('loadedmetadata', () => {
-                        timeDisplay.innerText = `00:00 / ${formatTime(activePlayer.duration())}`;
+                        timeDisplay.innerText = `${formatTime(0)} / ${formatTime(activePlayer.duration())}`;
                         loadingIndicator.style.display = 'none';
                     });
 
