@@ -72,6 +72,14 @@ class Scraper:
                         value TEXT
                     )
                 ''')
+                self.db_conn.execute('''
+                    CREATE TABLE IF NOT EXISTS play_configs (
+                        video_id TEXT PRIMARY KEY,
+                        jwplayer_key TEXT,
+                        server TEXT,
+                        extra_data TEXT
+                    )
+                ''')
                 self.db_conn.commit()
             except:
                 pass
@@ -299,10 +307,16 @@ class Scraper:
                                     if match: 
                                         mp4_url = match.group(1)
                                         
+                                        jw_key = ""
                                         key_match = re.search(r'jwplayer\.key\s*=\s*["\']([^"\']+)["\']', embed_res.text)
                                         if key_match:
                                             jw_key = key_match.group(1)
                                             mp4_url = f"{mp4_url}#jwkey={jw_key}"
+                                            
+                                        with self.db_lock:
+                                            cursor = self.db_conn.cursor()
+                                            cursor.execute("INSERT OR REPLACE INTO play_configs (video_id, jwplayer_key, server) VALUES (?, ?, ?)", (vid_id, jw_key, str(server_num)))
+                                            self.db_conn.commit()
                                             
                                         break 
                                         

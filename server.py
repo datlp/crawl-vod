@@ -1176,7 +1176,21 @@ def video_url_api():
     force_refresh = request.args.get('refresh', '0').lower() in ['1', 'true', 'yes']
     url = scraper_instance.get_video_url(vid_id, force_refresh=force_refresh)
     if url:
-        return jsonify({"success": True, "url": url})
+        play_config = {}
+        try:
+            with db_lock:
+                cursor = db_conn_instance.cursor()
+                cursor.execute("SELECT jwplayer_key, server, extra_data FROM play_configs WHERE video_id = ?", (vid_id,))
+                row = cursor.fetchone()
+                if row:
+                    play_config = {
+                        "jwplayer_key": row[0] if row[0] else "",
+                        "server": row[1] if row[1] else "",
+                        "extra_data": row[2] if row[2] else ""
+                    }
+        except Exception:
+            pass
+        return jsonify({"success": True, "url": url, "play_config": play_config})
     return jsonify({"success": False, "error": "Cannot extract URL"})
 
 @app.route('/api/video_details', methods=['GET'])

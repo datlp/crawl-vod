@@ -91,6 +91,14 @@ class Scraper:
                         value TEXT
                     )
                 ''')
+                self.db_conn.execute('''
+                    CREATE TABLE IF NOT EXISTS play_configs (
+                        video_id TEXT PRIMARY KEY,
+                        jwplayer_key TEXT,
+                        server TEXT,
+                        extra_data TEXT
+                    )
+                ''')
                 self.db_conn.commit()
             except:
                 pass
@@ -328,6 +336,18 @@ class Scraper:
                 m3u8_match = re.search(r"file:\s*'([^']+index\.m3u8)'", data_html)
                 if m3u8_match:
                     m3u8_url = m3u8_match.group(1).replace(r"\/", "/")
+                    
+                    jw_key = ""
+                    key_match = re.search(r'jwplayer\.key\s*=\s*["\']([^"\']+)["\']', data_html)
+                    if key_match:
+                        jw_key = key_match.group(1)
+                        m3u8_url = f"{m3u8_url}#jwkey={jw_key}"
+                        
+                    with self.db_lock:
+                        cursor = self.db_conn.cursor()
+                        cursor.execute("INSERT OR REPLACE INTO play_configs (video_id, jwplayer_key, server) VALUES (?, ?, ?)", (vid_id, jw_key, "1"))
+                        self.db_conn.commit()
+                        
                     with self.memory_lock:
                         self.db_buffer['video_urls'][vid_id] = m3u8_url
                     return m3u8_url
