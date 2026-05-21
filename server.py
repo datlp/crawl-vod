@@ -1027,9 +1027,9 @@ def proxy_video():
             
         source_name_upper = getattr(scraper_instance, 'source_name', '').upper()
         if source_name_upper == 'VLXX':
-            chunk_size = 1024 * 1024  # 1MB mỗi khối cho VLXX (Google Photos thường block nếu request nhiều chunk nhỏ)
+            chunk_size = 2 * 1024 * 1024  # Ép xung: 2MB mỗi khối cho VLXX để kéo mảng dữ liệu lớn nhanh hơn
         else:
-            chunk_size = 256 * 1024   # 0.25MB cho các server khác
+            chunk_size = 512 * 1024   # Ép xung: 0.5MB cho các server khác
             
         ranges_to_fetch = []
         curr = start
@@ -1060,7 +1060,7 @@ def proxy_video():
                     res = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=15, stream=True)
                     if res.status_code in (200, 206):
                         data = bytearray()
-                        for chunk in res.iter_content(chunk_size=128*1024):
+                        for chunk in res.iter_content(chunk_size=256*1024): # Tăng đường ống ghi RAM nội bộ lên 256KB
                             if abort_event.is_set():
                                 res.close()
                                 return None
@@ -1074,11 +1074,11 @@ def proxy_video():
         def generate_multithread():
             global global_last_request_time
             if source_name_upper == 'VLXX':
-                max_workers = 4 # Giảm luồng cho VLXX tránh rate limit Google
-                window_size = max_workers * 2
+                max_workers = 8 # Ép xung lên 8 luồng (ngưỡng an toàn tối đa của Google Photos)
+                window_size = max_workers * 2 # Đệm trước 16 khối (32MB) vào RAM
             else:
-                max_workers = 9
-                window_size = max_workers * 2
+                max_workers = 16 # IDM Mode: 16 luồng song song cho các nguồn bình thường
+                window_size = max_workers * 2 # Đệm trước 32 khối
                 
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
             try:
