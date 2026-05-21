@@ -352,22 +352,20 @@ def load_tags_cache_if_needed(cursor):
             custom_log("System", f"❌ Load tags cache error: {e}")
 
 def rebuild_tags_fts(db_conn):
-    custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker và cụm từ...")
+    custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker...")
     cursor = db_conn.cursor()
-    cursor.execute(f"SELECT title, actress, genre, maker, details FROM {VIDEOS_TABLE}")
+    cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE}")
     rows = cursor.fetchall()
     
     actress_counts = {}
     genre_counts = {}
     maker_counts = {}
-    phrase_counts = {}
     
     for row in rows:
         title = row[0]
         actress = row[1]
         genre = row[2]
         maker = row[3]
-        details = row[4]
         
         if actress:
             for a in actress.split(','):
@@ -382,18 +380,6 @@ def rebuild_tags_fts(db_conn):
                 m = m.strip()
                 if m: maker_counts[m] = maker_counts.get(m, 0) + 1
                 
-        text_for_phrases = ""
-        if title: text_for_phrases += title + " "
-        if details: text_for_phrases += details + " "
-        
-        if text_for_phrases.strip():
-            t = text_for_phrases.lower()
-            t_clean = re.sub(r'[^\w\s_]', ' ', t)
-            words = [w for w in t_clean.split() if not w.isdigit()]
-            for n in range(2, 8):
-                for i in range(len(words) - n + 1):
-                    ngram = " ".join(words[i:i+n])
-                    phrase_counts[ngram] = phrase_counts.get(ngram, 0) + 1
                 
     cursor.execute("DROP TABLE IF EXISTS tags_summary")
     cursor.execute("DROP TABLE IF EXISTS tags_fts")
@@ -405,16 +391,13 @@ def rebuild_tags_fts(db_conn):
     for k, c in actress_counts.items(): data.append((k, 'actress', c))
     for k, c in genre_counts.items(): data.append((k, 'genre', c))
     for k, c in maker_counts.items(): data.append((k, 'maker', c))
-    for k, c in phrase_counts.items():
-        if c >= 3: # Lọc cụm từ có trên 3 lần xuất hiện cho nhẹ CSDL
-            data.append((k, 'phrase', c))
     
     cursor.executemany("INSERT INTO tags_summary (keyword, type, count) VALUES (?, ?, ?)", data)
     cursor.execute("INSERT INTO tags_fts(tags_fts) VALUES('rebuild')")
     db_conn.commit()
     global tags_cache
     tags_cache = []
-    custom_log("System", "✔️ Hoàn tất tổng hợp tags và cụm từ.")
+    custom_log("System", "✔️ Hoàn tất tổng hợp tags.")
 
 class BackgroundScanner(threading.Thread):
     def __init__(self, scraper, upgrade_all=False, news_threads=0, detail_threads=0, videos_threads=0):
@@ -1334,14 +1317,12 @@ def search_suggestions():
             match_actress = []
             match_genre = []
             match_maker = []
-            match_phrase = []
             
             for row in tag_rows:
                 k, t, c = row
                 if t == 'actress': match_actress.append({"text": k, "count": c})
                 elif t == 'genre': match_genre.append({"text": k, "count": c})
                 elif t == 'maker': match_maker.append({"text": k, "count": c})
-                elif t == 'phrase': match_phrase.append({"text": k, "count": c})
 
             match_watch_history = []
             if identifier:
@@ -1396,7 +1377,6 @@ def search_suggestions():
             unique_match_title = [item for item in match_title if item['id'] not in history_ids]
 
         chips = []
-        for p in match_phrase[:7]: chips.append({"text": p["text"], "type": "phrase"})
         for a in match_actress[:5]: chips.append({"text": a["text"], "type": "actress"})
         for g in match_genre[:5]: chips.append({"text": g["text"], "type": "genre"})
         for m in match_maker[:5]: chips.append({"text": m["text"], "type": "maker"})

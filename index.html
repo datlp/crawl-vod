@@ -518,10 +518,9 @@
             const actresses = suggestions.filter(s => s.type === 'actress');
             const genres = suggestions.filter(s => ['genre', 'trend_month_genre'].includes(s.type));
             const makers = suggestions.filter(s => ['maker', 'studio'].includes(s.type));
-            const phrases = suggestions.filter(s => s.type === 'phrase');
             const dates = suggestions.filter(s => s.type === 'releasedate');
             const watchHistory = suggestions.filter(s => s.type === 'watch_history');
-            const titles = suggestions.filter(s => !['history', 'actress', 'genre', 'trend_month_genre', 'maker', 'studio', 'releasedate', 'phrase', 'watch_history'].includes(s.type));
+            const titles = suggestions.filter(s => !['history', 'actress', 'genre', 'trend_month_genre', 'maker', 'studio', 'releasedate', 'watch_history'].includes(s.type));
 
             const renderListItem = (s) => {
                 const item = document.createElement('div');
@@ -531,13 +530,11 @@
                 if (s.type === 'history') icon = '🕒';
                 else if (s.type === 'trend' || s.type === 'trend_day_title') icon = '📈';
                 else if (s.type === 'title') icon = '🎬';
-                else if (s.type === 'phrase') icon = '💬';
                 
                 let typeText = s.type;
                 if (s.type === 'history') typeText = 'Lịch sử';
                 else if (s.type === 'trend' || s.type === 'trend_day_title') typeText = 'Xu hướng';
                 else if (s.type === 'title') typeText = 'Video';
-                else if (s.type === 'phrase') typeText = 'Cụm từ';
 
                 let deleteBtnHtml = '';
                 if (s.type === 'history') {
@@ -589,7 +586,7 @@
                     if (e.target.closest('.delete-history-btn')) return;
                     e.preventDefault();
                     
-                    if (s.type === 'history' || s.type === 'phrase') {
+                    if (s.type === 'history') {
                         videoSearchInput.value = s.text;
                         clearSearchBtn.style.display = 'block';
                         container.style.display = 'none';
@@ -707,13 +704,12 @@
                 return titleGrp;
             };
 
-            if (historyItems.length > 0 || phrases.length > 0) {
+            if (historyItems.length > 0) {
                 const grp = document.createElement('div');
                 if (actresses.length > 0 || genres.length > 0 || makers.length > 0 || dates.length > 0 || titles.length > 0) {
                     grp.style.borderBottom = '1px solid #333';
                 }
                 historyItems.forEach(s => grp.appendChild(renderListItem(s)));
-                phrases.forEach(s => grp.appendChild(renderListItem(s)));
                 container.appendChild(grp);
             }
 
