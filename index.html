@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Javtiful Player</title>
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
-            background-color: #000; color: #fff; font-family: sans-serif;
+            background-color: #121212; color: rgba(255, 255, 255, 0.87); font-family: "Roboto", "Helvetica", "Arial", sans-serif;
             overflow: hidden;
             -webkit-touch-callout: none;
             -webkit-user-select: none;
@@ -19,6 +20,44 @@
         input {
             -webkit-user-select: auto;
             user-select: auto;
+        }
+        button.mui-btn {
+            font-family: "Roboto", "Helvetica", "Arial", sans-serif; font-weight: 500; font-size: 0.875rem; line-height: 1.75; letter-spacing: 0.02857em; text-transform: uppercase;
+            min-width: 64px; padding: 6px 16px; border-radius: 4px;
+            transition: background-color 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,border-color 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,color 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms;
+            border: 0; cursor: pointer;
+            box-shadow: 0px 3px 1px -2px rgba(0,0,0,0.2),0px 2px 2px 0px rgba(0,0,0,0.14),0px 1px 5px 0px rgba(0,0,0,0.12);
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box;
+        }
+        button.mui-btn:disabled {
+            color: rgba(255, 255, 255, 0.3) !important; box-shadow: none; background-color: rgba(255, 255, 255, 0.12) !important; cursor: default;
+        }
+        .mui-btn-primary { background-color: #90caf9; color: rgba(0, 0, 0, 0.87); }
+        .mui-btn-primary:hover { background-color: #42a5f5; }
+        .mui-btn-secondary { background-color: #f48fb1; color: rgba(0, 0, 0, 0.87); }
+        .mui-btn-secondary:hover { background-color: #f06292; }
+        .mui-btn-error { background-color: #f44336; color: #fff; }
+        .mui-btn-error:hover { background-color: #d32f2f; }
+        .mui-btn-success { background-color: #66bb6a; color: rgba(0, 0, 0, 0.87); }
+        .mui-btn-success:hover { background-color: #388e3c; }
+        .mui-btn-contained { background-color: #333; color: #fff; }
+        .mui-btn-contained:hover { background-color: #555; }
+        .mui-btn-text { background-color: transparent; color: #90caf9; box-shadow: none; }
+        .mui-btn-text:hover { background-color: rgba(144, 202, 249, 0.08); box-shadow: none; }
+
+        input.mui-input {
+            font-family: "Roboto", "Helvetica", "Arial", sans-serif; font-weight: 400; font-size: 1rem; line-height: 1.4375em; letter-spacing: 0.00938em;
+            color: rgba(255, 255, 255, 0.87); box-sizing: border-box; cursor: text;
+            display: inline-flex; align-items: center; padding: 16.5px 14px; border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.23); background: transparent; outline: none;
+            transition: border-color 200ms cubic-bezier(0.0, 0, 0.2, 1) 0ms; width: 100%;
+        }
+        input.mui-input:focus { border-color: #90caf9; border-width: 2px; padding: 15.5px 13px; }
+        input.mui-input::placeholder { color: rgba(255, 255, 255, 0.5); opacity: 1; }
+        
+        .mui-paper {
+            background-color: #1e1e1e; color: rgba(255, 255, 255, 0.87); border-radius: 4px;
+            box-shadow: 0px 2px 1px -1px rgba(0,0,0,0.2),0px 1px 1px 0px rgba(0,0,0,0.14),0px 1px 3px 0px rgba(0,0,0,0.12);
         }
         #app {
             position: relative; width: 100%; height: 100%;
@@ -87,42 +126,47 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: #0a0a0a;
+            background-color: #121212;
             z-index: 40;
             display: none;
             flex-direction: column;
         }
         .page-view.active { display: flex; }
         .page-header {
-            padding: 15px; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 15px;
-            background-color: #111;
+            padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; gap: 16px;
+            background-color: #272727; box-shadow: 0px 2px 4px -1px rgba(0,0,0,0.2); z-index: 110;
+        }
+        .page-header h3 {
+            font-weight: 500; font-size: 1.25rem;
         }
         .close-page {
             font-size: 24px; cursor: pointer; line-height: 1; margin-left: -5px; padding-right: 10px; color: #fff;
         }
-        #search-container { padding: 10px; background: #0a0a0a; border-bottom: 1px solid #333; display: flex; align-items: center; position: relative; z-index: 100; }
+        #search-container { padding: 12px 16px; background: #121212; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; position: relative; z-index: 100; }
         #search-input-wrapper { position: relative; flex-grow: 1; }
         #video-search {
-            width: 100%; padding: 10px; padding-right: 70px; border-radius: 6px;
-            border: 1px solid #333; background: #222; color: #fff; box-sizing: border-box; outline: none; font-size: 14px;
+            padding-right: 70px; padding-top: 12px; padding-bottom: 12px;
+        }
+        #video-search:focus {
+            padding-right: 69px; padding-top: 11px; padding-bottom: 11px;
         }
         #clear-search { position: absolute; right: 40px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 20px; display: none; }
         #submit-search { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 24px; }
         
         #search-suggestions {
-            position: fixed; top: 58px; left: 0; right: 0; background: #111;
+            position: fixed; top: 58px; left: 0; right: 0; background: #1e1e1e;
             border: none; border-radius: 0; padding-bottom: 20px;
             overflow-y: auto; z-index: 150; box-shadow: none;
         }
         .suggestion-item {
-            display: flex; align-items: center; padding: 10px 15px; cursor: pointer;
-            border-bottom: 1px solid #333; gap: 10px;
+            display: flex; align-items: center; padding: 12px 16px; cursor: pointer;
+            border-bottom: 1px solid rgba(255,255,255,0.05); gap: 10px;
         }
         .suggestion-item:last-child { border-bottom: none; }
-        .suggestion-item:hover { background: #333; }
+        .suggestion-item:hover { background: rgba(255,255,255,0.08); }
         .suggestion-icon { color: #888; font-size: 16px; width: 20px; text-align: center; }
         .suggestion-text { flex-grow: 1; color: #fff; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
-        .suggestion-type { font-size: 11px; color: #888; background: #111; padding: 2px 6px; border-radius: 10px; }
+        .suggestion-type { font-size: 0.6875rem; color: #888; background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 10px; }
         
         .gallery-grid {
             flex-grow: 1;
@@ -154,7 +198,7 @@
             aspect-ratio: 16 / 9;
             background-size: cover;
             background-position: center;
-            background-color: #222;
+            background-color: #1e1e1e;
             border-radius: 12px;
             transition: border-radius 0.2s ease;
         }
@@ -193,8 +237,8 @@
             cursor: pointer;
         }
         .toast {
-            background-color: #333; color: #fff; padding: 10px 20px; border-radius: 6px;
-            font-size: 14px; font-weight: 500; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            background-color: #323232; color: #fff; padding: 14px 16px; border-radius: 4px;
+            font-size: 0.875rem; font-weight: 400; font-family: "Roboto", "Helvetica", "Arial", sans-serif; box-shadow: 0px 3px 5px -1px rgba(0,0,0,0.2),0px 6px 10px 0px rgba(0,0,0,0.14),0px 1px 18px 0px rgba(0,0,0,0.12);
             transition: all 0.3s ease; opacity: 0; transform: translateY(10px);
         }
         .toast.show { opacity: 1; transform: translateY(0); }
@@ -211,18 +255,30 @@
             animation: heartBeat 0.8s ease-out forwards;
         }
         #gallery-tabs::-webkit-scrollbar { display: none; }
+        .mui-tab {
+            flex-shrink: 0; padding: 12px 24px; background: none; border: none; color: rgba(255,255,255,0.6); border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap;
+            font-family: "Roboto", "Helvetica", "Arial", sans-serif; text-transform: uppercase; font-size: 0.875rem; font-weight: 500;
+            transition: color 250ms, border-color 250ms;
+        }
+        .mui-tab.active {
+            color: #90caf9;
+            border-bottom-color: #90caf9;
+        }
         .tab-badge {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: #333;
-            color: #ccc;
+            background: rgba(255,255,255,0.12);
+            color: rgba(255,255,255,0.87);
             border-radius: 10px;
             padding: 2px 6px;
-            font-size: 11px;
+            font-size: 0.75rem;
             margin-left: 6px;
-            font-weight: 600;
             line-height: 1;
+        }
+        .mui-tab.active .tab-badge {
+            background: rgba(144, 202, 249, 0.16);
+            color: #90caf9;
         }
         .chips-container {
             display: flex;
@@ -234,21 +290,21 @@
         .detail-chip {
             padding: 5px 12px;
             border-radius: 16px;
-            font-size: 12px;
-            font-weight: 500;
+            font-size: 0.8125rem;
+            font-weight: 400;
             cursor: pointer;
             transition: all 0.2s ease;
-            background: #222;
-            border: 1px solid #444;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.23);
             color: #ddd;
         }
-        .chip-maker { border-color: #1e88e5; color: #90caf9; }
-        .chip-actress { border-color: #ff4081; color: #ff80ab; }
-        .chip-genre { border-color: #43a047; color: #a5d6a7; }
+        .chip-maker { border-color: rgba(144, 202, 249, 0.5); color: #90caf9; }
+        .chip-actress { border-color: rgba(244, 143, 177, 0.5); color: #f48fb1; }
+        .chip-genre { border-color: rgba(129, 199, 132, 0.5); color: #81c784; }
         .chip-maker:hover, .chip-actress:hover, .chip-genre:hover {
-            background: #ff4081;
-            border-color: #ff4081;
-            color: #fff;
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.87);
+            color: rgba(255,255,255,0.87);
         }
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -285,56 +341,56 @@
             </div>
             <div id="profile-content" style="padding: 15px; overflow-y: auto;">
                 <div id="sessionDisplay" style="margin-bottom: 10px; font-size: 14px; color: #aaa; word-break: break-all;"></div>
-                <button id="logoutBtn" style="display:none; padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; margin-bottom: 10px;">Thoát</button>
-                <button id="identifyBtn" style="padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; margin-bottom: 10px;">Định danh</button>
+                <button id="logoutBtn" class="mui-btn mui-btn-contained" style="display:none; width: 100%; margin-bottom: 16px;">Thoát</button>
+                <button id="identifyBtn" class="mui-btn mui-btn-error" style="width: 100%; margin-bottom: 16px;">Định danh</button>
 
-                <div id="identifyForm" style="display:none; flex-direction: column; gap: 10px; background: #111; padding: 15px; border-radius: 6px;">
-                    <input type="text" id="identifyUsername" placeholder="Username" style="padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" autocomplete="off">
-                    <div id="usernameStatus" style="font-size: 12px; color: #aaa; display: none;"></div>
-                    <input type="password" id="identifyPassword" placeholder="Password" style="display:none; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" autocomplete="new-password">
-                    <input type="password" id="identifyRetypePassword" placeholder="Nhập lại Password" style="display:none; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" autocomplete="new-password">
+                <div id="identifyForm" class="mui-paper" style="display:none; flex-direction: column; gap: 16px; padding: 16px; margin-bottom: 16px;">
+                    <input type="text" id="identifyUsername" class="mui-input" placeholder="Username" autocomplete="off">
+                    <div id="usernameStatus" style="font-size: 0.75rem; color: rgba(255,255,255,0.6); display: none; margin-top: -12px; margin-left: 14px;"></div>
+                    <input type="password" id="identifyPassword" class="mui-input" placeholder="Password" style="display:none;" autocomplete="new-password">
+                    <input type="password" id="identifyRetypePassword" class="mui-input" placeholder="Nhập lại Password" style="display:none;" autocomplete="new-password">
                     
-                    <div id="otpGroup" style="display:none; gap: 10px;">
-                        <input type="text" id="identifyOtp" placeholder="Mã OTP" style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;">
-                        <button id="sendOtpBtn" style="padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;">Gửi OTP</button>
+                    <div id="otpGroup" style="display:none; gap: 10px; align-items: stretch;">
+                        <input type="text" id="identifyOtp" class="mui-input" placeholder="Mã OTP" style="flex: 1;">
+                        <button id="sendOtpBtn" class="mui-btn mui-btn-contained" style="white-space: nowrap;">Gửi OTP</button>
                     </div>
 
-                    <button id="submitIdentityBtn" style="display:none; padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Tiếp tục</button>
+                    <button id="submitIdentityBtn" class="mui-btn mui-btn-error" style="display:none; width: 100%;">Tiếp tục</button>
                     
-                    <div style="display: flex; justify-content: space-between; font-size: 12px;">
-                        <span id="toggleOtpLoginBtn" style="display:none; color: #aaa; cursor: pointer;">Đăng nhập bằng OTP?</span>
-                        <span id="forgotPasswordBtn" style="display:none; color: #aaa; cursor: pointer;">Quên mật khẩu?</span>
+                    <div style="display: flex; justify-content: space-between;">
+                        <button id="toggleOtpLoginBtn" class="mui-btn mui-btn-text" style="display:none; padding: 4px 8px; font-size: 0.75rem;">Đăng nhập bằng OTP?</button>
+                        <button id="forgotPasswordBtn" class="mui-btn mui-btn-text" style="display:none; padding: 4px 8px; font-size: 0.75rem;">Quên mật khẩu?</button>
                     </div>
                 </div>
 
-                <div id="profileSection" style="display:none; flex-direction: column; gap: 10px; margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
-                    <h4 style="margin: 0; color: #f1f1f1;">Quản lý Tài Khoản</h4>
+                <div id="profileSection" style="display:none; flex-direction: column; gap: 16px; margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 16px;">
+                    <h4 style="margin: 0; font-weight: 500; font-size: 1.25rem;">Quản lý Tài Khoản</h4>
                     
-                    <div style="display: flex; flex-direction: column; gap: 10px; background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444;">
+                    <div class="mui-paper" style="display: flex; flex-direction: column; gap: 16px; padding: 16px;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label style="font-size: 14px; color: #ccc;">Email</label>
-                            <span id="emailVerifiedBadge" style="display:none; background: #43a047; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px;"><span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 2px;">check_circle</span>Đã xác thực</span>
-                            <span id="emailUnverifiedBadge" style="display:none; background: #e53935; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px;">Chưa xác thực</span>
+                            <label style="font-size: 0.875rem; color: rgba(255,255,255,0.6);">Email</label>
+                            <span id="emailVerifiedBadge" style="display:none; background: #4caf50; color: rgba(0,0,0,0.87); padding: 4px 8px; border-radius: 16px; font-size: 0.75rem; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">check_circle</span>Đã xác thực</span>
+                            <span id="emailUnverifiedBadge" style="display:none; background: #f44336; color: white; padding: 4px 8px; border-radius: 16px; font-size: 0.75rem; font-weight: 500;">Chưa xác thực</span>
                         </div>
-                        <div style="display: flex; gap: 10px;">
-                            <input type="email" id="profileEmail" placeholder="Nhập email của bạn" style="flex: 1; padding: 10px; background: #111; border: 1px solid #333; color: white; border-radius: 4px;">
-                            <button id="btnSaveEmail" style="padding: 10px; background: #1e88e5; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;">Lưu</button>
+                        <div style="display: flex; gap: 10px; align-items: stretch;">
+                            <input type="email" id="profileEmail" class="mui-input" placeholder="Nhập email của bạn" style="flex: 1;">
+                            <button id="btnSaveEmail" class="mui-btn mui-btn-primary" style="white-space: nowrap;">Lưu</button>
                         </div>
-                        <div id="emailCallToAction" style="font-size: 12px; color: #ffb300; display:none;">* Vui lòng thêm và xác thực email để có thể đổi/khôi phục mật khẩu.</div>
+                        <div id="emailCallToAction" style="font-size: 0.75rem; color: #ffb300; display:none;">* Vui lòng thêm và xác thực email để có thể đổi/khôi phục mật khẩu.</div>
                         
-                        <div id="verifyEmailGroup" style="display:none; flex-direction: column; gap: 10px; margin-top: 5px;">
-                            <div style="display: flex; gap: 10px;">
-                                <input type="text" id="verifyOtpInput" placeholder="Mã OTP" style="flex: 1; padding: 10px; background: #111; border: 1px solid #333; color: white; border-radius: 4px;">
-                                <button id="btnSendVerifyOtp" style="padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;">Gửi OTP</button>
+                        <div id="verifyEmailGroup" style="display:none; flex-direction: column; gap: 16px;">
+                            <div style="display: flex; gap: 10px; align-items: stretch;">
+                                <input type="text" id="verifyOtpInput" class="mui-input" placeholder="Mã OTP" style="flex: 1;">
+                                <button id="btnSendVerifyOtp" class="mui-btn mui-btn-contained" style="white-space: nowrap;">Gửi OTP</button>
                             </div>
-                            <button id="btnSubmitVerifyOtp" style="display:none; padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer;">Xác thực</button>
+                            <button id="btnSubmitVerifyOtp" class="mui-btn mui-btn-error" style="display:none; width: 100%;">Xác thực</button>
                         </div>
                     </div>
 
-                    <div style="display: flex; flex-direction: column; gap: 10px; background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444; margin-top: 10px;">
-                        <label style="font-size: 14px; color: #ccc;">Đổi mật khẩu</label>
-                        <input type="password" id="editPassword" placeholder="Mật khẩu mới" style="padding: 10px; background: #111; border: 1px solid #333; color: white; border-radius: 4px;" autocomplete="new-password">
-                        <button id="btnUpdatePassword" style="padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer;" disabled>Cập nhật mật khẩu</button>
+                    <div class="mui-paper" style="display: flex; flex-direction: column; gap: 16px; padding: 16px;">
+                        <label style="font-size: 0.875rem; color: rgba(255,255,255,0.6);">Đổi mật khẩu</label>
+                        <input type="password" id="editPassword" class="mui-input" placeholder="Mật khẩu mới" autocomplete="new-password">
+                        <button id="btnUpdatePassword" class="mui-btn mui-btn-contained" disabled>Cập nhật mật khẩu</button>
                     </div>
                 </div>
             </div>
@@ -344,18 +400,18 @@
             <div id="search-container" style="flex-shrink: 0;">
                 <span id="close-gallery-page" class="close-page material-symbols-outlined" style="margin-left: 5px;">arrow_back</span>
                 <div id="search-input-wrapper">
-                    <input type="text" id="video-search" placeholder="Tìm kiếm videos..." autocomplete="off">
+                    <input type="text" id="video-search" class="mui-input" placeholder="Tìm kiếm videos..." autocomplete="off">
                     <span id="clear-search" class="material-symbols-outlined">close</span>
                     <span id="submit-search" class="material-symbols-outlined">search</span>
                     <div id="search-suggestions" style="display: none;"></div>
                 </div>
             </div>
-            <div id="gallery-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none; background: #0a0a0a; border-bottom: 1px solid #333; padding: 0 10px;">
-                <button id="tabAll" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #ff4081; border-bottom: 2px solid #ff4081; font-weight: 500; cursor: pointer; white-space: nowrap;">Tất cả <span class="tab-badge" id="badge-all" style="background: rgba(255, 64, 129, 0.2); color: #ff4081;">0</span></button>
-                <button id="tabFav" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #aaa; border-bottom: 2px solid transparent; font-weight: 500; cursor: pointer; white-space: nowrap;">Yêu thích <span class="tab-badge" id="badge-favorites">0</span></button>
-                <button id="tabRecent" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #aaa; border-bottom: 2px solid transparent; font-weight: 500; cursor: pointer; white-space: nowrap;">Gần đây <span class="tab-badge" id="badge-recent">0</span></button>
-                <button id="tabFrequent" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #aaa; border-bottom: 2px solid transparent; font-weight: 500; cursor: pointer; white-space: nowrap;">Xem nhiều <span class="tab-badge" id="badge-frequent">0</span></button>
-                <button id="tabGlobalFrequent" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #aaa; border-bottom: 2px solid transparent; font-weight: 500; cursor: pointer; white-space: nowrap;">Top thế giới <span class="tab-badge" id="badge-global_frequent">0</span></button>
+            <div id="gallery-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none;">
+                <button id="tabAll" class="mui-tab active">Tất cả <span class="tab-badge" id="badge-all">0</span></button>
+                <button id="tabFav" class="mui-tab">Yêu thích <span class="tab-badge" id="badge-favorites">0</span></button>
+                <button id="tabRecent" class="mui-tab">Gần đây <span class="tab-badge" id="badge-recent">0</span></button>
+                <button id="tabFrequent" class="mui-tab">Xem nhiều <span class="tab-badge" id="badge-frequent">0</span></button>
+                <button id="tabGlobalFrequent" class="mui-tab">Top thế giới <span class="tab-badge" id="badge-global_frequent">0</span></button>
             </div>
             <div id="gallery-grid" class="gallery-grid"></div>
             <div id="load-more" style="text-align: center; padding: 15px; color: #aaa; font-size: 14px; display: none;">Đang tải thêm...</div>
@@ -370,14 +426,14 @@
                 <div style="text-align: center; margin-bottom: 15px;">
                     <img id="details-cover" src="" style="max-width: 100%; border-radius: 8px; max-height: 200px; object-fit: contain; background: #222; cursor: pointer;">
                 </div>
-                <h3 id="details-title" style="margin-top: 0; margin-bottom: 5px; font-size: 18px; color: #ff4081; text-align: center;"></h3>
+                <h3 id="details-title" style="margin-top: 0; margin-bottom: 5px; font-size: 1.125rem; font-weight: 500; color: #90caf9; text-align: center;"></h3>
                 <div style="text-align: center; margin-bottom: 15px; font-size: 14px; color: #aaa;" id="details-date"></div>
                 <div id="details-chips" class="chips-container"></div>
                 <div id="details-desc-wrapper" style="margin-bottom: 15px; font-size: 14px; line-height: 1.5; display: none;"><strong>Mô tả:</strong> <div id="details-desc" style="margin-top: 5px; color: #aaa;"></div></div>
-                <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
-                    <button id="btn-watch-now" style="padding: 10px; background: #43a047; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;"><span class="material-symbols-outlined">play_circle</span> Xem ngay</button>
-                    <button id="btn-open-javtiful" style="padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;"><span class="material-symbols-outlined">language</span> Javtiful</button>
-                    <button id="btn-search-list" style="padding: 10px; background: #1e88e5; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;"><span class="material-symbols-outlined">list</span> Xem trong danh sách</button>
+                <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 20px;">
+                    <button id="btn-watch-now" class="mui-btn mui-btn-success" style="width: 100%;"><span class="material-symbols-outlined">play_circle</span> Xem ngay</button>
+                    <button id="btn-open-javtiful" class="mui-btn mui-btn-error" style="width: 100%;"><span class="material-symbols-outlined">language</span> Javtiful</button>
+                    <button id="btn-search-list" class="mui-btn mui-btn-primary" style="width: 100%;"><span class="material-symbols-outlined">list</span> Xem trong danh sách</button>
                 </div>
             </div>
         </div>
@@ -623,8 +679,8 @@
                 if (items.length === 0) return null;
                 
                 const group = document.createElement('div');
-                group.style.padding = '10px 15px';
-                group.style.borderBottom = '1px solid #333';
+                group.style.padding = '12px 16px';
+                group.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
                 
                 const titleEl = document.createElement('div');
                 titleEl.innerText = title;
@@ -662,7 +718,7 @@
 
                 const titleGrp = document.createElement('div');
                 titleGrp.style.padding = '15px';
-                titleGrp.style.borderTop = '1px solid #333';
+                titleGrp.style.borderTop = '1px solid rgba(255,255,255,0.05)';
                 
                 const titleHeader = document.createElement('div');
                 titleHeader.innerText = headerText;
@@ -710,7 +766,7 @@
             if (historyItems.length > 0) {
                 const grp = document.createElement('div');
                 if (actresses.length > 0 || genres.length > 0 || makers.length > 0 || dates.length > 0 || titles.length > 0) {
-                    grp.style.borderBottom = '1px solid #333';
+                    grp.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
                 }
                 historyItems.forEach(s => grp.appendChild(renderListItem(s)));
                 container.appendChild(grp);
@@ -944,19 +1000,9 @@
                 if (!btn) return;
                 const badge = document.getElementById(`badge-${key}`);
                 if (key === tabKey) {
-                    btn.style.color = '#ff4081';
-                    btn.style.borderBottomColor = '#ff4081';
-                    if (badge) {
-                        badge.style.background = 'rgba(255, 64, 129, 0.2)';
-                        badge.style.color = '#ff4081';
-                    }
+                    btn.classList.add('active');
                 } else {
-                    btn.style.color = '#aaa';
-                    btn.style.borderBottomColor = 'transparent';
-                    if (badge) {
-                        badge.style.background = '#333';
-                        badge.style.color = '#ccc';
-                    }
+                    btn.classList.remove('active');
                 }
             });
         }
@@ -1132,22 +1178,18 @@
                                 hide(el.emailCallToAction);
                                 hide(el.verifyEmailGroup);
                                 el.btnUpdatePassword.disabled = false;
-                                el.btnUpdatePassword.style.background = '#43a047';
                                 el.profileEmail.disabled = true;
-                                el.profileEmail.style.color = '#888';
+                                el.profileEmail.style.color = 'rgba(255,255,255,0.5)';
                                 el.btnSaveEmail.innerText = 'Sửa';
-                                el.btnSaveEmail.style.background = '#333';
                             } else {
                                 hide(el.emailVerifiedBadge);
                                 show(el.emailUnverifiedBadge, 'inline-block');
                                 show(el.emailCallToAction);
                                 show(el.verifyEmailGroup, 'flex');
                                 el.btnUpdatePassword.disabled = true;
-                                el.btnUpdatePassword.style.background = '#333';
                                 el.profileEmail.disabled = false;
                                 el.profileEmail.style.color = 'white';
                                 el.btnSaveEmail.innerText = 'Lưu';
-                                el.btnSaveEmail.style.background = '#1e88e5';
                             }
                         } else {
                             hide(el.emailVerifiedBadge);
@@ -1155,11 +1197,9 @@
                             show(el.emailCallToAction);
                             hide(el.verifyEmailGroup);
                             el.btnUpdatePassword.disabled = true;
-                            el.btnUpdatePassword.style.background = '#333';
                             el.profileEmail.disabled = false;
                             el.profileEmail.style.color = 'white';
                             el.btnSaveEmail.innerText = 'Lưu';
-                            el.btnSaveEmail.style.background = '#1e88e5';
                         }
                     }
                 } catch(e) {}
@@ -1461,7 +1501,6 @@
                 el.profileEmail.disabled = false;
                 el.profileEmail.style.color = 'white';
                 el.btnSaveEmail.innerText = 'Lưu';
-                el.btnSaveEmail.style.background = '#1e88e5';
                 el.profileEmail.focus();
                 return;
             }
