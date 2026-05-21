@@ -70,13 +70,13 @@
         .video-js { width: 100%; height: 100%; background-color: transparent; }
         .vjs-tech { object-fit: contain; }
         #overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 90px);
+            position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 126px);
             z-index: 10; touch-action: none;
             -webkit-touch-callout: none;
             user-select: none;
         }
         #bottom-bar {
-            position: absolute; bottom: 0; left: 0; width: 100%; padding: 10px 15px; height: 70px;
+            position: absolute; bottom: 56px; left: 0; width: 100%; padding: 10px 15px; height: 70px;
             box-sizing: border-box; background: rgba(0, 0, 0, 0.7);
             z-index: 20; display: flex; flex-direction: column; justify-content: center;
         }
@@ -100,7 +100,7 @@
         }
         
         #action-icons {
-            position: absolute; right: 0px; bottom: 100px;
+            position: absolute; right: 0px; bottom: 140px;
             display: flex; flex-direction: column; gap: 12px; z-index: 20;
         }
         .action-btn {
@@ -112,20 +112,36 @@
         .action-btn:active { background: rgba(255,255,255,0.3); }
         .hide-ui #bottom-bar,
         .hide-ui #action-icons,
+        .hide-ui #bottom-navigation,
         .hide-ui .media-counter {
             opacity: 0;
             pointer-events: none;
         }
-        #bottom-bar, #action-icons, .media-counter {
+        #bottom-bar, #action-icons, #bottom-navigation, .media-counter {
             transition: opacity 0.3s ease;
         }
+        
+        #bottom-navigation {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 56px;
+            background: #1e1e1e;
+            z-index: 50; display: flex; justify-content: space-around; align-items: center;
+            border-top: 1px solid rgba(255,255,255,0.12);
+        }
+        .bottom-nav-item {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: rgba(255,255,255,0.6); cursor: pointer; flex: 1; height: 100%;
+            transition: color 0.3s;
+        }
+        .bottom-nav-item.active { color: #90caf9; }
+        .bottom-nav-item .material-symbols-outlined { font-size: 24px; margin-bottom: 2px; }
+        .bottom-nav-item span:last-child { font-size: 0.6875rem; font-weight: 500; }
 
         .page-view {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
-            height: 100%;
+            height: calc(100% - 56px);
             background-color: #121212;
             z-index: 40;
             display: none;
@@ -328,7 +344,7 @@
             </div>
         </div>
 
-        <div id="toastContainer" style="position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 100; pointer-events: none;"></div>
+        <div id="toastContainer" style="position: fixed; bottom: 76px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 200; pointer-events: none;"></div>
 
         <div id="heart-animation" style="position: absolute; display: none; pointer-events: none; z-index: 100;">
             <span class="material-symbols-outlined" style="font-size: 80px; color: #ff4081; font-variation-settings: 'FILL' 1;">favorite</span>
@@ -444,15 +460,29 @@
         </div>
 
         <div id="action-icons">
-            <div class="action-btn" id="btn-profile" title="Tài khoản"><span class="material-symbols-outlined">person</span></div>
             <div class="action-btn" id="btn-favorite" title="Yêu thích"><span class="material-symbols-outlined" id="fav-icon">favorite_border</span></div>
             <div class="action-btn" id="btn-sync" title="Đồng bộ"><span class="material-symbols-outlined">sync</span></div>
-            <div class="action-btn" id="btn-list" title="Danh sách"><span class="material-symbols-outlined">format_list_bulleted</span></div>
             <div class="action-btn" id="btn-fullscreen" title="Toàn màn hình"><span class="material-symbols-outlined">fullscreen</span></div>
             <div class="action-btn" id="btn-play-pause" title="Play/Pause"><span class="material-symbols-outlined" id="play-pause-icon">play_arrow</span></div>
             <div class="action-btn" id="btn-prev" title="Video trước"><span class="material-symbols-outlined">skip_previous</span></div>
             <div class="action-btn" id="btn-next" title="Video sau"><span class="material-symbols-outlined">skip_next</span></div>
         </div>
+        
+        <div id="bottom-navigation">
+            <div class="bottom-nav-item" id="nav-list">
+                <span class="material-symbols-outlined">home</span>
+                <span>Trang chủ</span>
+            </div>
+            <div class="bottom-nav-item" id="nav-search">
+                <span class="material-symbols-outlined">search</span>
+                <span>Tìm kiếm</span>
+            </div>
+            <div class="bottom-nav-item" id="nav-profile">
+                <span class="material-symbols-outlined">person</span>
+                <span>Tài khoản</span>
+            </div>
+        </div>
+
         <div id="fast-seek-indicator" style="display: none; position: absolute; top: 15%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 20px; font-size: 16px; font-weight: bold; color: #fff; z-index: 50; pointer-events: none; backdrop-filter: blur(4px);"></div>
     </div>
 
@@ -938,7 +968,7 @@
         }
 
         const profilePage = document.getElementById('profile-page');
-        document.getElementById('btn-profile').addEventListener('click', () => {
+        document.getElementById('nav-profile').addEventListener('click', () => {
             window.location.hash = 'profile';
         });
         function closeProfilePage() {
@@ -1007,6 +1037,13 @@
             });
         }
 
+        function updateBottomNav(activeId) {
+            document.querySelectorAll('.bottom-nav-item').forEach(el => el.classList.remove('active'));
+            if (activeId) {
+                document.getElementById(activeId)?.classList.add('active');
+            }
+        }
+
         function handleNavigation() {
             const urlParams = new URLSearchParams(window.location.search);
             const watchId = urlParams.get('watch');
@@ -1055,6 +1092,7 @@
                 profilePage.classList.add('active');
                 galleryPage.classList.remove('active');
                 detailsPage.classList.remove('active');
+                updateBottomNav('nav-profile');
                 return;
             } else {
                 profilePage.classList.remove('active');
@@ -1063,14 +1101,17 @@
             if (videoId) {
                 galleryPage.classList.remove('active');
                 detailsPage.classList.add('active');
+                updateBottomNav('');
                 showVideoDetailById(videoId);
             } else if (watchId) {
                 galleryPage.classList.remove('active');
                 detailsPage.classList.remove('active');
+                updateBottomNav('');
                 playVideoById(watchId);
             } else {
                 galleryPage.classList.add('active');
                 detailsPage.classList.remove('active');
+                updateBottomNav(searchKey ? 'nav-search' : 'nav-list');
                 
                 let targetItem = null;
                 if (focusId) {
@@ -2051,7 +2092,11 @@
             }
         }
 
-        document.getElementById('btn-list').addEventListener('click', openGalleryPage);
+        document.getElementById('nav-list').addEventListener('click', openGalleryPage);
+        document.getElementById('nav-search').addEventListener('click', () => {
+            openGalleryPage();
+            setTimeout(() => { document.getElementById('video-search').focus(); }, 300);
+        });
         mediaCounter.addEventListener('click', openGalleryPage);
         document.getElementById('close-gallery-page').addEventListener('click', closeGalleryPage);
 
