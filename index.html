@@ -317,6 +317,7 @@
         .chip-maker { border-color: rgba(144, 202, 249, 0.5); color: #90caf9; }
         .chip-actress { border-color: rgba(244, 143, 177, 0.5); color: #f48fb1; }
         .chip-genre { border-color: rgba(129, 199, 132, 0.5); color: #81c784; }
+        .chip-title { border-color: rgba(255, 167, 38, 0.5); color: #ffa726; }
         .chip-maker:hover, .chip-actress:hover, .chip-genre:hover {
             background: rgba(255,255,255,0.08);
             border-color: rgba(255,255,255,0.87);
@@ -650,10 +651,36 @@
                 if (s.type === 'history') {
                     deleteBtnHtml = `<div class="delete-history-btn" title="Xóa" style="color: #aaa; cursor: pointer; padding: 0 5px; display: flex; align-items: center;"><span class="material-symbols-outlined" style="font-size: 20px;">close</span></div>`;
                 }
+
+                let displayText = s.text;
+                let formattedChips = [];
+                const regex = /(actress|genre|maker|title)\s*:\s*(?:"([^"]+)"|([^\s]+))/gi;
+                let lastIndex = 0;
+                let match;
+                while ((match = regex.exec(s.text)) !== null) {
+                    if (match.index > lastIndex) {
+                        formattedChips.push(`<span>${s.text.substring(lastIndex, match.index)}</span>`);
+                    }
+                    const typeClass = match[1].toLowerCase();
+                    const value = match[2] || match[3];
+                    let typeIcon = 'label';
+                    if (typeClass === 'actress') typeIcon = 'person';
+                    else if (typeClass === 'maker') typeIcon = 'business';
+                    else if (typeClass === 'title') typeIcon = 'movie';
+                    
+                    formattedChips.push(`<span class="detail-chip chip-${typeClass}" style="display: inline-flex; align-items: center; padding: 2px 8px; font-size: 12px; margin: 0;"><span class="material-symbols-outlined" style="font-size: 14px; margin-right: 4px;">${typeIcon}</span>${value}</span>`);
+                    lastIndex = regex.lastIndex;
+                }
+                if (lastIndex < s.text.length) {
+                    formattedChips.push(`<span>${s.text.substring(lastIndex)}</span>`);
+                }
+                if (formattedChips.length > 0) {
+                    displayText = formattedChips.join('');
+                }
                 
                 item.innerHTML = `
                     <div class="suggestion-icon"><span class="material-symbols-outlined" style="font-size: 20px;">${icon}</span></div>
-                    <div class="suggestion-text">${s.text}</div>
+                    <div class="suggestion-text" style="display: flex; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap;">${displayText}</div>
                     <div class="suggestion-type">${typeText}</div>
                     ${deleteBtnHtml}
                 `;
