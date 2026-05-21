@@ -374,3 +374,30 @@ class Scraper:
                     cursor.execute(f"UPDATE {self.table_name} SET details_fetched = -1 WHERE id = ?", (vid_id,))
                     self.db_conn.commit()
                 return False
+                
+    def clean_keywords(self, text):
+        if not text:
+            return []
+        text = re.sub(r'[^\w\s]', ' ', text.lower())
+        words = text.split()
+        
+        try:
+            import nltk
+            try:
+                nltk.data.find('corpora/stopwords')
+            except LookupError:
+                nltk.download('stopwords', quiet=True)
+            from nltk.corpus import stopwords
+            stop_words = set(stopwords.words('english'))
+            try:
+                stop_words.update(stopwords.words('vietnamese'))
+            except Exception:
+                pass
+        except ImportError:
+            stop_words = {'the', 'is', 'are', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'this', 'that'}
+
+        vi_stopwords = {'và', 'của', 'các', 'có', 'được', 'cho', 'trong', 'đã', 'một', 'với', 'những', 'là', 'như', 'hay', 'đang', 'nhưng', 'tại', 'để', 'từ', 'khi', 'làm', 'đến', 'sự', 'này', 'ra', 'phải', 'người', 'về', 'sau', 'rằng', 'chỉ', 'cũng', 'nhiều', 'việc', 'hơn', 'mới', 'vì', 'nếu', 'lại', 'rất', 'còn', 'bởi', 'thì', 'lên', 'đi', 'nào', 'sẽ', 'đó', 'thể', 'theo', 'mình', 'qua', 'phim', 'sex', 'jav', 'vietsub', 'không', 'che', 'hd', 'vlxx', 'full', 'bản', 'đẹp', 'nhất'}
+        stop_words.update(vi_stopwords)
+        
+        words = [w for w in words if w not in stop_words and not w.isdigit() and len(w) > 2]
+        return list(dict.fromkeys(words))

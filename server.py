@@ -88,7 +88,7 @@ def verify_jwt(token):
         pass
     return None
 
-def extract_clean_keywords_bulletproof(text, source=None):
+def extract_clean_keywords_bulletproof(text):
     if not text:
         return []
     text = re.sub(r'[^\w\s]', ' ', text.lower())
@@ -102,16 +102,6 @@ def extract_clean_keywords_bulletproof(text, source=None):
                 nltk.download('stopwords', quiet=True)
             from nltk.corpus import stopwords
             stop_words = set(stopwords.words('english'))
-            
-            is_vlxx = source == 'vlxx' or (app_args and getattr(app_args, 'source', '') == 'vlxx')
-            if is_vlxx:
-                try:
-                    stop_words.update(stopwords.words('vietnamese'))
-                except Exception:
-                    pass
-                vi_stopwords = {'và', 'của', 'các', 'có', 'được', 'cho', 'trong', 'đã', 'một', 'với', 'những', 'là', 'như', 'hay', 'đang', 'nhưng', 'tại', 'để', 'từ', 'khi', 'làm', 'đến', 'sự', 'này', 'ra', 'phải', 'người', 'về', 'sau', 'rằng', 'chỉ', 'cũng', 'nhiều', 'việc', 'hơn', 'mới', 'vì', 'nếu', 'lại', 'rất', 'còn', 'bởi', 'thì', 'lên', 'đi', 'nào', 'sẽ', 'đó', 'thể', 'theo', 'mình', 'qua', 'phim', 'sex', 'jav', 'vietsub', 'không', 'che', 'hd', 'vlxx', 'full', 'bản', 'đẹp', 'nhất'}
-                stop_words.update(vi_stopwords)
-                
             words = [w for w in words if w not in stop_words and not w.isdigit() and len(w) > 2]
             return list(dict.fromkeys(words))
         except Exception:
@@ -119,11 +109,6 @@ def extract_clean_keywords_bulletproof(text, source=None):
             
     # Fallback nếu không có nltk hoặc nltk bị lỗi
     basic_stopwords = {'the', 'is', 'are', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'this', 'that'}
-    is_vlxx = source == 'vlxx' or (app_args and getattr(app_args, 'source', '') == 'vlxx')
-    if is_vlxx:
-        vi_stopwords = {'và', 'của', 'các', 'có', 'được', 'cho', 'trong', 'đã', 'một', 'với', 'những', 'là', 'như', 'hay', 'đang', 'nhưng', 'tại', 'để', 'từ', 'khi', 'làm', 'đến', 'sự', 'này', 'ra', 'phải', 'người', 'về', 'sau', 'rằng', 'chỉ', 'cũng', 'nhiều', 'việc', 'hơn', 'mới', 'vì', 'nếu', 'lại', 'rất', 'còn', 'bởi', 'thì', 'lên', 'đi', 'nào', 'sẽ', 'đó', 'thể', 'theo', 'mình', 'qua', 'phim', 'sex', 'jav', 'vietsub', 'không', 'che', 'hd', 'vlxx', 'full', 'bản', 'đẹp', 'nhất'}
-        basic_stopwords.update(vi_stopwords)
-        
     words = [w for w in words if w not in basic_stopwords and not w.isdigit() and len(w) > 2]
     return list(dict.fromkeys(words))
 
@@ -821,7 +806,10 @@ def get_related():
         
     title, actress, genre, maker = row
     
-    keywords = extract_clean_keywords_bulletproof(title, getattr(app_args, 'source', None)) if title else []
+    if hasattr(scraper_instance, 'clean_keywords'):
+        keywords = scraper_instance.clean_keywords(title) if title else []
+    else:
+        keywords = extract_clean_keywords_bulletproof(title) if title else []
             
     query_parts = []
     if actress:
