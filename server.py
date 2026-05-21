@@ -398,9 +398,12 @@ class BackgroundScanner(threading.Thread):
         self.scraper.update_sync_tasks_from_menu()
         
         if self.upgrade_all:
+            domain_base = self.scraper.domain.split('.')[0].lower()
+            source_name = getattr(self.scraper, 'source_name', '').lower()
             with db_lock:
                 cursor = self.scraper.db_conn.cursor()
                 cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0")
+                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0 WHERE LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ?", (f"%{domain_base}%", f"%{source_name}%"))
                 self.scraper.db_conn.commit()
                 
         if self.news_threads > 0:
@@ -421,9 +424,12 @@ class BackgroundScanner(threading.Thread):
     def news_dispatcher_loop(self):
         while True:
             try:
+                domain_base = self.scraper.domain.split('.')[0].lower()
+                source_name = getattr(self.scraper, 'source_name', '').lower()
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
                     cursor.execute("SELECT url_pattern FROM sync_tasks ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END")
+                    cursor.execute("SELECT url_pattern FROM sync_tasks WHERE LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ? ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END", (f"%{domain_base}%", f"%{source_name}%"))
                     tasks = cursor.fetchall()
                 
                 if self.news_queue.empty():
@@ -499,6 +505,8 @@ class BackgroundScanner(threading.Thread):
     def backlog_scan_worker(self, thread_num):
         global global_last_request_time
         source_name = getattr(self.scraper, 'source_name', 'System')
+        domain_base = self.scraper.domain.split('.')[0].lower()
+        src_lower = source_name.lower()
         while True:
             time.sleep(1)
             try:
@@ -509,6 +517,7 @@ class BackgroundScanner(threading.Thread):
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
                     cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END LIMIT 1")
+                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 AND (LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ?) ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END LIMIT 1", (f"%{domain_base}%", f"%{src_lower}%"))
                     row = cursor.fetchone()
                     if row:
                         url_pattern, current_page, total_pages = row
@@ -915,11 +924,12 @@ def proxy_video():
     if not target_url:
         return Response(status=400)
         
+    target_url = target_url.split('#')[0]
     client_range = request.headers.get('Range')
     headers = {"Referer": getattr(scraper_instance, 'referer', '')}
         
     try:
-        is_m3u8 = target_url.split('?')[0].endswith('.m3u8')
+        is_m3u8 = target_url.split('?')[0].endswith('.m3u8') or target_url.split('?')[0].endswith('.vl')
         
         if is_m3u8:
             res = scraper_instance.session.get(target_url, headers=headers, timeout=15)
@@ -963,6 +973,7 @@ def proxy_video():
             resp_headers = {k: v for k, v in res.headers.items() if k.lower() not in ['content-encoding', 'transfer-encoding', 'content-length', 'connection', 'access-control-allow-origin']}
             resp_headers['Access-Control-Allow-Origin'] = '*'
             resp_headers['Content-Length'] = str(len(body))
+            resp_headers['Content-Type'] = 'application/x-mpegURL'
             return Response(body, status=res.status_code, headers=resp_headers)
 
         # Bước 1: Request 2 byte đầu tiên để lấy Content-Length và kiểm tra HTTP Range
@@ -1083,9 +1094,12 @@ def proxy_video():
 
 @app.route('/api/sync', methods=['GET'])
 def sync_api():
+    domain_base = scraper_instance.domain.split('.')[0].lower()
+    source_name = getattr(scraper_instance, 'source_name', '').lower()
     with db_lock:
         cursor = db_conn_instance.cursor()
         cursor.execute("SELECT url_pattern FROM sync_tasks")
+        cursor.execute("SELECT url_pattern FROM sync_tasks WHERE LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ?", (f"%{domain_base}%", f"%{source_name}%"))
         tasks = cursor.fetchall()
     for task in tasks:
         scraper_instance.sync_list_page(task[0], 1)
@@ -1676,9 +1690,13 @@ def main():
     parser.add_argument('-news-threads', type=int, default=0, help="Số luồng quét video mới (mặc định 0)")
     parser.add_argument('-detail-threads', type=int, default=0, help="Số luồng lấy chi tiết video (mặc định 0)")
     parser.add_argument('-videos-threads', type=int, default=0, help="Số luồng quét video backlog (mặc định 0)")
+    parser.add_argument('-domain', type=str, default=None, help="Tên miền (domain) cho scraper")
     
     args = parser.parse_args()
     
+    if '-port' not in sys.argv and args.source == 'vlxx':
+        args.port = 5005
+
     if args.sqlite3 is None:
         if os.name == 'nt':
             args.sqlite3 = f"D:\\Database\\{args.source}.db"
@@ -1709,7 +1727,7 @@ def main():
     rebuild_tags_fts(db_conn_instance)
     
     source_module = load_source_module(args.source)
-    scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE)
+    scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE, domain=args.domain)
     threading.Thread(target=background_db_worker, args=(db_conn_instance,), daemon=True).start()
     scanner = BackgroundScanner(
         scraper_instance, 

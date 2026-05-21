@@ -60,7 +60,7 @@
         }
         
         #action-icons {
-            position: absolute; right: 0px; bottom: 100px;
+            position: absolute; right: 0px; bottom: 160px;
             display: flex; flex-direction: column; gap: 12px; z-index: 20;
         }
         .action-btn {
@@ -71,12 +71,13 @@
         }
         .action-btn:active { background: rgba(255,255,255,0.3); }
         .hide-ui #bottom-bar,
+        .hide-ui #bottom-navigation,
         .hide-ui #action-icons,
-        .hide-ui .media-counter {
+        .hide-ui #top-right-controls {
             opacity: 0;
             pointer-events: none;
         }
-        #bottom-bar, #action-icons, .media-counter {
+        #bottom-bar, #bottom-navigation, #action-icons, #top-right-controls {
             transition: opacity 0.3s ease;
         }
 
@@ -90,6 +91,8 @@
             z-index: 40;
             display: none;
             flex-direction: column;
+            padding-bottom: 60px;
+            box-sizing: border-box;
         }
         .page-view.active { display: flex; }
         .page-header {
@@ -99,7 +102,23 @@
         .close-page {
             font-size: 24px; cursor: pointer; line-height: 1; margin-left: -5px; padding-right: 10px; color: #fff;
         }
-        #search-container { padding: 10px; background: #0a0a0a; border-bottom: 1px solid #333; display: flex; align-items: center; position: relative; z-index: 100; }
+        #search-container { padding: 0; background: #111; border-bottom: 1px solid #333; display: flex; flex-direction: column; align-items: stretch; position: relative; z-index: 100; }
+        #active-search-chips {
+            display: none;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            gap: 8px;
+            padding: 0 0 2px 0;
+            scrollbar-width: none;
+            width: 100%;
+        }
+        .active-search-chip {
+            display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 16px; padding: 4px 10px; font-size: 12px; color: #ddd; gap: 6px; flex-shrink: 0;
+        }
+        .active-search-chip .chip-left-icon { font-size: 14px; }
+        .active-search-chip .chip-delete { font-size: 16px; cursor: pointer; color: #aaa; }
+        .active-search-chip .chip-delete:hover { color: #ff4081; }
+        #active-search-chips::-webkit-scrollbar { display: none; }
         #search-input-wrapper { position: relative; flex-grow: 1; }
         #video-search {
             width: 100%; padding: 10px; padding-right: 60px; border-radius: 6px;
@@ -109,9 +128,9 @@
         #submit-search { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 16px; }
         
         #search-suggestions {
-            position: absolute; top: 100%; left: 0; right: 0; background: #222;
-            border: 1px solid #333; border-top: none; border-radius: 0 0 6px 6px;
-            max-height: 300px; overflow-y: auto; z-index: 150; box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+            position: absolute; left: 0; right: 0; bottom: 60px; background: #0a0a0a;
+            border-top: 1px solid #333;
+            overflow-y: auto; z-index: 150;
         }
         .suggestion-item {
             display: flex; align-items: center; padding: 10px 15px; cursor: pointer;
@@ -186,9 +205,14 @@
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             font-size: 18px; z-index: 5; color: #ccc;
         }
+        #top-right-controls {
+            position: absolute; top: 15px; right: 15px; z-index: 20;
+            display: flex; align-items: center; gap: 15px;
+            transition: opacity 0.3s ease;
+        }
         .media-counter {
-            position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.6);
-            padding: 5px 12px; border-radius: 20px; font-size: 13px; z-index: 20; font-weight: bold;
+            background: rgba(0,0,0,0.6);
+            padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: bold;
             cursor: pointer;
         }
         .toast {
@@ -249,13 +273,61 @@
             border-color: #ff4081;
             color: #fff;
         }
+        .suggestion-chips-container::-webkit-scrollbar { display: none; }
+        .suggestion-chips-container { scrollbar-width: none; -ms-overflow-style: none; }
+
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 90px);
+            height: calc(100% - 150px);
+            z-index: 10; touch-action: none;
+            -webkit-touch-callout: none;
+            user-select: none;
+        }
+        #bottom-bar {
+            position: absolute; bottom: 60px; left: 0; width: 100%; padding: 10px 15px; height: 70px;
+            box-sizing: border-box; background: rgba(0, 0, 0, 0.7);
+            z-index: 20; display: flex; flex-direction: column; justify-content: center;
+        }
+        #bottom-navigation {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(4px);
+            z-index: 45;
+            display: flex;
+            justify-content: space-around;
+            align-items: stretch;
+        }
+        .bottom-nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #ccc;
+            cursor: pointer;
+            flex: 1;
+            padding: 4px 0;
+            gap: 2px;
+            font-size: 10px;
+            transition: background 0.2s ease;
+        }
+        .bottom-nav-item .bottom-nav-icon { font-size: 22px; }
+        .bottom-nav-item:active { background: rgba(255,255,255,0.1); }
+        #title-container {
+            display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;
+        }
     </style>
 </head>
 <body>
     <div id="app">
         <div id="loading" class="loading" style="display: none;">Đang tải...</div>
         <div id="media-container"></div>
-        <div class="media-counter" id="media-counter">0/0</div>
+        <div id="top-right-controls">
+            <div class="media-counter" id="media-counter">0/0</div>
+        </div>
         <div id="overlay"></div>
 
         <div id="bottom-bar">
@@ -279,7 +351,7 @@
         <div id="profile-page" class="page-view">
             <div class="page-header">
                 <span id="close-profile-page" class="close-page">&#8592;</span>
-                <h3 style="margin:0; font-size:16px;">Tài khoản</h3>
+                <h3 style="margin:0; font-size:16px; flex-grow: 1;">Tài khoản</h3>
             </div>
             <div id="profile-content" style="padding: 15px; overflow-y: auto;">
                 <div id="sessionDisplay" style="margin-bottom: 10px; font-size: 14px; color: #aaa; word-break: break-all;"></div>
@@ -340,14 +412,36 @@
 
         <div id="gallery-page" class="page-view">
             <div id="search-container" style="flex-shrink: 0;">
-                <span id="close-gallery-page" class="close-page" style="margin-left: 5px;">&#8592;</span>
-                <div id="search-input-wrapper">
-                    <input type="text" id="video-search" placeholder="Tìm kiếm videos..." autocomplete="off">
-                    <span id="clear-search">&times;</span>
-                    <span id="submit-search">🔍</span>
-                    <div id="search-suggestions" style="display: none;"></div>
+                <div style="display: flex; align-items: center; width: 100%; padding: 15px; box-sizing: border-box;">
+                    <span id="close-gallery-page" class="close-page">&#8592;</span>
+                    
+                    <div id="gallery-header-content" style="flex-grow: 1; display: flex; align-items: center; overflow: hidden; margin-right: 10px;">
+                        <h3 id="gallery-title-text" style="margin:0; font-size:16px; color: #fff; white-space: nowrap;">Danh sách Video</h3>
+                        <div id="active-search-chips"></div>
+                    </div>
+
+                    <div id="source-multi-select" style="position: relative; margin-right: 10px; display: none; align-items: center;">
+                        <div id="source-select-btn" style="background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 0 8px; height: 30px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 5px;">
+                            <span id="source-select-label">Tất cả Server</span>
+                            <span style="font-size: 10px;">▼</span>
+                        </div>
+                        <div id="source-dropdown" style="display: none; position: absolute; top: 100%; right: 0; background: #222; border: 1px solid #444; border-radius: 4px; padding: 8px; z-index: 200; min-width: 150px; flex-direction: column; gap: 8px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.5);">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #ddd;"><input type="checkbox" value="all" id="source-all-cb" style="accent-color: #ff4081;" checked> Tất cả</label>
+                            <div id="source-checkboxes" style="display: flex; flex-direction: column; gap: 8px; margin-left: 5px; border-left: 1px solid #444; padding-left: 8px;"></div>
+                        </div>
+                    </div>
+
+                    <span id="gallery-search-icon" class="header-search-icon" style="font-size: 20px; cursor: pointer; padding: 0 5px; color: #fff;">🔍</span>
+                    
+                    <div id="search-input-wrapper" style="display: none;">
+                        <input type="text" id="video-search" placeholder="Tìm kiếm videos..." autocomplete="off">
+                        <span id="clear-search" style="right: 40px;">&times;</span>
+                        <span id="submit-search">🔍</span>
+                    </div>
+                    <span id="close-search-input" style="display: none; font-size: 24px; cursor: pointer; color: #fff; margin-left: 15px; line-height: 1;">&times;</span>
                 </div>
             </div>
+            <div id="search-suggestions" style="display: none;"></div>
             <div id="gallery-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none; background: #0a0a0a; border-bottom: 1px solid #333; padding: 0 10px;">
                 <button id="tabAll" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #ff4081; border-bottom: 2px solid #ff4081; font-weight: 500; cursor: pointer; white-space: nowrap;">Tất cả <span class="tab-badge" id="badge-all" style="background: rgba(255, 64, 129, 0.2); color: #ff4081;">0</span></button>
                 <button id="tabFav" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #aaa; border-bottom: 2px solid transparent; font-weight: 500; cursor: pointer; white-space: nowrap;">Yêu thích <span class="tab-badge" id="badge-favorites">0</span></button>
@@ -362,7 +456,8 @@
         <div id="details-page" class="page-view">
             <div class="page-header">
                 <span id="close-details-page" class="close-page">&#8592;</span>
-                <h3 style="margin:0; font-size:16px;">Chi tiết Video</h3>
+                <h3 style="margin:0; font-size:16px; flex-grow: 1;">Chi tiết Video</h3>
+                <span class="header-search-icon" style="font-size: 20px; cursor: pointer; padding: 0 5px; color: #fff;">🔍</span>
             </div>
             <div id="details-content" style="padding: 15px; overflow-y: auto; flex-grow: 1;">
                 <div style="text-align: center; margin-bottom: 15px;">
@@ -374,7 +469,7 @@
                 <div style="margin-bottom: 15px; font-size: 14px; line-height: 1.5;"><strong>Mô tả:</strong> <div id="details-desc" style="margin-top: 5px; color: #aaa;"></div></div>
                 <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
                     <button id="btn-watch-now" style="padding: 10px; background: #43a047; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">▶ Xem ngay</button>
-                    <button id="btn-open-javtiful" style="padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">🌐 Javtiful</button>
+                    <button id="btn-open-source" style="padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">🌐 Trang gốc</button>
                     <button id="btn-search-list" style="padding: 10px; background: #1e88e5; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">🔍 Xem trong danh sách video</button>
                 </div>
             </div>
@@ -385,11 +480,25 @@
             <div id="close-image-viewer" style="position:absolute; top:20px; right:20px; font-size:30px; color:#fff; cursor:pointer; z-index:151; width:40px; height:40px; display:flex; justify-content:center; align-items:center; background:rgba(0,0,0,0.5); border-radius:50%;">&times;</div>
         </div>
 
+        <div id="bottom-navigation">
+            <div class="bottom-nav-item" id="btn-list" title="Danh sách">
+                <span class="bottom-nav-icon">☰</span>
+                <span class="bottom-nav-label">Danh sách</span>
+            </div>
+            <div class="bottom-nav-item" id="btn-search" title="Tìm kiếm">
+                <span class="bottom-nav-icon">🔍</span>
+                <span class="bottom-nav-label">Tìm kiếm</span>
+            </div>
+            <div class="bottom-nav-item" id="btn-profile" title="Tài khoản">
+                <span class="bottom-nav-icon">👤</span>
+                <span class="bottom-nav-label">Tài khoản</span>
+            </div>
+        </div>
+
         <div id="action-icons">
-            <div class="action-btn" id="btn-profile" title="Tài khoản">👤</div>
             <div class="action-btn" id="btn-favorite" title="Yêu thích">🤍</div>
             <div class="action-btn" id="btn-sync" title="Đồng bộ">🔄</div>
-            <div class="action-btn" id="btn-list" title="Danh sách">☰</div>
+            <div class="action-btn" id="btn-search" title="Tìm kiếm">🔍</div>
             <div class="action-btn" id="btn-fullscreen" title="Toàn màn hình">⛶</div>
             <div class="action-btn" id="btn-play-pause" title="Play/Pause">▶</div>
             <div class="action-btn" id="btn-prev" title="Video trước">▲</div>
@@ -406,6 +515,7 @@
         let hasMore = true;
         let searchKey = null;
         let currentTab = null;
+        let currentSource = 'all';
         let currentVideoIndex = -1;
         let currentDetailIndex = -1;
         let currentPlayingVideo = null;
@@ -416,6 +526,11 @@
         let seekThrottleTimeout = null;
         let pendingSeekTime = null;
         let lastSeekTime = 0;
+
+        // New state for history suggestions infinite scroll
+        let historySuggestionPage = 1;
+        let isLoadingHistorySuggestions = false;
+        let hasMoreHistorySuggestions = true;
 
         function throttledSeek(time) {
             pendingSeekTime = time;
@@ -467,8 +582,16 @@
         }
         
         function performSearch() {
-            const val = videoSearchInput.value.trim();
-            if (val !== searchKey) {
+            let val = videoSearchInput.value.trim();
+            const madonnaRegex = /\bmaker\s*:\s*("madonna"|madonna)\b/ig;
+            if (madonnaRegex.test(val)) {
+                showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                val = val.replace(madonnaRegex, '').replace(/\s+/g, ' ').trim();
+                videoSearchInput.value = val;
+                renderDrawerSearchChips();
+            }
+
+            if (val !== searchKey) { // Compare with original searchKey
                 const p = getBaseUrlParams();
                 if (val) {
                     p.set('searchKey', val);
@@ -482,12 +605,282 @@
                 history.pushState(null, '', `/?${p.toString()}`);
                 handleNavigation();
             }
-            videoSearchInput.blur();
-            const sug = document.getElementById('search-suggestions');
-            if(sug) sug.style.display = 'none';
+            if (typeof closeSearchInput === 'function') {
+                closeSearchInput();
+            }
         }
         
         submitSearchBtn.addEventListener('click', performSearch);
+
+        function appendOrReplaceLastTerm(currentVal, newTerm) {
+            const lastPartRegex = /(?:(?:actress|genre|maker|title)\s*:\s*)?(?:"[^"]*|[^\s]*)$/i;
+            const match = currentVal.match(lastPartRegex);
+            if (match && match[0]) {
+                return currentVal.substring(0, match.index) + newTerm;
+            }
+            return currentVal ? currentVal + ' ' + newTerm : newTerm;
+        }
+
+        function renderActiveSearchChips(query) {
+            const container = document.getElementById('active-search-chips');
+            const titleText = document.getElementById('gallery-title-text');
+            if (!container) return;
+            container.innerHTML = '';
+            if (!query) {
+                container.style.display = 'none';
+                if (titleText) titleText.style.display = 'block';
+                return;
+            }
+            
+            if (titleText) titleText.style.display = 'none';
+            const pattern = /(actress|genre|maker|title)\s*:\s*(?:"([^"]+)"|([^\s]+))/gi;
+            let match;
+            let remaining = query;
+            const chips = [];
+            
+            while ((match = pattern.exec(query)) !== null) {
+                chips.push({
+                    fullMatch: match[0],
+                    field: match[1].toLowerCase(),
+                    value: match[2] || match[3]
+                });
+                remaining = remaining.replace(match[0], '');
+            }
+            
+            remaining = remaining.trim();
+            if (remaining) {
+                chips.push({ fullMatch: remaining, field: 'text', value: remaining });
+            }
+            
+            if (chips.length > 0) {
+                chips.forEach(chip => {
+                    const el = document.createElement('div');
+                    el.className = 'active-search-chip';
+                    let icon = '🔍'; let typeText = 'Từ khóa';
+                    if (chip.field === 'actress') { icon = '👩'; typeText = 'Diễn viên'; }
+                    else if (chip.field === 'genre') { icon = '🏷️'; typeText = 'Thể loại'; }
+                    else if (chip.field === 'maker' || chip.field === 'studio') { icon = '🏢'; typeText = 'Studio'; }
+                    else if (chip.field === 'title') { icon = '🎬'; typeText = 'Phim'; }
+                    
+                    el.innerHTML = `<span class="chip-left-icon" title="${typeText}">${icon}</span><span class="chip-text">${chip.value}</span><span class="chip-delete" title="Xóa từ khóa này">&times;</span>`;
+                    el.querySelector('.chip-delete').onclick = () => {
+                        videoSearchInput.value = query.replace(chip.fullMatch, '').replace(/\s+/g, ' ').trim();
+                        performSearch();
+                    };
+                    container.appendChild(el);
+                });
+                container.style.display = 'flex';
+                setTimeout(() => {
+                    container.scrollLeft = container.scrollWidth;
+                }, 50);
+            } else {
+                container.style.display = 'none';
+                if (titleText) titleText.style.display = 'block';
+            }
+        }
+
+        function renderDrawerSearchChips() {
+            const container = document.getElementById('drawer-search-chips');
+            if (!container) return;
+            container.innerHTML = '';
+            const query = videoSearchInput.value.trim();
+            if (!query) {
+                container.style.display = 'none';
+                return;
+            }
+            
+            const pattern = /(actress|genre|maker|title)\s*:\s*(?:"([^"]+)"|([^\s]+))/gi;
+            let match;
+            let remaining = query;
+            const chips = [];
+            
+            while ((match = pattern.exec(query)) !== null) {
+                chips.push({
+                    fullMatch: match[0],
+                    field: match[1].toLowerCase(),
+                    value: match[2] || match[3]
+                });
+                remaining = remaining.replace(match[0], '');
+            }
+            
+            remaining = remaining.trim();
+            if (remaining) {
+                chips.push({ fullMatch: remaining, field: 'text', value: remaining });
+            }
+            
+            if (chips.length > 0) {
+                chips.forEach(chip => {
+                    const el = document.createElement('div');
+                    el.className = 'active-search-chip';
+                    let icon = '🔍'; let typeText = 'Từ khóa';
+                    if (chip.field === 'actress') { icon = '👩'; typeText = 'Diễn viên'; }
+                    else if (chip.field === 'genre') { icon = '🏷️'; typeText = 'Thể loại'; }
+                    else if (chip.field === 'maker' || chip.field === 'studio') { icon = '🏢'; typeText = 'Studio'; }
+                    else if (chip.field === 'title') { icon = '🎬'; typeText = 'Phim'; }
+                    
+                    el.innerHTML = `<span class="chip-left-icon" title="${typeText}">${icon}</span><span class="chip-text">${chip.value}</span><span class="chip-delete" title="Xóa từ khóa này">&times;</span>`;
+                    el.querySelector('.chip-delete').onclick = () => {
+                        videoSearchInput.value = videoSearchInput.value.replace(chip.fullMatch, '').replace(/\s+/g, ' ').trim();
+                        renderDrawerSearchChips();
+                        clearSearchBtn.style.display = videoSearchInput.value ? 'block' : 'none';
+                        handleSuggestionFetch();
+                        videoSearchInput.focus();
+                    };
+                    container.appendChild(el);
+                });
+                container.style.display = 'flex';
+                setTimeout(() => {
+                    container.scrollLeft = container.scrollWidth;
+                }, 50);
+            } else {
+                container.style.display = 'none';
+            }
+            
+            // Tự động căn chỉnh lại top-offset của menu gợi ý
+            const sugContainer = document.getElementById('search-suggestions');
+            if (sugContainer && sugContainer.style.display === 'block') {
+                sugContainer.style.top = document.getElementById('search-container').offsetHeight + 'px';
+            }
+        }
+
+        const renderListItem = (s) => {
+            const item = document.createElement('div');
+            item.className = 'suggestion-item';
+            
+            let icon = '🔍';
+            if (s.type === 'history') icon = '🕒';
+            else if (s.type === 'trend' || s.type === 'trend_day_title') icon = '📈';
+            else if (s.type === 'title') icon = '🎬';
+            else if (s.type === 'actress') icon = '👩';
+            else if (s.type === 'genre') icon = '🏷️';
+            else if (s.type === 'maker' || s.type === 'studio') icon = '🏢';
+            
+            let typeText = s.type;
+            if (s.type === 'history') typeText = 'Lịch sử';
+            else if (s.type === 'trend' || s.type === 'trend_day_title') typeText = 'Xu hướng';
+            else if (s.type === 'title') typeText = s.source ? s.source.charAt(0).toUpperCase() + s.source.slice(1) : 'Phim';
+            else if (s.type === 'actress') typeText = 'Diễn viên';
+            else if (s.type === 'genre') typeText = 'Thể loại';
+            else if (s.type === 'maker' || s.type === 'studio') typeText = 'Studio';
+
+            let rightActionsHtml = '';
+            if (s.type === 'history') {
+                rightActionsHtml += `<div class="add-suggestion-btn" title="Thêm (AND)" style="color: #1e88e5; cursor: pointer; padding: 0 10px; font-size: 18px; font-weight: bold;">+</div>`;
+                rightActionsHtml += `<div class="delete-history-btn" title="Xóa lịch sử" style="color: #aaa; cursor: pointer; padding: 0 5px; font-size: 16px;">&times;</div>`;
+            } else {
+                rightActionsHtml += `<div class="add-suggestion-btn" title="Thêm (AND)" style="color: #1e88e5; cursor: pointer; padding: 0 10px; font-size: 18px; font-weight: bold;">+</div>`;
+            }
+            
+            item.innerHTML = `
+                <div class="suggestion-icon" title="${typeText}">${icon}</div>
+                <div class="suggestion-text">${s.text}</div>
+                <div class="suggestion-type">${typeText}</div>
+                ${rightActionsHtml}
+            `;
+            
+            const delBtn = item.querySelector('.delete-history-btn');
+            if (delBtn) {
+                delBtn.onmousedown = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    delBtn.innerHTML = '<span style="font-size: 12px;">⏳</span>';
+                    
+                    setTimeout(async () => {
+                        try {
+                            const res = await apiFetch('/api/search_history', {
+                                method: 'DELETE',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ keyword: s.text })
+                            });
+                            if (res.success) {
+                                delBtn.innerHTML = '<span style="color: #4caf50; font-size: 12px;">✔️</span>';
+                                setTimeout(() => {
+                                    item.remove();
+                                    const container = document.getElementById('search-suggestions');
+                                    if (container.children.length === 0) container.style.display = 'none';
+                                }, 300);
+                            } else {
+                                throw new Error(res.error || 'Error');
+                            }
+                        } catch (err) {
+                            delBtn.innerHTML = '<span style="color: #e53935; font-size: 12px;">❌</span>';
+                            setTimeout(() => {
+                                delBtn.innerHTML = '&times;';
+                            }, 1000);
+                        }
+                    }, 400);
+                };
+            }
+
+            const addBtn = item.querySelector('.add-suggestion-btn');
+            if (addBtn) {
+                addBtn.onmousedown = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    let currentVal = videoSearchInput.value;
+                    if (s.type === 'maker' && s.text.toLowerCase() === 'madonna') {
+                        showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                        return;
+                    }
+                    let addText = s.text;
+                    if (['actress', 'genre', 'maker', 'title'].includes(s.type)) {
+                        addText = `${s.type}:"${s.text}"`;
+                    } else if (s.type === 'history') {
+                        addText = s.text; 
+                    } else if (s.type !== 'title' && s.type !== 'trend_day_title') {
+                        addText = `"${s.text}"`;
+                    }
+                    
+                    videoSearchInput.value = appendOrReplaceLastTerm(currentVal, addText);
+                    clearSearchBtn.style.display = 'block';
+                    videoSearchInput.focus();
+                    renderDrawerSearchChips();
+                    handleSuggestionFetch();
+                };
+            }
+            
+            item.onmousedown = (e) => {
+                if (e.target.closest('.delete-history-btn') || e.target.closest('.add-suggestion-btn')) return;
+                e.preventDefault();
+                
+                let finalVal = s.text;
+                if (['actress', 'genre', 'maker'].includes(s.type)) {
+                    if (s.type === 'maker' && s.text.toLowerCase() === 'madonna') {
+                        showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                        document.getElementById('search-suggestions').style.display = 'none';
+                        videoSearchInput.focus();
+                        return;
+                    }
+                    finalVal = `${s.type}:"${s.text}"`;
+                } else if (s.type === 'title' || s.type === 'trend_day_title') {
+                    if (s.id) {
+                        document.getElementById('search-suggestions').style.display = 'none';
+                        videoSearchInput.blur();
+                        const p = getBaseUrlParams();
+                        p.set('watch', s.id);
+                        history.pushState(null, '', `/?${p.toString()}`);
+                        handleNavigation();
+                        return;
+                    } else {
+                        finalVal = `${s.type}:"${s.text}"`;
+                    }
+                }
+                
+                if (s.type === 'history') {
+                    videoSearchInput.value = s.text;
+                } else {
+                    videoSearchInput.value = appendOrReplaceLastTerm(videoSearchInput.value, finalVal);
+                }
+                
+                clearSearchBtn.style.display = 'block';
+                document.getElementById('search-suggestions').style.display = 'none';
+                renderDrawerSearchChips();
+                performSearch();
+            };
+            
+            return item;
+        };
 
         function renderSuggestions(suggestions, query) {
             const container = document.getElementById('search-suggestions');
@@ -504,100 +897,6 @@
             const dates = suggestions.filter(s => s.type === 'releasedate');
             const titles = suggestions.filter(s => !['history', 'actress', 'genre', 'trend_month_genre', 'maker', 'studio', 'releasedate'].includes(s.type));
 
-            const renderListItem = (s) => {
-                const item = document.createElement('div');
-                item.className = 'suggestion-item';
-                
-                let icon = '🔍';
-                if (s.type === 'history') icon = '🕒';
-                else if (s.type === 'trend' || s.type === 'trend_day_title') icon = '📈';
-                else if (s.type === 'title') icon = '🎬';
-                
-                let typeText = s.type;
-                if (s.type === 'history') typeText = 'Lịch sử';
-                else if (s.type === 'trend' || s.type === 'trend_day_title') typeText = 'Xu hướng';
-                else if (s.type === 'title') typeText = 'Video';
-
-                let deleteBtnHtml = '';
-                if (s.type === 'history') {
-                    deleteBtnHtml = `<div class="delete-history-btn" title="Xóa" style="color: #aaa; cursor: pointer; padding: 0 5px; font-size: 16px;">&times;</div>`;
-                }
-                
-                item.innerHTML = `
-                    <div class="suggestion-icon">${icon}</div>
-                    <div class="suggestion-text">${s.text}</div>
-                    <div class="suggestion-type">${typeText}</div>
-                    ${deleteBtnHtml}
-                `;
-                
-                const delBtn = item.querySelector('.delete-history-btn');
-                if (delBtn) {
-                    delBtn.onmousedown = (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        delBtn.innerHTML = '<span style="font-size: 12px;">⏳</span>';
-                        
-                        setTimeout(async () => {
-                            try {
-                                const res = await apiFetch('/api/search_history', {
-                                    method: 'DELETE',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ keyword: s.text })
-                                });
-                                if (res.success) {
-                                    delBtn.innerHTML = '<span style="color: #4caf50; font-size: 12px;">✔️</span>';
-                                    setTimeout(() => {
-                                        item.remove();
-                                        if (container.children.length === 0) container.style.display = 'none';
-                                    }, 300);
-                                } else {
-                                    throw new Error(res.error || 'Error');
-                                }
-                            } catch (err) {
-                                delBtn.innerHTML = '<span style="color: #e53935; font-size: 12px;">❌</span>';
-                                setTimeout(() => {
-                                    delBtn.innerHTML = '&times;';
-                                }, 1000);
-                            }
-                        }, 400);
-                    };
-                }
-                
-                item.onmousedown = (e) => {
-                    if (e.target.closest('.delete-history-btn')) return;
-                    e.preventDefault();
-                    
-                    if (s.type === 'history') {
-                        videoSearchInput.value = s.text;
-                        clearSearchBtn.style.display = 'block';
-                        container.style.display = 'none';
-                        performSearch();
-                    } else if (s.type === 'title' || s.type === 'trend_day_title') {
-                        if (s.id) {
-                            container.style.display = 'none';
-                            videoSearchInput.blur();
-                            const p = getBaseUrlParams();
-                            p.set('watch', s.id);
-                            history.pushState(null, '', `/?${p.toString()}`);
-                            handleNavigation();
-                        } else {
-                            videoSearchInput.value = s.text;
-                            clearSearchBtn.style.display = 'block';
-                            container.style.display = 'none';
-                            performSearch();
-                        }
-                    } else {
-                        videoSearchInput.value = s.text;
-                        clearSearchBtn.style.display = 'block';
-                        container.style.display = 'none';
-                        performSearch();
-                    }
-                };
-                
-                return item;
-            };
-
             const renderChipGroup = (title, items, typeClass, icon) => {
                 if (items.length === 0) return null;
                 
@@ -613,20 +912,50 @@
                 group.appendChild(titleEl);
                 
                 const chipsDiv = document.createElement('div');
-                chipsDiv.style.display = 'flex';
-                chipsDiv.style.flexWrap = 'wrap';
-                chipsDiv.style.gap = '8px';
+                chipsDiv.className = 'suggestion-chips-container';
+                chipsDiv.style.cssText = `
+                    display: flex;
+                    overflow-x: auto;
+                    flex-wrap: nowrap;
+                    gap: 8px;
+                    padding: 4px 0;
+                `;
                 
                 items.forEach(s => {
                     const chip = document.createElement('span');
                     chip.className = `detail-chip chip-${typeClass}`;
-                    chip.innerText = icon + ' ' + s.text;
+                    chip.innerHTML = `<span class="chip-icon">${icon}</span> <span class="chip-text">${s.text}</span> <span class="chip-add-btn" title="Thêm (AND)" style="margin-left:5px; color:#1e88e5; font-weight:bold; padding:0 5px;">+</span>`;
                     
-                    chip.onmousedown = (e) => {
+                    const addBtn = chip.querySelector('.chip-add-btn');
+                    addBtn.onmousedown = (e) => {
                         e.preventDefault();
-                        videoSearchInput.value = `${typeClass}:"${s.text}"`;
+                        e.stopPropagation();
+                        if (typeClass === 'maker' && s.text.toLowerCase() === 'madonna') {
+                            showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                            return;
+                        }
+                        let currentVal = videoSearchInput.value;
+                        let addText = `${typeClass}:"${s.text}"`;
+                        videoSearchInput.value = appendOrReplaceLastTerm(currentVal, addText);
+                        clearSearchBtn.style.display = 'block';
+                        videoSearchInput.focus();
+                        renderDrawerSearchChips();
+                        handleSuggestionFetch();
+                    };
+
+                    chip.onmousedown = (e) => {
+                        if(e.target.closest('.chip-add-btn')) return;
+                        e.preventDefault();
+                        if (typeClass === 'maker' && s.text.toLowerCase() === 'madonna') {
+                            showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                            return;
+                        }
+                        let currentVal = videoSearchInput.value;
+                        let addText = `${typeClass}:"${s.text}"`;
+                        videoSearchInput.value = appendOrReplaceLastTerm(currentVal, addText);
                         clearSearchBtn.style.display = 'block';
                         container.style.display = 'none';
+                        renderDrawerSearchChips();
                         performSearch();
                     };
                     chipsDiv.appendChild(chip);
@@ -638,6 +967,7 @@
 
             if (historyItems.length > 0) {
                 const grp = document.createElement('div');
+                grp.className = 'suggestion-group-history';
                 if (actresses.length > 0 || genres.length > 0 || makers.length > 0 || dates.length > 0 || titles.length > 0) {
                     grp.style.borderBottom = '1px solid #333';
                 }
@@ -667,17 +997,65 @@
                 container.lastChild.style.borderBottom = 'none';
             }
             
+            container.onscroll = () => {
+                if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+                    fullSuggestionInfiniteScrollHistory();
+                }
+            };
+
+            container.style.top = document.getElementById('search-container').offsetHeight + 'px';
             container.style.display = 'block';
         }
 
         let suggestionTimeout = null;
+        async function fullSuggestionInfiniteScrollHistory() {
+            const q = videoSearchInput.value.trim();
+            if (isLoadingHistorySuggestions || !hasMoreHistorySuggestions || q) {
+                return;
+            }
+            isLoadingHistorySuggestions = true;
+            historySuggestionPage++;
+
+            try {
+                const res = await apiFetch(`/api/search_suggestions?q=&history_page=${historySuggestionPage}&source=${currentSource || 'all'}`);
+                if (res.success && res.suggestions) {
+                    if (res.suggestions.length > 0) {
+                        const container = document.getElementById('search-suggestions');
+                        const historyGroup = container.querySelector('.suggestion-group-history');
+                        if (historyGroup) {
+                            const seen = new Set(Array.from(historyGroup.querySelectorAll('.suggestion-text')).map(el => el.textContent.toLowerCase()));
+                            res.suggestions.forEach(s => {
+                                if (s.type === 'history' && !seen.has(s.text.toLowerCase())) {
+                                    historyGroup.appendChild(renderListItem(s));
+                                    seen.add(s.text.toLowerCase());
+                                }
+                            });
+                        }
+                    } else {
+                        hasMoreHistorySuggestions = false;
+                    }
+                }
+            } catch (e) {
+                console.error('Error fetching more history:', e);
+            } finally {
+                isLoadingHistorySuggestions = false;
+            }
+        }
+
         function handleSuggestionFetch() {
             const q = videoSearchInput.value.trim();
             clearTimeout(suggestionTimeout);
+            historySuggestionPage = 1;
+            isLoadingHistorySuggestions = false;
+            hasMoreHistorySuggestions = true;
+            const suggestionsContainer = document.getElementById('search-suggestions');
+            suggestionsContainer.innerHTML = '';
+            suggestionsContainer.onscroll = null;
+
             suggestionTimeout = setTimeout(async () => {
                 let suggestions = [];
                 try {
-                    const res = await apiFetch(`/api/search_suggestions?q=${encodeURIComponent(q)}`);
+                    const res = await apiFetch(`/api/search_suggestions?q=${encodeURIComponent(q)}&history_page=1&source=${currentSource || 'all'}`);
                     if (res.success && res.suggestions) suggestions = res.suggestions;
                     
                     const seen = new Set();
@@ -696,8 +1074,8 @@
         }
 
         videoSearchInput.addEventListener('focus', function() {
-            this.select();
             handleSuggestionFetch();
+            updateBottomNavState();
         });
 
         videoSearchInput.addEventListener('blur', () => {
@@ -861,6 +1239,7 @@
             const params = new URLSearchParams();
             if (currentTab && currentTab !== 'all') params.set('tab', currentTab);
             if (searchKey) params.set('searchKey', searchKey);
+            if (currentSource && currentSource !== 'all') params.set('source', currentSource);
             return params;
         }
 
@@ -893,9 +1272,11 @@
             const videoId = urlParams.get('video');
             const focusId = urlParams.get('id');
             const hash = window.location.hash;
+            const showSearch = urlParams.get('showSearch');
 
             const urlTab = urlParams.get('tab') || 'all';
             const urlSearchKey = urlParams.get('searchKey') || '';
+            const urlSource = urlParams.get('source') || 'all';
             
             let needReset = false;
             if (urlTab !== currentTab) {
@@ -910,6 +1291,31 @@
                 localStorage.setItem('missav_search_key', searchKey);
                 needReset = true;
             }
+            if (urlSource !== currentSource) {
+                currentSource = urlSource;
+                const allCb = document.getElementById('source-all-cb');
+                const cbs = document.querySelectorAll('.source-cb');
+                const label = document.getElementById('source-select-label');
+                if (allCb && cbs.length > 0) {
+                    if (!currentSource || currentSource === 'all') {
+                        allCb.checked = true;
+                        cbs.forEach(cb => cb.checked = false);
+                        label.textContent = 'Tất cả Server';
+                    } else {
+                        allCb.checked = false;
+                        const selectedArr = currentSource.split(',').map(s => s.trim());
+                        let count = 0;
+                        cbs.forEach(cb => {
+                            if (selectedArr.includes(cb.value)) { cb.checked = true; count++; }
+                            else { cb.checked = false; }
+                        });
+                        label.textContent = count === cbs.length ? 'Tất cả Server' : `${count} Server`;
+                        if (count === cbs.length) { allCb.checked = true; cbs.forEach(cb => cb.checked = false); label.textContent = 'Tất cả Server'; }
+                    }
+                }
+                needReset = true;
+            }
+            renderActiveSearchChips(searchKey);
 
             if (needReset) {
                 videos = [];
@@ -921,14 +1327,16 @@
                 document.getElementById('video-search').placeholder = 'Tìm kiếm videos...';
                 fetchTabCounts();
                 fetchVideos().then(() => {
-                    executeNavigationState(watchId, videoId, focusId, hash);
+                    executeNavigationState(watchId, videoId, focusId, hash, showSearch);
                 });
             } else {
-                executeNavigationState(watchId, videoId, focusId, hash);
+                executeNavigationState(watchId, videoId, focusId, hash, showSearch);
             }
         }
 
-        function executeNavigationState(watchId, videoId, focusId, hash) {
+        function executeNavigationState(watchId, videoId, focusId, hash, showSearch) {
+            document.body.classList.remove('hide-ui'); // Đảm bảo thanh điều hướng không bị ẩn khi mở các Drawer
+            
             if (hash === '#profile') {
                 profilePage.classList.add('active');
                 galleryPage.classList.remove('active');
@@ -949,6 +1357,14 @@
             } else {
                 galleryPage.classList.add('active');
                 detailsPage.classList.remove('active');
+                
+                if (showSearch) {
+                    if (typeof openSearchInput === 'function') openSearchInput();
+                    const p = new URLSearchParams(window.location.search);
+                    p.delete('showSearch');
+                    history.replaceState(null, '', `/?${p.toString()}`);
+                    return;
+                }
                 
                 let targetItem = null;
                 if (focusId) {
@@ -976,7 +1392,7 @@
                 showVideoDetail(idx);
             } else {
                 try {
-                    const res = await apiFetch(`/api/video_details?id=${id}`);
+                    const res = await apiFetch(`/api/video_details?id=${encodeURIComponent(id)}`);
                     if (res.success && res.data) {
                         showVideoDetail(-1, res.data);
                     }
@@ -995,7 +1411,7 @@
                 renderCurrentVideo();
             } else {
                 try {
-                    const res = await apiFetch(`/api/video_details?id=${id}`);
+                    const res = await apiFetch(`/api/video_details?id=${encodeURIComponent(id)}`);
                     if (res.success && res.data) {
                         videos.push(res.data);
                         currentVideoIndex = videos.length - 1;
@@ -1448,6 +1864,7 @@
             videoSearchInput.value = '';
             clearSearchBtn.style.display = 'none';
             videoSearchInput.focus();
+            renderDrawerSearchChips();
             if (searchKey !== '') {
                 const p = getBaseUrlParams();
                 p.delete('searchKey');
@@ -1461,6 +1878,7 @@
 
         videoSearchInput.addEventListener('input', (e) => {
             clearSearchBtn.style.display = e.target.value ? 'block' : 'none';
+            renderDrawerSearchChips();
             handleSuggestionFetch();
         });
 
@@ -1516,7 +1934,7 @@
 
         async function fetchTabCounts() {
             try {
-                const res = await apiFetch(`/api/counts?search_key=${encodeURIComponent(searchKey || '')}`);
+                const res = await apiFetch(`/api/counts?search_key=${encodeURIComponent(searchKey || '')}&source=${currentSource || 'all'}`);
                 if (res) {
                     const keys = ['all', 'favorites', 'recent', 'frequent', 'global_frequent'];
                     keys.forEach(key => {
@@ -1537,7 +1955,7 @@
             document.getElementById('load-more').style.display = 'block';
 
             try {
-                let url = `${API_URL}?page=${currentPage}&search_key=${encodeURIComponent(searchKey || '')}&tab=${currentTab || 'all'}`;
+                let url = `${API_URL}?page=${currentPage}&search_key=${encodeURIComponent(searchKey || '')}&tab=${currentTab || 'all'}&source=${currentSource || 'all'}`;
                 const data = await apiFetch(url);
                 
                 if (data.total !== undefined) {
@@ -1566,12 +1984,13 @@
                         }
                         
                         let viewsStr = video.views ? `👁️ ${video.views}` : '';
+                        let sourceBadge = video.source ? `<span style="background: #333; color: #ccc; padding: 2px 6px; border-radius: 4px; font-size: 10px; text-transform: capitalize;">${video.source}</span>` : '';
 
                         item.innerHTML = `
                             <div class="gallery-item-thumb" style="background-image: url('${video.cover}')"></div>
                             <div class="item-info">
                                 <div class="item-title">${video.title}</div>
-                                <div class="item-meta"><span>${dateStr}</span><span>${viewsStr}</span></div>
+                                <div class="item-meta"><span>${dateStr}</span><div style="display:flex; gap: 5px; align-items:center;">${sourceBadge}${viewsStr}</div></div>
                             </div>
                         `;
 
@@ -1644,22 +2063,19 @@
             }
 
             try {
-                const data = await apiFetch(`/api/video_url?id=${encodeURIComponent(video.id)}`);
+                let urlReq = `/api/video_url?id=${encodeURIComponent(video.id)}`;
+                if (video.source) urlReq += `&source=${encodeURIComponent(video.source)}`;
+                const data = await apiFetch(urlReq);
                 
                 if (renderId !== currentRenderId) return;
 
                 if (data.success && data.url) {
-                    // 1. Tách bỏ phần #jwkey (nếu có) trước khi đưa vào proxy
                     let cleanUrl = data.url.split('#')[0];
-                    
-                    // 2. Tạo URL proxy an toàn
                     let url = `/api/proxy?url=${encodeURIComponent(cleanUrl)}`;
-                    
-                    // 3. Phân loại luồng Video, bổ sung hỗ trợ đặc biệt cho đuôi .vl của VLXX
+                    let proxySource = data.source || video.source;
+                    if (proxySource) url += `&source=${encodeURIComponent(proxySource)}`;
                     let videoType = 'video/mp4';
-                    if (cleanUrl.includes('.m3u8') || cleanUrl.includes('.vl')) {
-                        videoType = 'application/x-mpegURL';
-                    }
+                    if (cleanUrl.includes('.m3u8') || cleanUrl.includes('.vl')) videoType = 'application/x-mpegURL';
                     
                     const videoEl = document.createElement('video');
                     videoEl.id = 'vjs-current-video';
@@ -1709,15 +2125,17 @@
                             showToast(`Đang thử lại link mới lần ${errorRetryCount}/3...`, "warning");
                             loadingIndicator.style.display = 'block';
                             try {
-                                const newData = await apiFetch(`/api/video_url?id=${encodeURIComponent(video.id)}&refresh=true`);
+                                let newUrlReq = `/api/video_url?id=${encodeURIComponent(video.id)}&refresh=true`;
+                                if (video.source) newUrlReq += `&source=${encodeURIComponent(video.source)}`;
+                                const newData = await apiFetch(newUrlReq);
                                 if (renderId !== currentRenderId) return;
                                 if (newData.success && newData.url) {
                                     let cleanNewUrl = newData.url.split('#')[0];
                                     let newUrl = `/api/proxy?url=${encodeURIComponent(cleanNewUrl)}`;
+                                    let newProxySource = newData.source || video.source;
+                                    if (newProxySource) newUrl += `&source=${encodeURIComponent(newProxySource)}`;
                                     let newVideoType = 'video/mp4';
-                                    if (cleanNewUrl.includes('.m3u8') || cleanNewUrl.includes('.vl')) {
-                                        newVideoType = 'application/x-mpegURL';
-                                    }
+                                    if (cleanNewUrl.includes('.m3u8') || cleanNewUrl.includes('.vl')) newVideoType = 'application/x-mpegURL';
                                     
                                     activePlayer.error(null); // Xóa lỗi cũ
                                     activePlayer.src({ src: newUrl, type: newVideoType });
@@ -1907,6 +2325,7 @@
             const now = Date.now();
             if (now - lastNavTime < 500) return;
             lastNavTime = now;
+            if (typeof closeSearchInput === 'function') closeSearchInput();
             
             const urlParams = new URLSearchParams(window.location.search);
             if (!urlParams.has('watch') && !urlParams.has('video')) {
@@ -2416,8 +2835,12 @@
                         chip.className = `detail-chip chip-${type}`;
                         chip.innerText = text;
                         chip.onclick = () => {
+                            if (type === 'maker' && text.toLowerCase() === 'madonna') {
+                                showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                                return;
+                            }
                             const p = getBaseUrlParams();
-                            p.set('searchKey', text);
+                            p.set('searchKey', `${type}:"${text}"`);
                             p.set('tab', 'all');
                             p.delete('watch');
                             p.delete('video');
@@ -2467,7 +2890,24 @@
                     history.pushState(null, '', `/?${p.toString()}`);
                     handleNavigation();
                 };
-                document.getElementById('btn-open-javtiful').onclick = () => window.open(v.url || `https://javtiful.com/video/${v.id}`, '_blank');
+                
+                let sourceName = 'Trang gốc';
+                let sourceUrl = v.url || '#';
+                if (v.source === 'javtiful') { sourceName = 'Javtiful'; sourceUrl = v.url || `https://javtiful.com/video/${v.id}`; }
+                else if (v.source === 'vlxx') { sourceName = 'VLXX'; sourceUrl = v.url || `https://vlxx.moi/video/${v.id}`; }
+                else if (v.source === 'javmost') { sourceName = 'Javmost'; sourceUrl = v.url || `https://javmost.ws/${v.id}`; }
+                else if (v.source === 'sextop1') { sourceName = 'Sextop1'; sourceUrl = v.url || `https://sextop1.buzz/${v.id}`; }
+                else if (v.source === 'javtrailer') { sourceName = 'Javtrailer'; sourceUrl = v.url || `https://javtrailers.com/video/${v.id}`; }
+                else if (v.source === 'missav') { sourceName = 'MissAV'; sourceUrl = v.url || `https://missav.ai/en/${v.id}`; }
+                else if (v.source === 'fshare') { sourceName = 'Fshare'; sourceUrl = `https://www.fshare.vn/file/${v.id}`; }
+                else if (v.source) { sourceName = v.source.charAt(0).toUpperCase() + v.source.slice(1); }
+
+                const btnOpenSource = document.getElementById('btn-open-source');
+                if (btnOpenSource) {
+                    btnOpenSource.innerHTML = `🌐 ${sourceName}`;
+                    btnOpenSource.onclick = () => window.open(sourceUrl, '_blank');
+                }
+
                 document.getElementById('btn-search-list').onclick = () => {
                     const p = getBaseUrlParams();
                     p.set('id', v.id);
@@ -2480,7 +2920,9 @@
             setupButtons(video);
             
             try {
-                const res = await apiFetch(`/api/video_details?id=${video.id}`);
+                let urlReq = `/api/video_details?id=${encodeURIComponent(video.id)}`;
+                if (video.source) urlReq += `&source=${encodeURIComponent(video.source)}`;
+                const res = await apiFetch(urlReq);
                 if (res.success && res.data) {
                     const d = res.data;
                     document.getElementById('details-cover').src = d.cover || '';
@@ -2503,6 +2945,59 @@
                 handleNavigation();
             }
         };
+
+        function openSearchDrawer() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const isGalleryOpen = !urlParams.has('watch') && !urlParams.has('video') && window.location.hash !== '#profile';
+
+            if (!isGalleryOpen) {
+                // Not on gallery page, navigate to it and tell it to open search.
+                const p = getBaseUrlParams();
+                if (currentPlayingVideo && urlParams.has('watch')) {
+                    p.set('id', currentPlayingVideo.id);
+                } else if (urlParams.has('video')) {
+                    p.set('id', urlParams.get('video'));
+                }
+                p.set('showSearch', '1');
+                history.pushState(null, '', `/?${p.toString()}`);
+                handleNavigation();
+            } else {
+                // Already on gallery page, just open search.
+                openSearchInput();
+            }
+        }
+
+        function openSearchInput() {
+            const headerContent = document.getElementById('gallery-header-content');
+            const searchIcon = document.getElementById('gallery-search-icon');
+            const inputWrapper = document.getElementById('search-input-wrapper');
+            const closeBtn = document.getElementById('close-search-input');
+            if (headerContent) headerContent.style.display = 'none';
+            if (searchIcon) searchIcon.style.display = 'none';
+            if (inputWrapper) inputWrapper.style.display = 'block';
+            if (closeBtn) closeBtn.style.display = 'block';
+            renderDrawerSearchChips();
+            videoSearchInput.focus();
+        }
+        function closeSearchInput() {
+            const headerContent = document.getElementById('gallery-header-content');
+            const searchIcon = document.getElementById('gallery-search-icon');
+            const inputWrapper = document.getElementById('search-input-wrapper');
+            const closeBtn = document.getElementById('close-search-input');
+            if (headerContent) headerContent.style.display = 'flex';
+            if (searchIcon) searchIcon.style.display = 'block';
+            if (inputWrapper) inputWrapper.style.display = 'none';
+            if (closeBtn) closeBtn.style.display = 'none';
+            document.getElementById('drawer-search-chips').style.display = 'none';
+            videoSearchInput.value = searchKey || '';
+            clearSearchBtn.style.display = videoSearchInput.value ? 'block' : 'none';
+            videoSearchInput.blur();
+            const sug = document.getElementById('search-suggestions');
+            if (sug) sug.style.display = 'none';
+        }
+        document.getElementById('close-search-input').addEventListener('click', closeSearchInput);
+        document.getElementById('btn-search').addEventListener('click', openSearchDrawer);
+        document.querySelectorAll('.header-search-icon').forEach(el => el.addEventListener('click', openSearchDrawer));
 
     const imageViewer = document.getElementById('image-viewer');
     const fsImage = document.getElementById('fullscreen-image');
@@ -2580,6 +3075,91 @@
     }
     }
 
+    async function initSourceSelector() {
+        const multiSelectContainer = document.getElementById('source-multi-select');
+        const selectBtn = document.getElementById('source-select-btn');
+        const dropdown = document.getElementById('source-dropdown');
+        const checkboxesContainer = document.getElementById('source-checkboxes');
+        const allCb = document.getElementById('source-all-cb');
+        
+        if (!multiSelectContainer) return;
+
+        try {
+            const res = await apiFetch('/api/sources');
+            if (res.success && res.sources) {
+                checkboxesContainer.innerHTML = '';
+                res.sources.forEach(source => {
+                    const lbl = document.createElement('label');
+                    lbl.style.cssText = 'display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #ddd;';
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = source;
+                    cb.className = 'source-cb';
+                    cb.style.accentColor = '#ff4081';
+                    lbl.appendChild(cb);
+                    lbl.appendChild(document.createTextNode(source.charAt(0).toUpperCase() + source.slice(1)));
+                    checkboxesContainer.appendChild(lbl);
+                });
+                multiSelectContainer.style.display = 'flex';
+
+                const cbs = document.querySelectorAll('.source-cb');
+
+                selectBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!multiSelectContainer.contains(e.target)) {
+                        dropdown.style.display = 'none';
+                    }
+                });
+
+                allCb.addEventListener('change', (e) => {
+                    if (allCb.checked) {
+                        cbs.forEach(cb => cb.checked = false);
+                    } else {
+                        allCb.checked = true;
+                    }
+                    applySourceSelection();
+                });
+
+                cbs.forEach(cb => {
+                    cb.addEventListener('change', () => {
+                        const anyChecked = Array.from(cbs).some(c => c.checked);
+                        if (anyChecked) {
+                            allCb.checked = false;
+                        } else {
+                            allCb.checked = true;
+                        }
+                        applySourceSelection();
+                    });
+                });
+
+                function applySourceSelection() {
+                    const checkedCbs = Array.from(cbs).filter(c => c.checked);
+                    let sourceParam = 'all';
+                    if (allCb.checked || checkedCbs.length === 0 || checkedCbs.length === cbs.length) {
+                        sourceParam = 'all';
+                    } else {
+                        sourceParam = checkedCbs.map(c => c.value).join(',');
+                    }
+
+                    if (currentSource !== sourceParam) {
+                        const p = new URLSearchParams(window.location.search);
+                        if (sourceParam !== 'all') { p.set('source', sourceParam); } 
+                        else { p.delete('source'); }
+                        p.delete('watch'); p.delete('video'); p.delete('id');
+                        history.pushState(null, '', `/?${p.toString()}`);
+                        handleNavigation();
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load sources', e);
+        }
+    }
+
         // Khởi tạo ứng dụng
         async function initApp() {
             await initSessionId();
@@ -2587,10 +3167,12 @@
             const urlParams = new URLSearchParams(window.location.search);
             let initTab = urlParams.get('tab') || 'all';
             let initSearch = urlParams.has('searchKey') ? urlParams.get('searchKey') : (localStorage.getItem('missav_search_key') || '');
+            let initSource = urlParams.get('source') || 'all';
             
             const p = new URLSearchParams(window.location.search);
             if (initTab !== 'all') p.set('tab', initTab);
             if (initSearch) p.set('searchKey', initSearch);
+            if (initSource !== 'all') p.set('source', initSource);
             
             let newUrl = window.location.pathname;
             const qs = p.toString();
@@ -2599,6 +3181,7 @@
             
             history.replaceState(null, '', newUrl);
 
+            await initSourceSelector();
             handleNavigation();
             updateIdentityDisplay();
         }

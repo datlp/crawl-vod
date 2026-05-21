@@ -15,24 +15,25 @@ def parse_release_date(date_str):
     return date_str
 
 class Scraper:
-    def __init__(self, db_conn, db_lock, memory_lock, db_buffer, table_name="javtiful_videos"):
+    def __init__(self, db_conn, db_lock, memory_lock, db_buffer, table_name="javtiful_videos", domain=None):
         self.db_conn = db_conn
         self.db_lock = db_lock
         self.memory_lock = memory_lock
         self.db_buffer = db_buffer
         self.table_name = table_name
+        self.domain = domain if domain else "missav.ai"
         self.session = curl_requests.Session(impersonate="chrome120")
         self.sync_lock = threading.Lock()
-        self.referer = "https://missav.ai/"
+        self.referer = f"https://{self.domain}/"
         self.source_name = "MissAV"
 
     def update_sync_tasks_from_menu(self):
         custom_log(self.source_name, f"Khởi tạo sync_tasks cho {self.source_name}...")
         tasks = [
-            "https://missav.ai/en/new?page={page}",
-            "https://missav.ai/en/uncensored-leak?page={page}",
-            "https://missav.ai/en/genres/VR?page={page}",
-            "https://missav.ai/en/chinese-subtitle?page={page}"
+            f"https://{self.domain}/en/new?page={{page}}",
+            f"https://{self.domain}/en/uncensored-leak?page={{page}}",
+            f"https://{self.domain}/en/genres/VR?page={{page}}",
+            f"https://{self.domain}/en/chinese-subtitle?page={{page}}"
         ]
         with self.db_lock:
             cursor = self.db_conn.cursor()
@@ -64,7 +65,7 @@ class Scraper:
             
             items = soup.select('div.thumbnail, div.max-w-64, div[class*="aspect-video"]') 
             if not items:
-                items = soup.select('a[href*="missav.ai/en/"]')
+                items = soup.select(f'a[href*="{self.domain}/en/"]')
                 
             now = int(time.time())
             for idx, item in enumerate(items):
@@ -89,7 +90,7 @@ class Scraper:
                 
                 if len(title) < 4: continue
                 
-                if vid_id and cover and "missav" in href:
+                if vid_id and cover and self.domain.split('.')[0] in href:
                     pseudo_time = now - (page * 10000) - idx
                     added_at_dt = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(pseudo_time))
                     videos.append((vid_id, title, cover, added_at_dt, "", dvd))
@@ -139,7 +140,7 @@ class Scraper:
                 if not re.match(r'^[a-f0-9]{8}\.com$', parsed_domain):
                     return url_str
             
-        url = f"https://missav.ai/en/{vid_id}"
+        url = f"https://{self.domain}/en/{vid_id}"
         custom_log(self.source_name, f"⏳ Fetching video URL for {vid_id}")
         try:
             res = self.session.get(url, timeout=15)
@@ -203,7 +204,7 @@ class Scraper:
 
     def sync_video_details(self, vid_id):
         with self.sync_lock:
-            url = f"https://missav.ai/en/{vid_id}"
+            url = f"https://{self.domain}/en/{vid_id}"
             try:
                 res = self.session.get(url, timeout=15)
                 if res.status_code != 200:

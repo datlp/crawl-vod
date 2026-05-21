@@ -52,25 +52,26 @@ def parse_release_date(date_str):
     return date_str
 
 class Scraper:
-    def __init__(self, db_conn, db_lock, memory_lock, db_buffer, table_name="javtiful_videos"):
+    def __init__(self, db_conn, db_lock, memory_lock, db_buffer, table_name="javtiful_videos", domain=None):
         self.db_conn = db_conn
         self.db_lock = db_lock
         self.memory_lock = memory_lock
         self.db_buffer = db_buffer
         self.table_name = table_name
+        self.domain = domain if domain else "javtiful.com"
         self.session = curl_requests.Session(impersonate="chrome120")
         self.sync_lock = threading.Lock()
-        self.referer = "https://javtiful.com/"
+        self.referer = f"https://{self.domain}/"
         self.source_name = "Javtiful"
 
     def update_sync_tasks_from_menu(self):
         custom_log(self.source_name, f"Khởi tạo sync_tasks cho {self.source_name}...")
         tasks = [
-            "https://javtiful.com/category/chinese-av?page={page}",
-            "https://javtiful.com/censored?page={page}",
-            "https://javtiful.com/uncensored?page={page}",
-            "https://javtiful.com/reducing-mosaic?page={page}",
-            "https://javtiful.com/videos?page={page}"
+            f"https://{self.domain}/category/chinese-av?page={{page}}",
+            f"https://{self.domain}/censored?page={{page}}",
+            f"https://{self.domain}/uncensored?page={{page}}",
+            f"https://{self.domain}/reducing-mosaic?page={{page}}",
+            f"https://{self.domain}/videos?page={{page}}"
         ]
         with self.db_lock:
             cursor = self.db_conn.cursor()
@@ -117,7 +118,7 @@ class Scraper:
                 img_tag = a_tag.select_one('img')
                 cover = img_tag.get('data-front-lazy-src') or img_tag.get('src') if img_tag else ''
                 if cover and cover.startswith('/'):
-                    cover = "https://javtiful.com" + cover
+                    cover = f"https://{self.domain}" + cover
                 
                 title_tag = item.select_one('a.front-video-title')
                 title = title_tag.text.strip() if title_tag else vid_id
@@ -174,7 +175,7 @@ class Scraper:
                 if row and row[0]:
                     return row[0]
             
-        url = f"https://javtiful.com/video/{vid_id}"
+        url = f"https://{self.domain}/video/{vid_id}"
         custom_log(self.source_name, f"⏳ Fetching video URL for {vid_id}")
         try:
             res = self.session.get(url, timeout=15)
@@ -199,7 +200,7 @@ class Scraper:
 
     def sync_video_details(self, vid_id):
         with self.sync_lock:
-            url = f"https://javtiful.com/video/{vid_id}"
+            url = f"https://{self.domain}/video/{vid_id}"
             try:
                 res = self.session.get(url, timeout=15)
                 if res.status_code != 200:
