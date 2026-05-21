@@ -1275,7 +1275,7 @@ def search_suggestions():
                 
             try:
                 cursor.execute(f'''
-                    SELECT v.title, v.id
+                    SELECT v.title, v.id, v.cover
                     FROM {VIDEOS_TABLE} v
                     JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid
                     WHERE {VIDEOS_TABLE}_fts MATCH ?
@@ -1284,7 +1284,12 @@ def search_suggestions():
                 for row in cursor.fetchall():
                     t = row[0].strip()
                     if t:
-                        match_title.append({"text": t[:80] + ("..." if len(t)>80 else ""), "type": "title", "id": row[1]})
+                        match_title.append({
+                            "text": t[:80] + ("..." if len(t)>80 else ""), 
+                            "type": "title", 
+                            "id": row[1],
+                            "cover": f"/api/media?id={row[1]}"
+                        })
             except Exception as e:
                 custom_log("System", f"❌ FTS title search error: {e}")
                 

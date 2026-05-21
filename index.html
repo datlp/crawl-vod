@@ -675,9 +675,51 @@
             if (dateGroup) container.appendChild(dateGroup);
 
             if (titles.length > 0) {
-                const grp = document.createElement('div');
-                titles.forEach(s => grp.appendChild(renderListItem(s)));
-                container.appendChild(grp);
+                const titleGrp = document.createElement('div');
+                titleGrp.style.padding = '15px';
+                titleGrp.style.borderTop = '1px solid #333';
+                
+                const titleHeader = document.createElement('div');
+                titleHeader.innerText = 'Phim đề xuất';
+                titleHeader.style.fontSize = '14px';
+                titleHeader.style.fontWeight = 'bold';
+                titleHeader.style.color = '#ff4081';
+                titleHeader.style.marginBottom = '15px';
+                titleGrp.appendChild(titleHeader);
+
+                const grid = document.createElement('div');
+                grid.style.display = 'grid';
+                grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(140px, 1fr))';
+                grid.style.gap = '15px';
+                
+                titles.forEach(s => {
+                    const item = document.createElement('div');
+                    item.className = 'gallery-item';
+                    
+                    item.innerHTML = `
+                        <div class="gallery-item-thumb" style="background-image: url('${s.cover || ''}')"></div>
+                        <div class="item-info">
+                            <div class="item-title" style="font-size: 13px;">${s.text}</div>
+                        </div>
+                    `;
+                    
+                    item.onmousedown = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        videoSearchInput.value = s.text;
+                        clearSearchBtn.style.display = 'block';
+                        container.style.display = 'none';
+                        videoSearchInput.blur();
+                        const p = getBaseUrlParams();
+                        p.set('searchKey', s.text);
+                        p.set('video', s.id);
+                        history.pushState(null, '', `/?${p.toString()}`);
+                        handleNavigation();
+                    };
+                    grid.appendChild(item);
+                });
+                titleGrp.appendChild(grid);
+                container.appendChild(titleGrp);
             }
 
             if (container.lastChild && container.lastChild.style) {
