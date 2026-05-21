@@ -173,8 +173,8 @@
         
         #search-suggestions {
             position: fixed; top: 58px; left: 0; right: 0; background: #1e1e1e;
-            border: none; border-radius: 0; padding-bottom: 20px;
-            overflow-y: auto; z-index: 150; box-shadow: none;
+            border: none; border-radius: 0; z-index: 150; box-shadow: none;
+            display: flex; flex-direction: column; overflow: hidden;
         }
         .suggestion-item {
             display: flex; align-items: center; padding: 12px 16px; cursor: pointer;
@@ -272,7 +272,7 @@
         .animate-heart {
             animation: heartBeat 0.8s ease-out forwards;
         }
-        #gallery-tabs::-webkit-scrollbar, #profile-tabs::-webkit-scrollbar { display: none; }
+        #gallery-tabs::-webkit-scrollbar, #profile-tabs::-webkit-scrollbar, #suggestion-tabs::-webkit-scrollbar { display: none; }
         .mui-tab {
             flex-shrink: 0; padding: 12px 24px; background: none; border: none; color: rgba(255,255,255,0.6); border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap;
             font-family: "Roboto", "Helvetica", "Arial", sans-serif; text-transform: uppercase; font-size: 0.875rem; font-weight: 500;
@@ -448,7 +448,15 @@
                     <input type="text" id="video-search" class="mui-input" placeholder="Tìm kiếm videos..." autocomplete="off">
                     <span id="clear-search" class="material-symbols-outlined">close</span>
                     <span id="submit-search" class="material-symbols-outlined">search</span>
-                    <div id="search-suggestions" style="display: none;"></div>
+                    <div id="search-suggestions" style="display: none;">
+                        <div id="suggestion-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none; border-bottom: 1px solid rgba(255,255,255,0.12);">
+                            <button id="sugTabAll" class="mui-tab active">Tất cả</button>
+                            <button id="sugTabActress" class="mui-tab">Diễn viên</button>
+                            <button id="sugTabGenre" class="mui-tab">Thể loại</button>
+                            <button id="sugTabMaker" class="mui-tab">Nhà SX</button>
+                        </div>
+                        <div id="suggestion-content" style="flex-grow: 1; overflow-y: auto; padding-bottom: 20px;"></div>
+                    </div>
                 </div>
             </div>
             <div id="gallery-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none;">
@@ -667,14 +675,47 @@
         
         submitSearchBtn.addEventListener('click', performSearch);
 
+        let currentSugTab = 'all';
+        let currentSuggestions = [];
+        let currentSugQuery = '';
+
+        function switchSugTab(tab) {
+            currentSugTab = tab;
+            const tabMapping = { 'all': 'sugTabAll', 'actress': 'sugTabActress', 'genre': 'sugTabGenre', 'maker': 'sugTabMaker' };
+            Object.keys(tabMapping).forEach(key => {
+                const btn = document.getElementById(tabMapping[key]);
+                if (btn) btn.classList.toggle('active', key === tab);
+            });
+            renderSuggestionsContent();
+        }
+
+        setTimeout(() => {
+            document.getElementById('sugTabAll')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('all'); });
+            document.getElementById('sugTabActress')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('actress'); });
+            document.getElementById('sugTabGenre')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('genre'); });
+            document.getElementById('sugTabMaker')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('maker'); });
+        }, 100);
+
         function renderSuggestions(suggestions, query) {
+            currentSuggestions = suggestions;
+            currentSugQuery = query;
             const container = document.getElementById('search-suggestions');
-            container.innerHTML = '';
             if (suggestions.length === 0) {
                 container.style.display = 'none';
                 return;
             }
+            container.style.display = 'flex';
+            updateSuggestionHeight();
+            renderSuggestionsContent();
+        }
+
+        function renderSuggestionsContent() {
+            const container = document.getElementById('search-suggestions');
+            const content = document.getElementById('suggestion-content');
+            if (!content) return;
+            content.innerHTML = '';
             
+            const suggestions = currentSuggestions;
             const historyItems = suggestions.filter(s => s.type === 'history');
             const actresses = suggestions.filter(s => s.type === 'actress');
             const genres = suggestions.filter(s => ['genre', 'trend_month_genre'].includes(s.type));
@@ -691,11 +732,17 @@
                 if (s.type === 'history') icon = 'history';
                 else if (s.type === 'trend' || s.type === 'trend_day_title') icon = 'trending_up';
                 else if (s.type === 'title') icon = 'movie';
+                else if (s.type === 'actress') icon = 'person';
+                else if (s.type === 'genre' || s.type === 'trend_month_genre') icon = 'label';
+                else if (s.type === 'maker' || s.type === 'studio') icon = 'business';
                 
                 let typeText = s.type;
                 if (s.type === 'history') typeText = 'Lịch sử';
                 else if (s.type === 'trend' || s.type === 'trend_day_title') typeText = 'Xu hướng';
                 else if (s.type === 'title') typeText = 'Video';
+                else if (s.type === 'actress') typeText = 'Diễn viên';
+                else if (s.type === 'genre' || s.type === 'trend_month_genre') typeText = 'Thể loại';
+                else if (s.type === 'maker' || s.type === 'studio') typeText = 'Nhà SX';
 
                 let deleteBtnHtml = '';
                 if (s.type === 'history') {
@@ -755,7 +802,7 @@
                                     delBtn.innerHTML = '<span class="material-symbols-outlined" style="color: #4caf50; font-size: 20px;">check</span>';
                                     setTimeout(() => {
                                         item.remove();
-                                        if (container.children.length === 0) container.style.display = 'none';
+                                        if (content.children.length === 0) container.style.display = 'none';
                                     }, 300);
                                 } else {
                                     throw new Error(res.error || 'Error');
@@ -796,6 +843,13 @@
                             updateSearchVisuals();
                             performSearch();
                         }
+                    } else if (['actress', 'genre', 'maker', 'studio', 'releasedate'].includes(s.type)) {
+                        let typeClass = s.type === 'studio' ? 'maker' : s.type;
+                        videoSearchInput.value = `${typeClass}:"${s.text}"`;
+                        clearSearchBtn.style.display = 'block';
+                        container.style.display = 'none';
+                        updateSearchVisuals();
+                        performSearch();
                     } else {
                         videoSearchInput.value = s.text;
                         clearSearchBtn.style.display = 'block';
@@ -896,39 +950,56 @@
                 return titleGrp;
             };
 
-            if (historyItems.length > 0) {
-                const grp = document.createElement('div');
-                if (actresses.length > 0 || genres.length > 0 || makers.length > 0 || dates.length > 0 || titles.length > 0) {
-                    grp.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+            if (currentSugTab === 'all') {
+                if (historyItems.length > 0) {
+                    const grp = document.createElement('div');
+                    if (actresses.length > 0 || genres.length > 0 || makers.length > 0 || dates.length > 0 || titles.length > 0) {
+                        grp.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                    }
+                    historyItems.forEach(s => grp.appendChild(renderListItem(s)));
+                    content.appendChild(grp);
                 }
-                historyItems.forEach(s => grp.appendChild(renderListItem(s)));
-                container.appendChild(grp);
+
+                const actressGroup = renderChipGroup('Diễn viên', actresses, 'actress', 'person');
+                if (actressGroup) content.appendChild(actressGroup);
+
+                const genreGroup = renderChipGroup('Thể loại', genres, 'genre', 'label');
+                if (genreGroup) content.appendChild(genreGroup);
+
+                const makerGroup = renderChipGroup('Nhà sản xuất', makers, 'maker', 'business');
+                if (makerGroup) content.appendChild(makerGroup);
+
+                const dateGroup = renderChipGroup('Ngày phát hành', dates, 'releasedate', 'calendar_month');
+                if (dateGroup) content.appendChild(dateGroup);
+
+                const watchHistoryGrid = renderVideoGrid('Từ Lịch sử xem', watchHistory);
+                if (watchHistoryGrid) content.appendChild(watchHistoryGrid);
+
+                const titlesGrid = renderVideoGrid('Phim đề xuất', titles);
+                if (titlesGrid) content.appendChild(titlesGrid);
+
+                if (content.lastChild && content.lastChild.style) {
+                    content.lastChild.style.borderBottom = 'none';
+                }
+            } else if (currentSugTab === 'actress') {
+                if (actresses.length > 0) {
+                    actresses.forEach(s => content.appendChild(renderListItem(s)));
+                } else {
+                    content.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">Không có dữ liệu diễn viên</div>';
+                }
+            } else if (currentSugTab === 'genre') {
+                if (genres.length > 0) {
+                    genres.forEach(s => content.appendChild(renderListItem(s)));
+                } else {
+                    content.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">Không có dữ liệu thể loại</div>';
+                }
+            } else if (currentSugTab === 'maker') {
+                if (makers.length > 0) {
+                    makers.forEach(s => content.appendChild(renderListItem(s)));
+                } else {
+                    content.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">Không có dữ liệu nhà sản xuất</div>';
+                }
             }
-
-            const actressGroup = renderChipGroup('Diễn viên', actresses, 'actress', 'person');
-            if (actressGroup) container.appendChild(actressGroup);
-
-            const genreGroup = renderChipGroup('Thể loại', genres, 'genre', 'label');
-            if (genreGroup) container.appendChild(genreGroup);
-
-            const makerGroup = renderChipGroup('Nhà sản xuất', makers, 'maker', 'business');
-            if (makerGroup) container.appendChild(makerGroup);
-
-            const dateGroup = renderChipGroup('Ngày phát hành', dates, 'releasedate', 'calendar_month');
-            if (dateGroup) container.appendChild(dateGroup);
-
-            const watchHistoryGrid = renderVideoGrid('Từ Lịch sử xem', watchHistory);
-            if (watchHistoryGrid) container.appendChild(watchHistoryGrid);
-
-            const titlesGrid = renderVideoGrid('Phim đề xuất', titles);
-            if (titlesGrid) container.appendChild(titlesGrid);
-
-            if (container.lastChild && container.lastChild.style) {
-                container.lastChild.style.borderBottom = 'none';
-            }
-            
-            container.style.display = 'block';
-            updateSuggestionHeight();
         }
 
         let suggestionTimeout = null;
