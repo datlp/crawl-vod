@@ -174,7 +174,7 @@ def background_db_worker(db_conn):
         time.sleep(DB_FLUSH_INTERVAL)
         flush_db_buffer(db_conn)
 
-def get_db_connection(db_path, limit_buffer='200M'):
+def get_db_connection(db_path, limit_buffer='200M', source_module=None):
     os.makedirs(os.path.dirname(os.path.abspath(db_path)) or '.', exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.execute('PRAGMA journal_mode=WAL;')
@@ -195,36 +195,69 @@ def get_db_connection(db_path, limit_buffer='200M'):
         except Exception as e:
             custom_log("System", f"⚠️ Lỗi khi set limit buffer: {e}")
             
-    conn.execute(f'''
-        CREATE TABLE IF NOT EXISTS {VIDEOS_TABLE} (
-            id TEXT PRIMARY KEY,
-            title TEXT,
-            cover TEXT,
-            url TEXT,
-            added_at TEXT,
-            release_date TEXT,
-            actress TEXT,
-            genre TEXT,
-            maker TEXT,
-            details TEXT,
-            dvd TEXT,
-            details_fetched INTEGER DEFAULT 0
-        )
-    ''')
-    try:
-        conn.execute(f"ALTER TABLE {VIDEOS_TABLE} ADD COLUMN dvd TEXT")
-    except sqlite3.OperationalError:
-        pass
+    if source_module and hasattr(source_module, 'setup_db'):
+        source_module.setup_db(conn, VIDEOS_TABLE)
+    else:
+        # Fallback sử dụng bảng mặc định nếu plugin không tự định nghĩa
+        conn.execute(f'''
+            CREATE TABLE IF NOT EXISTS {VIDEOS_TABLE} (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                cover TEXT,
+                url TEXT,
+                added_at TEXT,
+                release_date TEXT,
+                actress TEXT,
+                genre TEXT,
+                maker TEXT,
+                details TEXT,
+                dvd TEXT,
+                details_fetched INTEGER DEFAULT 0
+            )
+        ''')
+        try:
+            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} ADD COLUMN dvd TEXT")
+        except sqlite3.OperationalError:
+            pass
+            
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE {VIDEOS_TABLE} SET dvd = substr(title, 1, instr(title || ' ', ' ') - 1) WHERE dvd IS NULL OR dvd = ''")
         
-    cursor = conn.cursor()
-    cursor.execute(f"UPDATE {VIDEOS_TABLE} SET dvd = substr(title, 1, instr(title || ' ', ' ') - 1) WHERE dvd IS NULL OR dvd = ''")
-    
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_details_fetched ON {VIDEOS_TABLE}(details_fetched, added_at ASC)')
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_actress ON {VIDEOS_TABLE}(actress)')
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_genre ON {VIDEOS_TABLE}(genre)')
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_maker ON {VIDEOS_TABLE}(maker)')
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_details ON {VIDEOS_TABLE}(details)')
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_title ON {VIDEOS_TABLE}(title)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_details_fetched ON {VIDEOS_TABLE}(details_fetched, added_at ASC)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_actress ON {VIDEOS_TABLE}(actress)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_genre ON {VIDEOS_TABLE}(genre)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_maker ON {VIDEOS_TABLE}(maker)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_details ON {VIDEOS_TABLE}(details)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_title ON {VIDEOS_TABLE}(title)')
+
+        cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE}_fts)")
+        fts_cols = [row[1] for row in cursor.fetchall()]
+        if 'dvd' not in fts_cols:
+            cursor.execute(f"DROP TABLE IF EXISTS {VIDEOS_TABLE}_fts")
+            cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ai")
+            cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ad")
+            cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_au")
+
+        conn.execute(f'''
+            CREATE VIRTUAL TABLE IF NOT EXISTS {VIDEOS_TABLE}_fts USING fts5(
+                title, actress, genre, maker, details, dvd,
+                content='{VIDEOS_TABLE}', content_rowid='rowid'
+            )
+        ''')
+        for trigger_sql in [
+            f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ai AFTER INSERT ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;",
+            f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ad AFTER DELETE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); END;",
+            f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_au AFTER UPDATE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;"
+        ]:
+            conn.execute(trigger_sql)
+            
+        cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE}_fts")
+        if cursor.fetchone()[0] == 0:
+            custom_log("System", "⏳ Backfilling FTS index...")
+            cursor.execute(f'''
+                INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd)
+                SELECT rowid, title, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE}
+            ''')
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS media (
@@ -294,36 +327,6 @@ def get_db_connection(db_path, limit_buffer='200M'):
             PRIMARY KEY (username, keyword)
         )
     ''')
-
-    cursor = conn.cursor()
-    cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE}_fts)")
-    fts_cols = [row[1] for row in cursor.fetchall()]
-    if 'dvd' not in fts_cols:
-        cursor.execute(f"DROP TABLE IF EXISTS {VIDEOS_TABLE}_fts")
-        cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ai")
-        cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ad")
-        cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_au")
-
-    conn.execute(f'''
-        CREATE VIRTUAL TABLE IF NOT EXISTS {VIDEOS_TABLE}_fts USING fts5(
-            title, actress, genre, maker, details, dvd,
-            content='{VIDEOS_TABLE}', content_rowid='rowid'
-        )
-    ''')
-    for trigger_sql in [
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ai AFTER INSERT ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;",
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ad AFTER DELETE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); END;",
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_au AFTER UPDATE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;"
-    ]:
-        conn.execute(trigger_sql)
-        
-    cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE}_fts")
-    if cursor.fetchone()[0] == 0:
-        custom_log("System", "⏳ Backfilling FTS index...")
-        cursor.execute(f'''
-            INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd)
-            SELECT rowid, title, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE}
-        ''')
     conn.commit()
     return conn
 
@@ -1753,13 +1756,13 @@ def main():
     start_reloader()
     threading.Thread(target=system_monitor_worker, daemon=True).start()
     
-    db_conn_instance = get_db_connection(args.sqlite3, args.limit_buffer)
+    source_module = load_source_module(args.source)
+    db_conn_instance = get_db_connection(args.sqlite3, args.limit_buffer, source_module)
     if args.old_sqlite3:
         migrate_old_database(db_conn_instance, args.old_sqlite3)
         
     rebuild_tags_fts(db_conn_instance)
     
-    source_module = load_source_module(args.source)
     scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE, domain=args.domain)
     threading.Thread(target=background_db_worker, args=(db_conn_instance,), daemon=True).start()
     scanner = BackgroundScanner(
