@@ -16,6 +16,7 @@ import builtins
 import difflib
 import signal
 import queue
+import unicodedata
 from urllib.parse import urlparse, parse_qs, quote
 
 
@@ -330,6 +331,10 @@ def get_db_connection(db_path, limit_buffer='200M', source_module=None):
     conn.commit()
     return conn
 
+def remove_accents(input_str):
+    s1 = unicodedata.normalize('NFD', input_str)
+    return re.sub(r'[\u0300-\u036f]', '', s1).lower()
+
 tags_cache = []
 def load_tags_cache_if_needed(cursor):
     global tags_cache
@@ -340,34 +345,49 @@ def load_tags_cache_if_needed(cursor):
                 kw = r[0]
                 if not kw: continue
                 low = kw.lower()
-                sorted_low = " ".join(sorted(low.split()))
-                tags_cache.append((kw, r[1], r[2], low, sorted_low))
+                low_no_accents = remove_accents(low)
+                sorted_low = " ".join(sorted(low_no_accents.split()))
+                tags_cache.append((kw, r[1], r[2], low, low_no_accents, sorted_low))
         except Exception as e:
             custom_log("System", f"❌ Load tags cache error: {e}")
 
 def rebuild_tags_fts(db_conn):
-    custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker...")
+    custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker và cụm từ...")
     cursor = db_conn.cursor()
-    cursor.execute(f"SELECT actress, genre, maker FROM {VIDEOS_TABLE}")
+    cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE}")
     rows = cursor.fetchall()
     
     actress_counts = {}
     genre_counts = {}
     maker_counts = {}
+    phrase_counts = {}
     
     for row in rows:
-        if row[0]:
-            for a in row[0].split(','):
+        title = row[0]
+        actress = row[1]
+        genre = row[2]
+        maker = row[3]
+        
+        if actress:
+            for a in actress.split(','):
                 a = a.strip()
                 if a: actress_counts[a] = actress_counts.get(a, 0) + 1
-        if row[1]:
-            for g in row[1].split(','):
+        if genre:
+            for g in genre.split(','):
                 g = g.strip()
                 if g: genre_counts[g] = genre_counts.get(g, 0) + 1
-        if row[2]:
-            for m in row[2].split(','):
+        if maker:
+            for m in maker.split(','):
                 m = m.strip()
                 if m: maker_counts[m] = maker_counts.get(m, 0) + 1
+        if title:
+            t = title.lower()
+            t_clean = re.sub(r'[^\w\s_]', ' ', t)
+            words = [w for w in t_clean.split() if not w.isdigit()]
+            for n in range(2, 8):
+                for i in range(len(words) - n + 1):
+                    ngram = " ".join(words[i:i+n])
+                    phrase_counts[ngram] = phrase_counts.get(ngram, 0) + 1
                 
     cursor.execute("DROP TABLE IF EXISTS tags_summary")
     cursor.execute("DROP TABLE IF EXISTS tags_fts")
@@ -379,13 +399,16 @@ def rebuild_tags_fts(db_conn):
     for k, c in actress_counts.items(): data.append((k, 'actress', c))
     for k, c in genre_counts.items(): data.append((k, 'genre', c))
     for k, c in maker_counts.items(): data.append((k, 'maker', c))
+    for k, c in phrase_counts.items():
+        if c >= 3: # Lọc cụm từ có trên 3 lần xuất hiện cho nhẹ CSDL
+            data.append((k, 'phrase', c))
     
     cursor.executemany("INSERT INTO tags_summary (keyword, type, count) VALUES (?, ?, ?)", data)
     cursor.execute("INSERT INTO tags_fts(tags_fts) VALUES('rebuild')")
     db_conn.commit()
     global tags_cache
     tags_cache = []
-    custom_log("System", "✔️ Hoàn tất tổng hợp tags.")
+    custom_log("System", "✔️ Hoàn tất tổng hợp tags và cụm từ.")
 
 class BackgroundScanner(threading.Thread):
     def __init__(self, scraper, upgrade_all=False, news_threads=0, detail_threads=0, videos_threads=0):
@@ -1237,20 +1260,20 @@ def search_suggestions():
                 load_tags_cache_if_needed(cursor)
                 seen_tags = set([r[0] for r in tag_rows])
                 q_low = q.lower()
-                q_sorted = " ".join(sorted(q_low.split()))
-                q_words = q_low.split()
+                q_no_accents = remove_accents(q_low)
+                q_sorted = " ".join(sorted(q_no_accents.split()))
+                q_words = q_no_accents.split()
                 
                 fuzzy_matches = []
-                for kw, t, c, low, sorted_low in tags_cache:
+                for kw, t, c, low, low_no_accents, sorted_low in tags_cache:
                     if kw in seen_tags:
                         continue
-                    # Nếu chứa chuỗi hoặc chứa đủ các từ khóa, gán điểm tuyệt đối
-                    if q_low in low:
+                    
+                    if q_no_accents in low_no_accents:
                         fuzzy_matches.append((1.0, c, kw, t))
-                    elif all(w in low for w in q_words):
+                    elif all(w in low_no_accents for w in q_words):
                         fuzzy_matches.append((0.95, c, kw, t))
                     else:
-                        # Dùng difflib đo độ tương đồng, ngưỡng >= 0.75 để chặn nhiễu
                         matcher = difflib.SequenceMatcher(None, q_sorted, sorted_low)
                         if matcher.quick_ratio() >= 0.75:
                             score = matcher.ratio()
@@ -1265,6 +1288,7 @@ def search_suggestions():
             match_actress = []
             match_genre = []
             match_maker = []
+            match_phrase = []
             match_title = []
             
             for row in tag_rows:
@@ -1272,6 +1296,7 @@ def search_suggestions():
                 if t == 'actress': match_actress.append({"text": k, "count": c})
                 elif t == 'genre': match_genre.append({"text": k, "count": c})
                 elif t == 'maker': match_maker.append({"text": k, "count": c})
+                elif t == 'phrase': match_phrase.append({"text": k, "count": c})
                 
             try:
                 cursor.execute(f'''
@@ -1294,11 +1319,12 @@ def search_suggestions():
                 custom_log("System", f"❌ FTS title search error: {e}")
                 
         chips = []
+        for p in match_phrase[:7]: chips.append({"text": p["text"], "type": "phrase"})
         for a in match_actress[:5]: chips.append({"text": a["text"], "type": "actress"})
         for g in match_genre[:5]: chips.append({"text": g["text"], "type": "genre"})
         for m in match_maker[:5]: chips.append({"text": m["text"], "type": "maker"})
             
-        for c in chips[:10]:
+        for c in chips[:15]:
             suggestions.append(c)
             
         for t in match_title:
