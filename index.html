@@ -371,7 +371,7 @@
                 <h3 id="details-title" style="margin-top: 0; margin-bottom: 5px; font-size: 18px; color: #ff4081; text-align: center;"></h3>
                 <div style="text-align: center; margin-bottom: 15px; font-size: 14px; color: #aaa;" id="details-date"></div>
                 <div id="details-chips" class="chips-container"></div>
-                <div style="margin-bottom: 15px; font-size: 14px; line-height: 1.5;"><strong>Mô tả:</strong> <div id="details-desc" style="margin-top: 5px; color: #aaa;"></div></div>
+                <div id="details-desc-wrapper" style="margin-bottom: 15px; font-size: 14px; line-height: 1.5; display: none;"><strong>Mô tả:</strong> <div id="details-desc" style="margin-top: 5px; color: #aaa;"></div></div>
                 <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
                     <button id="btn-watch-now" style="padding: 10px; background: #43a047; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">▶ Xem ngay</button>
                     <button id="btn-open-javtiful" style="padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">🌐 Javtiful</button>
@@ -2458,7 +2458,14 @@
             document.getElementById('details-title').innerText = video.title || '';
             document.getElementById('details-date').innerText = video.release_date || 'Đang tải...';
             renderChips('details-chips', video);
-            document.getElementById('details-desc').innerText = video.details || 'Đang tải...';
+            
+            if (video.details && video.details.trim() !== '') {
+                document.getElementById('details-desc-wrapper').style.display = 'block';
+                document.getElementById('details-desc').innerText = video.details;
+            } else {
+                document.getElementById('details-desc-wrapper').style.display = 'none';
+                document.getElementById('details-desc').innerText = '';
+            }
             
             const setupButtons = (v) => {
                 document.getElementById('btn-watch-now').onclick = () => {
@@ -2487,7 +2494,14 @@
                     document.getElementById('details-title').innerText = d.title || '';
                     document.getElementById('details-date').innerText = d.release_date || 'N/A';
                     renderChips('details-chips', d);
-                    document.getElementById('details-desc').innerText = d.details || 'N/A';
+                    
+                    if (d.details && d.details.trim() !== '') {
+                        document.getElementById('details-desc-wrapper').style.display = 'block';
+                        document.getElementById('details-desc').innerText = d.details;
+                    } else {
+                        document.getElementById('details-desc-wrapper').style.display = 'none';
+                    }
+                    
                     setupButtons(d);
                 }
             } catch(e) {
