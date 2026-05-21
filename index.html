@@ -2300,6 +2300,31 @@
         mediaCounter.addEventListener('click', openGalleryPage);
         document.getElementById('close-gallery-page').addEventListener('click', closeGalleryPage);
 
+        let bnavStartX = 0;
+        let bnavStartY = 0;
+        const bnavOrder = ['nav-list', 'nav-search', 'nav-profile'];
+        const bottomNavEl = document.getElementById('bottom-navigation');
+
+        bottomNavEl.addEventListener('touchstart', e => {
+            bnavStartX = e.changedTouches[0].clientX;
+            bnavStartY = e.changedTouches[0].clientY;
+        }, {passive: true});
+
+        bottomNavEl.addEventListener('touchend', e => {
+            const dx = e.changedTouches[0].clientX - bnavStartX;
+            const dy = e.changedTouches[0].clientY - bnavStartY;
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
+                const currentActive = bottomNavEl.querySelector('.bottom-nav-item.active');
+                let currentIndex = currentActive ? bnavOrder.indexOf(currentActive.id) : 0;
+                
+                if (dx > 0 && currentIndex > 0) { 
+                    document.getElementById(bnavOrder[currentIndex - 1]).click();
+                } else if (dx < 0 && currentIndex < bnavOrder.length - 1) { 
+                    document.getElementById(bnavOrder[currentIndex + 1]).click();
+                }
+            }
+        }, {passive: true});
+
         let wasHolding = false;
         let holdResetTimeout;
         let fastSeekInterval = null;
