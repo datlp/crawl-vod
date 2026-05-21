@@ -2092,7 +2092,18 @@
             }
         }
 
-        document.getElementById('nav-list').addEventListener('click', openGalleryPage);
+        document.getElementById('nav-list').addEventListener('click', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const isAlreadyHome = (!urlParams.has('watch') && !urlParams.has('video') && !urlParams.has('searchKey') && window.location.hash !== '#profile' && (urlParams.get('tab') === 'all' || !urlParams.has('tab')));
+
+            history.pushState(null, '', '/');
+            handleNavigation();
+
+            if (isAlreadyHome) {
+                galleryGrid.scrollTop = 0;
+                resetAndFetch();
+            }
+        });
         document.getElementById('nav-search').addEventListener('click', () => {
             openGalleryPage();
             setTimeout(() => { document.getElementById('video-search').focus(); }, 300);
