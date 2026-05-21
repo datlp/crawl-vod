@@ -17,14 +17,13 @@ if not hasattr(builtins, 'custom_log'):
         print(f"[{category}] {msg}")
     builtins.custom_log = custom_log
 
-# Tự động cài đặt Playwright nếu hệ thống chưa có
+# Tự động cài đặt Selenium nếu hệ thống chưa có
 try:
-    from playwright.async_api import async_playwright
+    from selenium import webdriver
 except ImportError:
-    custom_log("System", "Đang cài đặt thư viện Playwright để vượt rào Cloudflare cho JavGuru...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "playwright"])
-    subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
-    from playwright.async_api import async_playwright
+    custom_log("System", "Đang cài đặt thư viện Selenium để vượt rào Cloudflare cho JavGuru...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "selenium"])
+    from selenium import webdriver
 
 def parse_release_date(date_str):
     if not date_str:
@@ -132,43 +131,52 @@ class Scraper:
             except Exception:
                 pass
 
-    async def _bypass_cloudflare_async(self, target_url):
-        custom_log(self.source_name, f"Đang kích hoạt Vệ sĩ Playwright vượt Cloudflare...")
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent=self.user_agent,
-                viewport={"width": 1280, "height": 720}
-            )
-            page = await context.new_page()
-            try:
-                await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(4000) 
-                
-                cookies = await context.cookies()
-                cookie_pairs = []
-                for c in cookies:
-                    self.session.cookies.set(c['name'], c['value'], domain=c['domain'])
-                    cookie_pairs.append(f"{c['name']}={c['value']}")
-                    
-                self.cf_cookie_string = "; ".join(cookie_pairs)
-                self.save_session()
-                
-                custom_log(self.source_name, f"✔️ Cập nhật Token Cloudflare thành công!")
-                return await page.content()
-            except Exception as e:
-                custom_log(self.source_name, f"❌ Lỗi bypass Cloudflare: {e}")
-                return None
-            finally:
-                await browser.close()
-                
     def bypass_cloudflare(self, target_url):
+        custom_log(self.source_name, f"Đang kích hoạt Vệ sĩ Selenium vượt Cloudflare (Native Termux)...")
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(self._bypass_cloudflare_async(target_url))
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            from selenium.webdriver.chrome.service import Service
+            import os
+            
+            options = Options()
+            options.add_argument('--headless')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument(f'user-agent={self.user_agent}')
+            options.add_argument('--window-size=1280,720')
+            
+            if "TERMUX_VERSION" in os.environ:
+                options.binary_location = '/data/data/com.termux/files/usr/bin/chromium-browser'
+                service = Service('/data/data/com.termux/files/usr/bin/chromedriver')
+                try:
+                    driver = webdriver.Chrome(service=service, options=options)
+                except Exception as e:
+                    custom_log("System", "❌ Lỗi khởi tạo Chromium trên Termux. Vui lòng chạy lệnh: pkg install x11-repo && pkg install chromium")
+                    raise e
+            else:
+                driver = webdriver.Chrome(options=options)
+                
+            driver.get(target_url)
+            time.sleep(5) 
+            
+            cookies = driver.get_cookies()
+            cookie_pairs = []
+            for c in cookies:
+                self.session.cookies.set(c['name'], c['value'], domain=c['domain'] if 'domain' in c else f".{self.domain.replace('www.', '')}")
+                cookie_pairs.append(f"{c['name']}={c['value']}")
+                
+            self.cf_cookie_string = "; ".join(cookie_pairs)
+            self.save_session()
+            
+            html_content = driver.page_source
+            driver.quit()
+            
+            custom_log(self.source_name, f"✔️ Cập nhật Token Cloudflare thành công!")
+            return html_content
+        except Exception as e:
+            custom_log(self.source_name, f"❌ Lỗi bypass Cloudflare: {e}")
+            return None
 
     def warm_up(self):
         self.load_session()
