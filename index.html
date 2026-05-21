@@ -520,7 +520,8 @@
             const makers = suggestions.filter(s => ['maker', 'studio'].includes(s.type));
             const phrases = suggestions.filter(s => s.type === 'phrase');
             const dates = suggestions.filter(s => s.type === 'releasedate');
-            const titles = suggestions.filter(s => !['history', 'actress', 'genre', 'trend_month_genre', 'maker', 'studio', 'releasedate', 'phrase'].includes(s.type));
+            const watchHistory = suggestions.filter(s => s.type === 'watch_history');
+            const titles = suggestions.filter(s => !['history', 'actress', 'genre', 'trend_month_genre', 'maker', 'studio', 'releasedate', 'phrase', 'watch_history'].includes(s.type));
 
             const renderListItem = (s) => {
                 const item = document.createElement('div');
@@ -656,35 +657,15 @@
                 return group;
             };
 
-            if (historyItems.length > 0 || phrases.length > 0) {
-                const grp = document.createElement('div');
-                if (actresses.length > 0 || genres.length > 0 || makers.length > 0 || dates.length > 0 || titles.length > 0) {
-                    grp.style.borderBottom = '1px solid #333';
-                }
-                historyItems.forEach(s => grp.appendChild(renderListItem(s)));
-                phrases.forEach(s => grp.appendChild(renderListItem(s)));
-                container.appendChild(grp);
-            }
+            const renderVideoGrid = (headerText, videoItems) => {
+                if (videoItems.length === 0) return null;
 
-            const actressGroup = renderChipGroup('Diễn viên', actresses, 'actress', '👩');
-            if (actressGroup) container.appendChild(actressGroup);
-
-            const genreGroup = renderChipGroup('Thể loại', genres, 'genre', '🏷️');
-            if (genreGroup) container.appendChild(genreGroup);
-
-            const makerGroup = renderChipGroup('Nhà sản xuất', makers, 'maker', '🏢');
-            if (makerGroup) container.appendChild(makerGroup);
-
-            const dateGroup = renderChipGroup('Ngày phát hành', dates, 'releasedate', '📅');
-            if (dateGroup) container.appendChild(dateGroup);
-
-            if (titles.length > 0) {
                 const titleGrp = document.createElement('div');
                 titleGrp.style.padding = '15px';
                 titleGrp.style.borderTop = '1px solid #333';
                 
                 const titleHeader = document.createElement('div');
-                titleHeader.innerText = 'Phim đề xuất';
+                titleHeader.innerText = headerText;
                 titleHeader.style.fontSize = '14px';
                 titleHeader.style.fontWeight = 'bold';
                 titleHeader.style.color = '#ff4081';
@@ -696,7 +677,7 @@
                 grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(140px, 1fr))';
                 grid.style.gap = '15px';
                 
-                titles.forEach(s => {
+                videoItems.forEach(s => {
                     const item = document.createElement('div');
                     item.className = 'gallery-item';
                     
@@ -723,8 +704,36 @@
                     grid.appendChild(item);
                 });
                 titleGrp.appendChild(grid);
-                container.appendChild(titleGrp);
+                return titleGrp;
+            };
+
+            if (historyItems.length > 0 || phrases.length > 0) {
+                const grp = document.createElement('div');
+                if (actresses.length > 0 || genres.length > 0 || makers.length > 0 || dates.length > 0 || titles.length > 0) {
+                    grp.style.borderBottom = '1px solid #333';
+                }
+                historyItems.forEach(s => grp.appendChild(renderListItem(s)));
+                phrases.forEach(s => grp.appendChild(renderListItem(s)));
+                container.appendChild(grp);
             }
+
+            const actressGroup = renderChipGroup('Diễn viên', actresses, 'actress', '👩');
+            if (actressGroup) container.appendChild(actressGroup);
+
+            const genreGroup = renderChipGroup('Thể loại', genres, 'genre', '🏷️');
+            if (genreGroup) container.appendChild(genreGroup);
+
+            const makerGroup = renderChipGroup('Nhà sản xuất', makers, 'maker', '🏢');
+            if (makerGroup) container.appendChild(makerGroup);
+
+            const dateGroup = renderChipGroup('Ngày phát hành', dates, 'releasedate', '📅');
+            if (dateGroup) container.appendChild(dateGroup);
+
+            const watchHistoryGrid = renderVideoGrid('Từ Lịch sử xem', watchHistory);
+            if (watchHistoryGrid) container.appendChild(watchHistoryGrid);
+
+            const titlesGrid = renderVideoGrid('Phim đề xuất', titles);
+            if (titlesGrid) container.appendChild(titlesGrid);
 
             if (container.lastChild && container.lastChild.style) {
                 container.lastChild.style.borderBottom = 'none';

@@ -354,7 +354,7 @@ def load_tags_cache_if_needed(cursor):
 def rebuild_tags_fts(db_conn):
     custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker và cụm từ...")
     cursor = db_conn.cursor()
-    cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE}")
+    cursor.execute(f"SELECT title, actress, genre, maker, details FROM {VIDEOS_TABLE}")
     rows = cursor.fetchall()
     
     actress_counts = {}
@@ -367,6 +367,7 @@ def rebuild_tags_fts(db_conn):
         actress = row[1]
         genre = row[2]
         maker = row[3]
+        details = row[4]
         
         if actress:
             for a in actress.split(','):
@@ -380,8 +381,13 @@ def rebuild_tags_fts(db_conn):
             for m in maker.split(','):
                 m = m.strip()
                 if m: maker_counts[m] = maker_counts.get(m, 0) + 1
-        if title:
-            t = title.lower()
+                
+        text_for_phrases = ""
+        if title: text_for_phrases += title + " "
+        if details: text_for_phrases += details + " "
+        
+        if text_for_phrases.strip():
+            t = text_for_phrases.lower()
             t_clean = re.sub(r'[^\w\s_]', ' ', t)
             words = [w for w in t_clean.split() if not w.isdigit()]
             for n in range(2, 8):
@@ -1219,6 +1225,31 @@ def search_suggestions():
                 suggestions.append({"text": r[0], "type": "history"})
             
     if not q:
+        if identifier:
+            with db_lock:
+                cursor = db_conn_instance.cursor()
+                try:
+                    cursor.execute(f'''
+                        SELECT v.title, v.id, v.cover
+                        FROM history h
+                        JOIN {VIDEOS_TABLE} v ON h.video_id = v.id
+                        WHERE h.username = ?
+                        ORDER BY h.last_watched DESC
+                        LIMIT 5
+                    ''', (identifier,))
+                    for row in cursor.fetchall():
+                        t = row[0].strip()
+                        if t:
+                            suggestions.append({
+                                "text": t[:80] + ("..." if len(t)>80 else ""),
+                                "type": "watch_history",
+                                "id": row[1],
+                                "cover": f"/api/media?id={row[1]}"
+                            })
+                except Exception as e:
+                    custom_log("System", f"❌ Lỗi gợi ý lịch sử xem (q rỗng): {e}")
+
+    if not q:
         with db_lock:
             cursor = db_conn_instance.cursor()
             cursor.execute("SELECT keyword FROM tags_summary WHERE type='actress' ORDER BY count DESC LIMIT 10")
@@ -1289,7 +1320,6 @@ def search_suggestions():
             match_genre = []
             match_maker = []
             match_phrase = []
-            match_title = []
             
             for row in tag_rows:
                 k, t, c = row
@@ -1297,7 +1327,36 @@ def search_suggestions():
                 elif t == 'genre': match_genre.append({"text": k, "count": c})
                 elif t == 'maker': match_maker.append({"text": k, "count": c})
                 elif t == 'phrase': match_phrase.append({"text": k, "count": c})
+
+            match_watch_history = []
+            if identifier:
+                try:
+                    with db_lock:
+                        cursor = db_conn_instance.cursor()
+                        fts_query_for_history = ' '.join([f'"{w}"*' for w in q.replace('"', '').split()])
+                        if fts_query_for_history:
+                            cursor.execute(f'''
+                                SELECT v.title, v.id, v.cover
+                                FROM history h
+                                JOIN {VIDEOS_TABLE} v ON h.video_id = v.id
+                                JOIN {VIDEOS_TABLE}_fts fts ON v.rowid = fts.rowid
+                                WHERE h.username = ? AND fts.{VIDEOS_TABLE}_fts MATCH ?
+                                ORDER BY bm25(fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, h.last_watched DESC
+                                LIMIT 5
+                            ''', (identifier, f"({fts_query_for_history})"))
+                            for row in cursor.fetchall():
+                                t = row[0].strip()
+                                if t:
+                                    match_watch_history.append({
+                                        "text": t[:80] + ("..." if len(t)>80 else ""),
+                                        "type": "watch_history",
+                                        "id": row[1],
+                                        "cover": f"/api/media?id={row[1]}"
+                                    })
+                except Exception as e:
+                    custom_log("System", f"❌ Lỗi FTS lịch sử xem: {e}")
                 
+            match_title = []
             try:
                 cursor.execute(f'''
                     SELECT v.title, v.id, v.cover
@@ -1318,6 +1377,9 @@ def search_suggestions():
             except Exception as e:
                 custom_log("System", f"❌ FTS title search error: {e}")
                 
+            history_ids = {item['id'] for item in match_watch_history}
+            unique_match_title = [item for item in match_title if item['id'] not in history_ids]
+
         chips = []
         for p in match_phrase[:7]: chips.append({"text": p["text"], "type": "phrase"})
         for a in match_actress[:5]: chips.append({"text": a["text"], "type": "actress"})
@@ -1327,7 +1389,10 @@ def search_suggestions():
         for c in chips[:15]:
             suggestions.append(c)
             
-        for t in match_title:
+        for wh in match_watch_history:
+            suggestions.append(wh)
+
+        for t in unique_match_title:
             suggestions.append(t)
             
         return jsonify({"success": True, "suggestions": suggestions})
@@ -1764,6 +1829,67 @@ def main():
     if '-port' not in sys.argv and args.source == 'vlxx':
         args.port = 5005
 
+    if args.sqlite3 is None:
+        if os.name == 'nt':
+            args.sqlite3 = f"D:\\Database\\{args.source}.db"
+        else:
+            args.sqlite3 = f"/sdcard/Projects/Database/{args.source}.db"
+    
+    global db_conn_instance, scraper_instance, app_args, VIDEOS_TABLE
+    app_args = args
+    VIDEOS_TABLE = f"{args.source}_videos"
+    
+    # Xóa cache trong bộ nhớ khi khởi động hoặc tải lại để đảm bảo không có dữ liệu cũ
+    global tags_cache
+    with memory_lock:
+        db_buffer['videos'].clear()
+        db_buffer['video_urls'].clear()
+        db_buffer['media'].clear()
+    downloading_media.clear()
+    tags_cache = []
+    custom_log("System", "✔️ Đã xóa cache trong bộ nhớ khi khởi động.")
+
+    start_reloader()
+    threading.Thread(target=system_monitor_worker, daemon=True).start()
+    
+    source_module = load_source_module(args.source)
+    db_conn_instance = get_db_connection(args.sqlite3, args.limit_buffer, source_module)
+    if args.old_sqlite3:
+        migrate_old_database(db_conn_instance, args.old_sqlite3)
+        
+    rebuild_tags_fts(db_conn_instance)
+    
+    scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE, domain=args.domain)
+    threading.Thread(target=background_db_worker, args=(db_conn_instance,), daemon=True).start()
+    scanner = BackgroundScanner(
+        scraper_instance, 
+        upgrade_all=args.upgrade_all,
+        news_threads=args.news_threads,
+        detail_threads=args.detail_threads,
+        videos_threads=args.videos_threads
+    )
+    scanner.start()
+    custom_log("System", f"✔️ {args.source.capitalize()} Player worker started at http://localhost:{args.port}")
+        
+    def graceful_exit(sig, frame):
+        custom_log("System", "⚠️ Nhận tín hiệu dừng (Ctrl+C), đang lưu dữ liệu an toàn...")
+        if db_conn_instance:
+            flush_db_buffer(db_conn_instance)
+            try: db_conn_instance.close()
+            except Exception: pass
+        custom_log("System", "✔️ Đã thoát an toàn.")
+        sys.exit(0)
+        
+    signal.signal(signal.SIGINT, graceful_exit)
+    signal.signal(signal.SIGTERM, graceful_exit)
+
+    try:
+        app.run(host='0.0.0.0', port=args.port, threaded=True, use_reloader=False)
+    except KeyboardInterrupt:
+        graceful_exit(None, None)
+
+if __name__ == '__main__':
+    main()
     if args.sqlite3 is None:
         if os.name == 'nt':
             args.sqlite3 = f"D:\\Database\\{args.source}.db"
