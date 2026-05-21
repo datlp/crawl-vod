@@ -54,6 +54,8 @@
         }
         input.mui-input:focus { border-color: #90caf9; border-width: 2px; padding: 15.5px 13px; }
         input.mui-input::placeholder { color: rgba(255, 255, 255, 0.5); opacity: 1; }
+        input.hide-text { color: transparent !important; }
+        input.hide-text::placeholder { color: transparent !important; }
         
         .mui-paper {
             background-color: #1e1e1e; color: rgba(255, 255, 255, 0.87); border-radius: 4px;
@@ -318,6 +320,7 @@
         .chip-actress { border-color: rgba(244, 143, 177, 0.5); color: #f48fb1; }
         .chip-genre { border-color: rgba(129, 199, 132, 0.5); color: #81c784; }
         .chip-title { border-color: rgba(255, 167, 38, 0.5); color: #ffa726; }
+        .chip-dvd { border-color: rgba(186, 104, 200, 0.5); color: #ba68c8; }
         .chip-maker:hover, .chip-actress:hover, .chip-genre:hover {
             background: rgba(255,255,255,0.08);
             border-color: rgba(255,255,255,0.87);
@@ -441,6 +444,7 @@
             <div id="search-container" style="flex-shrink: 0;">
                 <span id="close-gallery-page" class="close-page material-symbols-outlined" style="margin-left: 5px;">arrow_back</span>
                 <div id="search-input-wrapper">
+                <div id="search-chip-display" style="position: absolute; left: 14px; right: 70px; top: 0; bottom: 0; display: none; align-items: center; gap: 4px; overflow: hidden; pointer-events: none; z-index: 2; white-space: nowrap;"></div>
                     <input type="text" id="video-search" class="mui-input" placeholder="Tìm kiếm videos..." autocomplete="off">
                     <span id="clear-search" class="material-symbols-outlined">close</span>
                     <span id="submit-search" class="material-symbols-outlined">search</span>
@@ -585,6 +589,51 @@
         let searchTimeout = null;
         let activePlayer = null;
 
+        function updateSearchVisuals() {
+            const val = videoSearchInput.value;
+            const isFocused = document.activeElement === videoSearchInput;
+            const display = document.getElementById('search-chip-display');
+            if (!display) return;
+            
+            let hasChips = false;
+            let formattedChips = [];
+            const regex = /(actress|genre|maker|title|dvd)\s*:\s*(?:"([^"]+)"|([^\s]+))/gi;
+            let lastIndex = 0;
+            let match;
+
+            while ((match = regex.exec(val)) !== null) {
+                hasChips = true;
+                if (match.index > lastIndex) {
+                    const preText = val.substring(lastIndex, match.index);
+                    if (preText.trim()) formattedChips.push(`<span style="color: rgba(255,255,255,0.87); font-size: 14px;">${preText.replace(/</g, '&lt;')}</span>`);
+                }
+                const typeClass = match[1].toLowerCase();
+                const value = match[2] || match[3];
+                let typeIcon = 'label';
+                if (typeClass === 'actress') typeIcon = 'person';
+                else if (typeClass === 'maker') typeIcon = 'business';
+                else if (typeClass === 'title') typeIcon = 'movie';
+                else if (typeClass === 'dvd') typeIcon = 'album';
+                
+                formattedChips.push(`<span class="detail-chip chip-${typeClass}" style="display: inline-flex; align-items: center; padding: 2px 8px; font-size: 12px; margin: 0; background: rgba(255,255,255,0.12);"><span class="material-symbols-outlined" style="font-size: 14px; margin-right: 4px;">${typeIcon}</span>${value}</span>`);
+                lastIndex = regex.lastIndex;
+            }
+            
+            if (lastIndex < val.length) {
+                const postText = val.substring(lastIndex);
+                if (postText.trim()) formattedChips.push(`<span style="color: rgba(255,255,255,0.87); font-size: 14px;">${postText.replace(/</g, '&lt;')}</span>`);
+            }
+
+            if (!isFocused && hasChips) {
+                display.innerHTML = formattedChips.join(' ');
+                videoSearchInput.classList.add('hide-text');
+                display.style.display = 'flex';
+            } else {
+                videoSearchInput.classList.remove('hide-text');
+                display.style.display = 'none';
+            }
+        }
+
         function saveSearchHistory(keyword) {
             if (!keyword) return;
             apiFetch('/api/search_history', {
@@ -611,6 +660,7 @@
                 handleNavigation();
             }
             videoSearchInput.blur();
+            updateSearchVisuals();
             const sug = document.getElementById('search-suggestions');
             if(sug) sug.style.display = 'none';
         }
@@ -654,7 +704,7 @@
 
                 let displayText = s.text;
                 let formattedChips = [];
-                const regex = /(actress|genre|maker|title)\s*:\s*(?:"([^"]+)"|([^\s]+))/gi;
+                const regex = /(actress|genre|maker|title|dvd)\s*:\s*(?:"([^"]+)"|([^\s]+))/gi;
                 let lastIndex = 0;
                 let match;
                 while ((match = regex.exec(s.text)) !== null) {
@@ -667,6 +717,7 @@
                     if (typeClass === 'actress') typeIcon = 'person';
                     else if (typeClass === 'maker') typeIcon = 'business';
                     else if (typeClass === 'title') typeIcon = 'movie';
+                    else if (typeClass === 'dvd') typeIcon = 'album';
                     
                     formattedChips.push(`<span class="detail-chip chip-${typeClass}" style="display: inline-flex; align-items: center; padding: 2px 8px; font-size: 12px; margin: 0;"><span class="material-symbols-outlined" style="font-size: 14px; margin-right: 4px;">${typeIcon}</span>${value}</span>`);
                     lastIndex = regex.lastIndex;
@@ -727,11 +778,13 @@
                         videoSearchInput.value = s.text;
                         clearSearchBtn.style.display = 'block';
                         container.style.display = 'none';
+                        updateSearchVisuals();
                         performSearch();
                     } else if (s.type === 'title' || s.type === 'trend_day_title') {
                         if (s.id) {
                             container.style.display = 'none';
                             videoSearchInput.blur();
+                            updateSearchVisuals();
                             const p = getBaseUrlParams();
                             p.set('watch', s.id);
                             history.pushState(null, '', `/?${p.toString()}`);
@@ -740,12 +793,14 @@
                             videoSearchInput.value = s.text;
                             clearSearchBtn.style.display = 'block';
                             container.style.display = 'none';
+                            updateSearchVisuals();
                             performSearch();
                         }
                     } else {
                         videoSearchInput.value = s.text;
                         clearSearchBtn.style.display = 'block';
                         container.style.display = 'none';
+                        updateSearchVisuals();
                         performSearch();
                     }
                 };
@@ -904,9 +959,11 @@
         videoSearchInput.addEventListener('focus', function() {
             this.select();
             handleSuggestionFetch();
+            updateSearchVisuals();
         });
 
         videoSearchInput.addEventListener('blur', () => {
+            updateSearchVisuals();
             setTimeout(() => {
                 const sug = document.getElementById('search-suggestions');
                 if(sug) sug.style.display = 'none';
@@ -1145,6 +1202,8 @@
                 localStorage.setItem('missav_search_key', searchKey);
                 needReset = true;
             }
+
+            updateSearchVisuals();
 
             if (needReset) {
                 videos = [];
@@ -1699,6 +1758,7 @@
             videoSearchInput.value = '';
             clearSearchBtn.style.display = 'none';
             videoSearchInput.focus();
+            updateSearchVisuals();
             if (searchKey !== '') {
                 const p = getBaseUrlParams();
                 p.delete('searchKey');
@@ -1716,6 +1776,7 @@
         videoSearchInput.addEventListener('input', (e) => {
             clearSearchBtn.style.display = e.target.value ? 'block' : 'none';
             handleSuggestionFetch();
+            updateSearchVisuals();
         });
 
         const tabMapping = {
