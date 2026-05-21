@@ -1026,16 +1026,16 @@
         document.getElementById('close-details-page').addEventListener('click', closeDetailsPage);
 
         function updateFavoriteIcon(isFavorited) {
-            const btnFav = document.getElementById('btn-favorite');
-            if (btnFav) {
+            const favIcon = document.getElementById('fav-icon');
+            if (favIcon) {
                 if (isFavorited) {
-                    btnFav.innerText = 'favorite';
-                    btnFav.style.color = '#ff4081';
-                    btnFav.style.fontVariationSettings = "'FILL' 1";
+                    favIcon.innerText = 'favorite';
+                    favIcon.style.color = '#ff4081';
+                    favIcon.style.fontVariationSettings = "'FILL' 1";
                 } else {
-                    btnFav.innerText = 'favorite_border';
-                    btnFav.style.color = '#fff';
-                    btnFav.style.fontVariationSettings = "'FILL' 0";
+                    favIcon.innerText = 'favorite_border';
+                    favIcon.style.color = '#fff';
+                    favIcon.style.fontVariationSettings = "'FILL' 0";
                 }
             }
         }
