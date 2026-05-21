@@ -694,7 +694,10 @@
             sugHasMore = true;
             currentSuggestions = [];
             const content = document.getElementById('suggestion-content');
-            if (content) content.innerHTML = '';
+            if (content) {
+                content.innerHTML = '';
+                content.scrollTop = 0;
+            }
             handleSuggestionFetch(true);
         }
 
@@ -1083,6 +1086,8 @@
             this.select();
             currentSugPage = 1;
             sugHasMore = true;
+            const content = document.getElementById('suggestion-content');
+            if (content) content.scrollTop = 0;
             handleSuggestionFetch();
             updateSearchVisuals();
         });
@@ -1926,6 +1931,8 @@
             currentDetailIndex = -1;
             galleryGrid.innerHTML = '';
             document.getElementById('profile-gallery-grid').innerHTML = '';
+            galleryGrid.scrollTop = 0;
+            document.getElementById('profile-gallery-grid').scrollTop = 0;
             document.getElementById('video-search').placeholder = 'Tìm kiếm videos...';
             fetchTabCounts();
             if (currentTab !== 'you') {
@@ -1956,6 +1963,8 @@
             clearSearchBtn.style.display = e.target.value ? 'block' : 'none';
             currentSugPage = 1;
             sugHasMore = true;
+            const content = document.getElementById('suggestion-content');
+            if (content) content.scrollTop = 0;
             handleSuggestionFetch();
             updateSearchVisuals();
         });
