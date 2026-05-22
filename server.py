@@ -950,7 +950,7 @@ def get_media():
             
             downloading_media.add(vid_id)
             try:
-                res = scraper_instance.session.get(cover_url, headers={"Referer": getattr(scraper_instance, 'referer', '')}, timeout=10)
+                res = scraper_instance.session.get(cover_url, headers={"Referer": getattr(scraper_instance, 'referer', '')}, timeout=app_args.parsed_timeout)
                 if res.status_code == 200:
                     content_type = res.headers.get('Content-Type', 'image/jpeg')
                     with memory_lock:
@@ -980,7 +980,7 @@ def proxy_video():
         is_m3u8 = target_url.split('?')[0].endswith('.m3u8') or target_url.split('?')[0].endswith('.vl')
         
         if is_m3u8:
-            res = scraper_instance.session.get(target_url, headers=headers, timeout=15)
+            res = scraper_instance.session.get(target_url, headers=headers, timeout=app_args.parsed_timeout)
             content = res.text
             base_url = target_url.rsplit('/', 1)[0] + '/'
             
@@ -1025,7 +1025,7 @@ def proxy_video():
             return Response(body, status=res.status_code, headers=resp_headers)
 
         # Bước 1: Request 2 byte đầu tiên để lấy Content-Length và kiểm tra HTTP Range
-        head_req = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": "bytes=0-1"}, timeout=10)
+        head_req = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": "bytes=0-1"}, timeout=app_args.parsed_timeout)
         
         total_size = 0
         is_range_supported = False
@@ -1041,13 +1041,13 @@ def proxy_video():
         if not is_range_supported or total_size == 0 or total_size < 5 * 1024 * 1024 or target_url.split('?')[0].endswith('.ts'):
             if client_range:
                 headers['Range'] = client_range
-            res = scraper_instance.session.get(target_url, headers=headers, timeout=15, stream=True)
+            res = scraper_instance.session.get(target_url, headers=headers, timeout=app_args.parsed_timeout, stream=True)
             resp_headers = {k: v for k, v in res.headers.items() if k.lower() not in ['content-encoding', 'transfer-encoding', 'connection', 'access-control-allow-origin']}
             resp_headers['Access-Control-Allow-Origin'] = '*'
             
             def generate_fallback():
                 try:
-                    for chunk in res.iter_content(chunk_size=128*1024):
+                    for chunk in res.iter_content(chunk_size=app_args.chunk_size_bytes):
                         if chunk:
                             yield chunk
                             global global_last_request_time
@@ -1073,12 +1073,7 @@ def proxy_video():
         if end >= total_size:
             end = total_size - 1
             
-        source_name_upper = getattr(scraper_instance, 'source_name', '').upper()
-        if source_name_upper == 'VLXX':
-            chunk_size = 2 * 1024 * 1024  # Ép xung: 2MB mỗi khối cho VLXX để kéo mảng dữ liệu lớn nhanh hơn
-        else:
-            chunk_size = 512 * 1024   # Ép xung: 0.5MB cho các server khác
-            
+        chunk_size = app_args.chunk_size_bytes
         ranges_to_fetch = []
         curr = start
         while curr <= end:
@@ -1105,10 +1100,10 @@ def proxy_video():
                     return None
                 try:
                     # Dùng stream=True để ngắt kết nối lập tức (I/O Blocking fix) khi client hủy
-                    res = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=15, stream=True)
+                    res = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=app_args.parsed_timeout, stream=True)
                     if res.status_code in (200, 206):
                         data = bytearray()
-                        for chunk in res.iter_content(chunk_size=256*1024): # Tăng đường ống ghi RAM nội bộ lên 256KB
+                        for chunk in res.iter_content(chunk_size=app_args.chunk_size_bytes): 
                             if abort_event.is_set():
                                 res.close()
                                 return None
@@ -1121,13 +1116,8 @@ def proxy_video():
             
         def generate_multithread():
             global global_last_request_time
-            if source_name_upper == 'VLXX':
-                max_workers = 8 # Ép xung lên 8 luồng (ngưỡng an toàn tối đa của Google Photos)
-                window_size = max_workers * 2 # Đệm trước 16 khối (32MB) vào RAM
-            else:
-                max_workers = 16 # IDM Mode: 16 luồng song song cho các nguồn bình thường
-                window_size = max_workers * 2 # Đệm trước 32 khối
-                
+            max_workers = app_args.proxy_threads
+            window_size = app_args.max_keepalive
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
             try:
                 futures = {}
@@ -1148,9 +1138,8 @@ def proxy_video():
                     f = futures.pop(yield_idx)
                     data = f.result()
                     if data:
-                        # Trả về từng mảnh nhỏ 128KB để player dễ dàng hiển thị dần
-                        for i in range(0, len(data), 128*1024):
-                            yield data[i:i+128*1024]
+                        for i in range(0, len(data), app_args.chunk_size_bytes):
+                            yield data[i:i+app_args.chunk_size_bytes]
                             global_last_request_time = time.time()
                         
                         # Ngay khi 1 khối đã yield xong, nạp ngay khối mới để luồng nào xong việc có thể lấy chạy tiếp
@@ -1910,6 +1899,11 @@ def main():
     parser.add_argument('-detail-threads', type=int, default=0, help="Số luồng lấy chi tiết video (mặc định 0)")
     parser.add_argument('-videos-threads', type=int, default=0, help="Số luồng quét video backlog (mặc định 0)")
     parser.add_argument('-domain', type=str, default=None, help="Tên miền (domain) cho scraper")
+    parser.add_argument('-chunk_size', type=str, default='128KB', help="Kích thước chunk proxy (e.g. 128KB)")
+    parser.add_argument('-max_connections', type=int, default=30, help="Số luồng connections tối đa")
+    parser.add_argument('-proxy-threads', type=int, default=8, help="Số luồng tải file (Proxy đa luồng)")
+    parser.add_argument('-max_keepalive', type=int, default=10, help="Số khối buffer keepalive tối đa trong RAM")
+    parser.add_argument('-timeout', type=str, default="connect=3.0,read=None", help="Cấu hình timeout proxy")
     
     args = parser.parse_args()
     
@@ -1921,6 +1915,27 @@ def main():
             args.sqlite3 = f"D:\\Database\\{args.source}.db"
         else:
             args.sqlite3 = f"/sdcard/Projects/Database/{args.source}.db"
+            
+    chunk_str = args.chunk_size.upper().replace('B', '')
+    if chunk_str.endswith('M'):
+        args.chunk_size_bytes = int(float(chunk_str[:-1]) * 1024 * 1024)
+    elif chunk_str.endswith('K'):
+        args.chunk_size_bytes = int(float(chunk_str[:-1]) * 1024)
+    else:
+        args.chunk_size_bytes = int(chunk_str)
+
+    connect_timeout = 3.0
+    read_timeout = None
+    if args.timeout:
+        parts = args.timeout.split(',')
+        for p in parts:
+            if p.startswith('connect='):
+                val = p.split('=')[1]
+                connect_timeout = float(val) if val.lower() != 'none' else None
+            elif p.startswith('read='):
+                val = p.split('=')[1]
+                read_timeout = float(val) if val.lower() != 'none' else None
+    args.parsed_timeout = connect_timeout if read_timeout is None else (connect_timeout, read_timeout)
     
     global db_conn_instance, scraper_instance, app_args, VIDEOS_TABLE
     app_args = args
