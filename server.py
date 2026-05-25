@@ -16,6 +16,8 @@ import builtins
 import difflib
 import signal
 import queue
+import unicodedata
+import contextlib
 from urllib.parse import urlparse, parse_qs, quote
 
 
@@ -112,7 +114,20 @@ def extract_clean_keywords_bulletproof(text):
     words = [w for w in words if w not in basic_stopwords and not w.isdigit() and len(w) > 2]
     return list(dict.fromkeys(words))
 
-VIDEOS_TABLE = "videos"
+VIDEOS_TABLE = "javtiful_videos"
+
+@contextlib.contextmanager
+def sqlite_timeout(conn, timeout=2.0):
+    start = time.time()
+    def handler():
+        if time.time() - start > timeout:
+            return 1
+        return 0
+    conn.set_progress_handler(handler, 10000)
+    try:
+        yield
+    finally:
+        conn.set_progress_handler(None, 0)
 
 def flush_db_buffer(db_conn):
     with memory_lock:
@@ -133,26 +148,16 @@ def flush_db_buffer(db_conn):
             cursor.execute("BEGIN TRANSACTION;")
             
             for vid_id, vid in videos_to_save.items():
-                dvd = vid.get('dvd', '')
-                release_date = vid.get('release_date', '')
-                release_date_raw = vid.get('release_date_raw', '')
-                if dvd:
-                    cursor.execute("INSERT OR IGNORE INTO movies (dvd, actress_ids, genre_ids, maker_ids) VALUES (?, '', '', '')", (dvd,))
-                    
-                source_val = vid.get('source', 'javtiful').lower()
                 cursor.execute(f'''
-                    INSERT INTO {VIDEOS_TABLE} (id, source, title, added_at, dvd)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO {VIDEOS_TABLE} (id, title, cover, added_at, release_date, dvd)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         title = excluded.title,
+                        cover = excluded.cover,
                         added_at = excluded.added_at,
-                        dvd = excluded.dvd,
-                        source = excluded.source
-                ''', (vid['id'], source_val, vid['title'], vid['added_at'], dvd))
-                
-                cursor.execute("INSERT INTO dvd_release (video_id, dvd, release_date, release_date_raw) VALUES (?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET dvd = excluded.dvd, release_date = CASE WHEN excluded.release_date != '' THEN excluded.release_date ELSE release_date END, release_date_raw = CASE WHEN excluded.release_date_raw != '' THEN excluded.release_date_raw ELSE release_date_raw END", (vid['id'], dvd, release_date, release_date_raw))
-                
-                cursor.execute("INSERT INTO dvd_cover (video_id, dvd, cover) VALUES (?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET dvd = excluded.dvd, cover = CASE WHEN excluded.cover != '' THEN excluded.cover ELSE cover END", (vid['id'], dvd, vid.get('cover', '')))
+                        release_date = excluded.release_date,
+                        dvd = excluded.dvd
+                ''', (vid['id'], vid['title'], vid['cover'], vid['added_at'], vid.get('release_date', ''), vid.get('dvd', '')))
                 
             for vid_id, url in urls_to_save.items():
                 cursor.execute(f"UPDATE {VIDEOS_TABLE} SET url = ? WHERE id = ?", (url, vid_id))
@@ -184,7 +189,7 @@ def background_db_worker(db_conn):
         time.sleep(DB_FLUSH_INTERVAL)
         flush_db_buffer(db_conn)
 
-def get_db_connection(db_path, limit_buffer='200M'):
+def get_db_connection(db_path, limit_buffer='200M', source_module=None):
     os.makedirs(os.path.dirname(os.path.abspath(db_path)) or '.', exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.execute('PRAGMA journal_mode=WAL;')
@@ -205,215 +210,69 @@ def get_db_connection(db_path, limit_buffer='200M'):
         except Exception as e:
             custom_log("System", f"⚠️ Lỗi khi set limit buffer: {e}")
             
-    conn.execute(f'''
-        CREATE TABLE IF NOT EXISTS {VIDEOS_TABLE} (
-            id TEXT PRIMARY KEY,
-            source TEXT,
-            title TEXT,
-            url TEXT,
-            added_at TEXT,
-            details TEXT,
-            dvd TEXT,
-            details_fetched INTEGER DEFAULT 0
-        )
-    ''')
-    try:
-        conn.execute(f"ALTER TABLE {VIDEOS_TABLE} ADD COLUMN source TEXT DEFAULT 'javtiful'")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        conn.execute(f"ALTER TABLE {VIDEOS_TABLE} ADD COLUMN dvd TEXT")
-    except sqlite3.OperationalError:
-        pass
-        
-    cursor = conn.cursor()
-    cursor.execute(f"UPDATE {VIDEOS_TABLE} SET dvd = substr(title, 1, instr(title || ' ', ' ') - 1) WHERE dvd IS NULL OR dvd = ''")
-    
-    cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE})")
-    v_cols = [row[1] for row in cursor.fetchall()]
-
-    for old_table in ['javtiful_videos', 'missav_videos']:
+    if source_module and hasattr(source_module, 'setup_db'):
+        source_module.setup_db(conn, VIDEOS_TABLE)
+    else:
+        # Fallback sử dụng bảng mặc định nếu plugin không tự định nghĩa
+        conn.execute(f'''
+            CREATE TABLE IF NOT EXISTS {VIDEOS_TABLE} (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                cover TEXT,
+                url TEXT,
+                added_at TEXT,
+                release_date TEXT,
+                actress TEXT,
+                genre TEXT,
+                maker TEXT,
+                details TEXT,
+                dvd TEXT,
+                details_fetched INTEGER DEFAULT 0
+            )
+        ''')
         try:
-            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{old_table}'")
-            if cursor.fetchone():
-                custom_log("System", f"⏳ Migrating {old_table} to videos...")
-                cursor.execute(f"PRAGMA table_info({old_table})")
-                cols = [row[1] for row in cursor.fetchall()]
-                source_val = 'javtiful' if 'javtiful' in old_table else 'missav'
-                
-                if 'source' not in cols:
-                    conn.execute(f"ALTER TABLE {old_table} ADD COLUMN source TEXT DEFAULT '{source_val}'")
-                    cols.append('source')
-                    
-                sel_cols = ['id', 'source', 'title', 'url', 'added_at', 'details', 'dvd', 'details_fetched']
-                avail_cols = [c for c in sel_cols if c in cols]
-                
-                insert_cols = ", ".join(avail_cols)
-                conn.execute(f"INSERT OR IGNORE INTO {VIDEOS_TABLE} ({insert_cols}) SELECT {insert_cols} FROM {old_table}")
-                conn.execute(f"DROP TABLE {old_table}")
-                
-                conn.execute(f"DROP TABLE IF EXISTS {old_table}_fts")
-        except Exception as e:
-            custom_log("System", f"❌ Lỗi migrate {old_table}: {e}")
-
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS actresses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            other_names TEXT,
-            sources TEXT,
-            UNIQUE(name)
-        )
-    ''')
-    
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS genres (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            sources TEXT,
-            UNIQUE(name)
-        )
-    ''')
-    
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS makers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            sources TEXT,
-            UNIQUE(name)
-        )
-    ''')
-    
-    for tbl in ['actresses', 'genres', 'makers']:
-        try:
-            conn.execute(f"ALTER TABLE {tbl} RENAME COLUMN source TO sources")
+            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} ADD COLUMN dvd TEXT")
         except sqlite3.OperationalError:
             pass
-    
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS movies (
-            dvd TEXT PRIMARY KEY,
-            actress_ids TEXT,
-            genre_ids TEXT,
-            maker_ids TEXT
-        )
-    ''')
-    try:
-        conn.execute("ALTER TABLE movies ADD COLUMN actress_ids TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        conn.execute("ALTER TABLE movies ADD COLUMN maker_ids TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        conn.execute("ALTER TABLE movies ADD COLUMN genre_ids TEXT")
-    except sqlite3.OperationalError:
-        pass
-        
-    cursor.execute("PRAGMA table_info(movies)")
-    m_cols = [row[1] for row in cursor.fetchall()]
-    
-    sources_list = [s.strip() for s in app_args.source.split(',') if s.strip()]
-    sources_json = json.dumps(sources_list)
-
-    def migrate_tags(col_name, table_name, id_col, is_actress=False):
-        if col_name in m_cols:
-            custom_log("System", f"⏳ Migrating {col_name} to new table...")
-            cursor.execute(f"SELECT dvd, {col_name} FROM movies WHERE {col_name} IS NOT NULL AND {col_name} != ''")
-            for dvd, t_str in cursor.fetchall():
-                t_list = [x.strip() for x in t_str.split(',') if x.strip()]
-                t_ids = []
-                for t in t_list:
-                    cursor.execute(f"SELECT id, sources FROM {table_name} WHERE name = ?", (t,))
-                    row = cursor.fetchone()
-                    if row:
-                        t_ids.append(str(row[0]))
-                        try: curr = json.loads(row[1]) if row[1] and row[1].startswith('[') else ([row[1]] if row[1] else [])
-                        except: curr = [row[1]] if row[1] else []
-                        updated = False
-                        for s in sources_list:
-                            if s not in curr:
-                                curr.append(s)
-                                updated = True
-                        if updated:
-                            cursor.execute(f"UPDATE {table_name} SET sources = ? WHERE id = ?", (json.dumps(curr), row[0]))
-                    else:
-                        if is_actress: cursor.execute(f"INSERT INTO {table_name} (name, other_names, sources) VALUES (?, '[]', ?)", (t, sources_json))
-                        else: cursor.execute(f"INSERT INTO {table_name} (name, sources) VALUES (?, ?)", (t, sources_json))
-                        t_ids.append(str(cursor.lastrowid))
-                if t_ids:
-                    cursor.execute(f"UPDATE movies SET {id_col} = ? WHERE dvd = ?", (",".join(set(t_ids)), dvd))
-            try: conn.execute(f"ALTER TABLE movies DROP COLUMN {col_name}")
-            except Exception: pass
             
-    migrate_tags('actresses', 'actresses', 'actress_ids', True)
-    migrate_tags('genres', 'genres', 'genre_ids')
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE {VIDEOS_TABLE} SET dvd = substr(title, 1, instr(title || ' ', ' ') - 1) WHERE dvd IS NULL OR dvd = ''")
+        
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_details_fetched ON {VIDEOS_TABLE}(details_fetched, added_at ASC)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_actress ON {VIDEOS_TABLE}(actress)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_genre ON {VIDEOS_TABLE}(genre)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_maker ON {VIDEOS_TABLE}(maker)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_details ON {VIDEOS_TABLE}(details)')
+        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_title ON {VIDEOS_TABLE}(title)')
 
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS dvd_release (
-            video_id TEXT PRIMARY KEY,
-            dvd TEXT,
-            release_date TEXT,
-            release_date_raw TEXT
-        )
-    ''')
-    cursor.execute("SELECT COUNT(*) FROM dvd_release")
-    if cursor.fetchone()[0] == 0 and 'release_date' in m_cols:
-        custom_log("System", "⏳ Backfilling dvd_release table...")
-        cursor.execute(f"INSERT OR IGNORE INTO dvd_release (video_id, dvd, release_date, release_date_raw) SELECT v.id, v.dvd, m.release_date, m.release_date_raw FROM {VIDEOS_TABLE} v JOIN movies m ON v.dvd = m.dvd")
-    
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS dvd_cover (
-            video_id TEXT PRIMARY KEY,
-            dvd TEXT,
-            cover TEXT
-        )
-    ''')
-    cursor.execute("SELECT COUNT(*) FROM dvd_cover")
-    if cursor.fetchone()[0] == 0 and 'cover' in v_cols:
-        custom_log("System", "⏳ Backfilling dvd_cover table...")
-        cursor.execute(f"INSERT OR IGNORE INTO dvd_cover (video_id, dvd, cover) SELECT id, dvd, cover FROM {VIDEOS_TABLE}")
-        try:
-            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} DROP COLUMN cover")
-        except Exception:
-            pass
+        cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE}_fts)")
+        fts_cols = [row[1] for row in cursor.fetchall()]
+        if 'dvd' not in fts_cols:
+            cursor.execute(f"DROP TABLE IF EXISTS {VIDEOS_TABLE}_fts")
+            cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ai")
+            cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ad")
+            cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_au")
 
-    if 'actress' in v_cols:
-        cursor.execute("SELECT COUNT(*) FROM movies")
+        conn.execute(f'''
+            CREATE VIRTUAL TABLE IF NOT EXISTS {VIDEOS_TABLE}_fts USING fts5(
+                title, actress, genre, maker, details, dvd,
+                content='{VIDEOS_TABLE}', content_rowid='rowid'
+            )
+        ''')
+        for trigger_sql in [
+            f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ai AFTER INSERT ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;",
+            f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ad AFTER DELETE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); END;",
+            f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_au AFTER UPDATE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;"
+        ]:
+            conn.execute(trigger_sql)
+            
+        cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE}_fts")
         if cursor.fetchone()[0] == 0:
-            custom_log("System", "⏳ Backfilling movies table...")
-            cursor.execute(f"SELECT dvd, actress, genre, maker FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != '' AND details_fetched = 1")
-            dvd_data = {}
-            for r in cursor.fetchall():
-                dvd, a, g, m = r
-                if dvd not in dvd_data:
-                    dvd_data[dvd] = {'actresses': set(), 'genres': set(), 'makers': set()}
-                if a: dvd_data[dvd]['actresses'].update([x.strip() for x in a.split(',') if x.strip()])
-                if g: dvd_data[dvd]['genres'].update([x.strip() for x in g.split(',') if x.strip()])
-                if m: dvd_data[dvd]['makers'].update([x.strip() for x in m.split(',') if x.strip()])
-            for dvd, data in dvd_data.items():
-                cursor.execute("INSERT INTO movies (dvd, actresses, genres, makers) VALUES (?, ?, ?, ?)", (dvd, ', '.join(sorted(data['actresses'])), ', '.join(sorted(data['genres'])), ', '.join(sorted(data['makers']))))
-        try:
-            conn.execute(f"DROP INDEX IF EXISTS idx_{VIDEOS_TABLE}_search_actress")
-            conn.execute(f"DROP INDEX IF EXISTS idx_{VIDEOS_TABLE}_search_genre")
-            conn.execute(f"DROP INDEX IF EXISTS idx_{VIDEOS_TABLE}_search_maker")
-            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} DROP COLUMN actress")
-            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} DROP COLUMN genre")
-            conn.execute(f"ALTER TABLE {VIDEOS_TABLE} DROP COLUMN maker")
-        except Exception:
-            pass
-    try:
-        conn.execute("ALTER TABLE movies DROP COLUMN release_date")
-        conn.execute("ALTER TABLE movies DROP COLUMN release_date_raw")
-    except Exception:
-        pass
-
-    cursor.execute(f"INSERT OR IGNORE INTO movies (dvd, actress_ids, genre_ids, maker_ids) SELECT DISTINCT dvd, '', '', '' FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != ''")
-
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_details_fetched ON {VIDEOS_TABLE}(details_fetched, added_at ASC)')
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_details ON {VIDEOS_TABLE}(details)')
-    conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_title ON {VIDEOS_TABLE}(title)')
+            custom_log("System", "⏳ Backfilling FTS index...")
+            cursor.execute(f'''
+                INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd)
+                SELECT rowid, title, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE}
+            ''')
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS media (
@@ -475,8 +334,6 @@ def get_db_connection(db_path, limit_buffer='200M'):
     ''')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_history_logs_time ON history_logs(watched_at)')
 
-    migrate_tags('makers', 'makers', 'maker_ids')
-
     conn.execute('''
         CREATE TABLE IF NOT EXISTS search_history (
             username TEXT,
@@ -485,46 +342,12 @@ def get_db_connection(db_path, limit_buffer='200M'):
             PRIMARY KEY (username, keyword)
         )
     ''')
-
-    cursor = conn.cursor()
-    cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE}_fts)")
-    fts_cols = [row[1] for row in cursor.fetchall()]
-    if 'actresses' not in fts_cols: cursor.execute(f"DROP TABLE IF EXISTS {VIDEOS_TABLE}_fts")
-        
-    cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ai")
-    cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ad")
-    cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_au")
-    cursor.execute(f"DROP TRIGGER IF EXISTS movies_au")
-    cursor.execute(f"DROP TRIGGER IF EXISTS actresses_au")
-    cursor.execute(f"DROP TRIGGER IF EXISTS genres_au")
-    cursor.execute(f"DROP TRIGGER IF EXISTS makers_au")
-
-    conn.execute(f'''
-        CREATE VIRTUAL TABLE IF NOT EXISTS {VIDEOS_TABLE}_fts USING fts5(
-            title, details, dvd, actresses, genres, makers
-        )
-    ''')
-    for trigger_sql in [
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ai AFTER INSERT ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, details, dvd, actresses, genres, makers) VALUES (new.rowid, new.title, new.details, new.dvd, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || (SELECT actress_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || (SELECT genre_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || (SELECT maker_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || makers.id || ',%')); END;",
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ad AFTER DELETE ON {VIDEOS_TABLE} BEGIN DELETE FROM {VIDEOS_TABLE}_fts WHERE rowid = old.rowid; END;",
-        f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_au AFTER UPDATE ON {VIDEOS_TABLE} BEGIN UPDATE {VIDEOS_TABLE}_fts SET title = new.title, details = new.details, dvd = new.dvd, actresses = (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || (SELECT actress_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || actresses.id || ',%'), genres = (SELECT group_concat(name, ', ') FROM genres WHERE ',' || (SELECT genre_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || genres.id || ',%'), makers = (SELECT group_concat(name, ', ') FROM makers WHERE ',' || (SELECT maker_ids FROM movies WHERE dvd = new.dvd) || ',' LIKE '%,' || makers.id || ',%') WHERE rowid = old.rowid; END;",
-        f"CREATE TRIGGER IF NOT EXISTS movies_au AFTER UPDATE ON movies BEGIN UPDATE {VIDEOS_TABLE}_fts SET actresses = (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || new.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), genres = (SELECT group_concat(name, ', ') FROM genres WHERE ',' || new.genre_ids || ',' LIKE '%,' || genres.id || ',%'), makers = (SELECT group_concat(name, ', ') FROM makers WHERE ',' || new.maker_ids || ',' LIKE '%,' || makers.id || ',%') WHERE dvd = new.dvd; END;",
-        f"CREATE TRIGGER IF NOT EXISTS actresses_au AFTER UPDATE ON actresses BEGIN UPDATE {VIDEOS_TABLE}_fts SET actresses = (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || (SELECT actress_ids FROM movies WHERE dvd = {VIDEOS_TABLE}_fts.dvd) || ',' LIKE '%,' || actresses.id || ',%') WHERE dvd IN (SELECT dvd FROM movies WHERE ',' || actress_ids || ',' LIKE '%,' || old.id || ',%'); END;",
-        f"CREATE TRIGGER IF NOT EXISTS genres_au AFTER UPDATE ON genres BEGIN UPDATE {VIDEOS_TABLE}_fts SET genres = (SELECT group_concat(name, ', ') FROM genres WHERE ',' || (SELECT genre_ids FROM movies WHERE dvd = {VIDEOS_TABLE}_fts.dvd) || ',' LIKE '%,' || genres.id || ',%') WHERE dvd IN (SELECT dvd FROM movies WHERE ',' || genre_ids || ',' LIKE '%,' || old.id || ',%'); END;",
-        f"CREATE TRIGGER IF NOT EXISTS makers_au AFTER UPDATE ON makers BEGIN UPDATE {VIDEOS_TABLE}_fts SET makers = (SELECT group_concat(name, ', ') FROM makers WHERE ',' || (SELECT maker_ids FROM movies WHERE dvd = {VIDEOS_TABLE}_fts.dvd) || ',' LIKE '%,' || makers.id || ',%') WHERE dvd IN (SELECT dvd FROM movies WHERE ',' || maker_ids || ',' LIKE '%,' || old.id || ',%'); END;"
-    ]:
-        conn.execute(trigger_sql)
-        
-    cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE}_fts")
-    if cursor.fetchone()[0] == 0:
-        custom_log("System", "⏳ Backfilling FTS index...")
-        cursor.execute(f'''
-            INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, details, dvd, actresses, genres, makers)
-            SELECT v.rowid, v.title, v.details, v.dvd, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%') 
-            FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd
-        ''')
     conn.commit()
     return conn
+
+def remove_accents(input_str):
+    s1 = unicodedata.normalize('NFD', input_str)
+    return re.sub(r'[\u0300-\u036f]', '', s1).lower()
 
 tags_cache = []
 def load_tags_cache_if_needed(cursor):
@@ -536,51 +359,41 @@ def load_tags_cache_if_needed(cursor):
                 kw = r[0]
                 if not kw: continue
                 low = kw.lower()
-                sorted_low = " ".join(sorted(low.split()))
-                tags_cache.append((kw, r[1], r[2], low, sorted_low))
+                low_no_accents = remove_accents(low)
+                sorted_low = " ".join(sorted(low_no_accents.split()))
+                tags_cache.append((kw, r[1], r[2], low, low_no_accents, sorted_low))
         except Exception as e:
             custom_log("System", f"❌ Load tags cache error: {e}")
 
 def rebuild_tags_fts(db_conn):
     custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker...")
     cursor = db_conn.cursor()
-    cursor.execute(f"SELECT actress_ids, genre_ids, maker_ids FROM movies")
+    cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE}")
     rows = cursor.fetchall()
-    
-    cursor.execute("SELECT id, name FROM actresses")
-    actress_map = {str(r[0]): r[1] for r in cursor.fetchall()}
-    
-    cursor.execute("SELECT id, name FROM genres")
-    genre_map = {str(r[0]): r[1] for r in cursor.fetchall()}
-    
-    cursor.execute("SELECT id, name FROM makers")
-    maker_map = {str(r[0]): r[1] for r in cursor.fetchall()}
     
     actress_counts = {}
     genre_counts = {}
     maker_counts = {}
-    dvd_counts = {}
-    
-    cursor.execute(f"SELECT dvd, COUNT(id) FROM {VIDEOS_TABLE} WHERE dvd IS NOT NULL AND dvd != '' GROUP BY dvd")
-    for r in cursor.fetchall():
-        dvd_counts[r[0]] = r[1]
     
     for row in rows:
-        if row[0]:
-            for a in row[0].split(','):
+        title = row[0]
+        actress = row[1]
+        genre = row[2]
+        maker = row[3]
+        
+        if actress:
+            for a in actress.split(','):
                 a = a.strip()
-                name = actress_map.get(a)
-                if name: actress_counts[name] = actress_counts.get(name, 0) + 1
-        if row[1]:
-            for g in row[1].split(','):
+                if a: actress_counts[a] = actress_counts.get(a, 0) + 1
+        if genre:
+            for g in genre.split(','):
                 g = g.strip()
-                name = genre_map.get(g)
-                if name: genre_counts[name] = genre_counts.get(name, 0) + 1
-        if row[2]:
-            for m in row[2].split(','):
+                if g: genre_counts[g] = genre_counts.get(g, 0) + 1
+        if maker:
+            for m in maker.split(','):
                 m = m.strip()
-                name = maker_map.get(m)
-                if name: maker_counts[name] = maker_counts.get(name, 0) + 1
+                if m: maker_counts[m] = maker_counts.get(m, 0) + 1
+                
                 
     cursor.execute("DROP TABLE IF EXISTS tags_summary")
     cursor.execute("DROP TABLE IF EXISTS tags_fts")
@@ -592,7 +405,6 @@ def rebuild_tags_fts(db_conn):
     for k, c in actress_counts.items(): data.append((k, 'actress', c))
     for k, c in genre_counts.items(): data.append((k, 'genre', c))
     for k, c in maker_counts.items(): data.append((k, 'maker', c))
-    for k, c in dvd_counts.items(): data.append((k, 'dvd', c))
     
     cursor.executemany("INSERT INTO tags_summary (keyword, type, count) VALUES (?, ?, ?)", data)
     cursor.execute("INSERT INTO tags_fts(tags_fts) VALUES('rebuild')")
@@ -615,10 +427,12 @@ class BackgroundScanner(threading.Thread):
         self.scraper.update_sync_tasks_from_menu()
         
         if self.upgrade_all:
+            domain_base = self.scraper.domain.split('.')[0].lower()
+            source_name = getattr(self.scraper, 'source_name', '').lower()
             with db_lock:
                 cursor = self.scraper.db_conn.cursor()
-                source_key = self.scraper.source_name.lower()
-                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0 WHERE url_pattern LIKE ?", (f'%{source_key}%',))
+                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0")
+                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0 WHERE LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ?", (f"%{domain_base}%", f"%{source_name}%"))
                 self.scraper.db_conn.commit()
                 
         if self.news_threads > 0:
@@ -637,12 +451,14 @@ class BackgroundScanner(threading.Thread):
             time.sleep(3600)
 
     def news_dispatcher_loop(self):
-        source_key = self.scraper.source_name.lower()
         while True:
             try:
+                domain_base = self.scraper.domain.split('.')[0].lower()
+                source_name = getattr(self.scraper, 'source_name', '').lower()
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
-                    cursor.execute("SELECT url_pattern FROM sync_tasks WHERE url_pattern LIKE ? ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END", (f'%{source_key}%',))
+                    cursor.execute("SELECT url_pattern FROM sync_tasks ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END")
+                    cursor.execute("SELECT url_pattern FROM sync_tasks WHERE LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ? ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END", (f"%{domain_base}%", f"%{source_name}%"))
                     tasks = cursor.fetchall()
                 
                 if self.news_queue.empty():
@@ -689,7 +505,6 @@ class BackgroundScanner(threading.Thread):
     def details_scan_worker(self, thread_num):
         global global_last_request_time
         source_name = getattr(self.scraper, 'source_name', 'System')
-        source_key = source_name.lower()
         while True:
             time.sleep(0.5)
             try:
@@ -698,7 +513,7 @@ class BackgroundScanner(threading.Thread):
                     
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
-                    cursor.execute(f"SELECT id FROM {VIDEOS_TABLE} WHERE details_fetched = 0 AND source = ? ORDER BY added_at ASC LIMIT 1", (source_key,))
+                    cursor.execute(f"SELECT id FROM {VIDEOS_TABLE} WHERE details_fetched = 0 ORDER BY added_at ASC LIMIT 1")
                     row = cursor.fetchone()
                     if row:
                         vid_id = row[0]
@@ -719,7 +534,8 @@ class BackgroundScanner(threading.Thread):
     def backlog_scan_worker(self, thread_num):
         global global_last_request_time
         source_name = getattr(self.scraper, 'source_name', 'System')
-        source_key = source_name.lower()
+        domain_base = self.scraper.domain.split('.')[0].lower()
+        src_lower = source_name.lower()
         while True:
             time.sleep(1)
             try:
@@ -729,7 +545,8 @@ class BackgroundScanner(threading.Thread):
                 task_to_run = None
                 with db_lock:
                     cursor = self.scraper.db_conn.cursor()
-                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 AND url_pattern LIKE ? ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END LIMIT 1", (f'%{source_key}%',))
+                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END LIMIT 1")
+                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 AND (LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ?) ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END LIMIT 1", (f"%{domain_base}%", f"%{src_lower}%"))
                     row = cursor.fetchone()
                     if row:
                         url_pattern, current_page, total_pages = row
@@ -781,7 +598,7 @@ import logging
 log = logging.getLogger('werkzeug')
 log.disabled = True
 
-scrapers = {}
+scraper_instance = None
 db_conn_instance = None
 app_args = None
 
@@ -848,79 +665,64 @@ def get_counts():
     search_key = request.args.get('search_key', '').strip()
     identifier = get_identifier()
     
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        search_where_v = ""
-        search_params = []
-        fts_join = ""
-        
-        if search_key:
-            match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
-            if match_field:
-                field = match_field.group(1).lower()
-                val = match_field.group(2).strip()
+    try:
+        with db_lock:
+            with sqlite_timeout(db_conn_instance, 2.0):
+                cursor = db_conn_instance.cursor()
+                search_where_v = ""
+                search_params = []
+                from_main = f"{VIDEOS_TABLE} v"
                 
-                if field == 'actress': field = 'actresses'
-                elif field == 'genre': field = 'genres'
-                elif field == 'maker': field = 'makers'
+                if search_key:
+                    match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
+                    if match_field:
+                        field = match_field.group(1).lower()
+                        val = match_field.group(2).strip()
+                        safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
+                        if safe_val:
+                            from_main = f"{VIDEOS_TABLE}_fts JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                            search_where_v = f"{VIDEOS_TABLE}_fts MATCH ?"
+                            search_params.append(f"{field} : ({safe_val})")
+                    else:
+                        safe_key = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
+                        if safe_key:
+                            from_main = f"{VIDEOS_TABLE}_fts JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                            search_where_v = f"{VIDEOS_TABLE}_fts MATCH ?"
+                            search_params.append(safe_key)
+        
+                where_all = ("WHERE " + search_where_v) if search_where_v else ""
+                cursor.execute(f"SELECT COUNT(*) FROM {from_main} {where_all}", search_params)
+                count_all = cursor.fetchone()[0]
                 
-                safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
-                if safe_val:
-                    fts_join = f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
-                    search_where_v = f"{VIDEOS_TABLE}_fts MATCH ?"
-                    search_params.append(f"{field} : ({safe_val})")
-            else:
-                safe_key = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
-                if safe_key:
-                    fts_join = f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
-                    search_where_v = f"{VIDEOS_TABLE}_fts MATCH ?"
-                    search_params.append(safe_key)
-
-        where_all = ("WHERE " + search_where_v) if search_where_v else ""
-        cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE} v {fts_join} {where_all}", search_params)
-        count_all = cursor.fetchone()[0]
+                count_fav = 0
+                count_recent = 0
+                if identifier:
+                    where_fav = "WHERE f.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
+                    cursor.execute(f"SELECT COUNT(*) FROM {from_main} JOIN favorites f ON f.video_id = v.id {where_fav}", [identifier] + search_params)
+                    count_fav = cursor.fetchone()[0]
+                    
+                    where_hist = "WHERE h.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
+                    cursor.execute(f"SELECT COUNT(*) FROM {from_main} JOIN history h ON h.video_id = v.id {where_hist}", [identifier] + search_params)
+                    count_recent = cursor.fetchone()[0]
+                
+                where_glob = ("WHERE " + search_where_v) if search_where_v else ""
+                cursor.execute(f"SELECT COUNT(DISTINCT h.video_id) FROM {from_main} JOIN history h ON h.video_id = v.id {where_glob}", search_params)
+                count_global = cursor.fetchone()[0]
         
-        count_fav = 0
-        count_recent = 0
-        if identifier:
-            where_fav = "WHERE f.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
-            cursor.execute(f"SELECT COUNT(*) FROM favorites f JOIN {VIDEOS_TABLE} v ON f.video_id = v.id {fts_join} {where_fav}", [identifier] + search_params)
-            count_fav = cursor.fetchone()[0]
-            
-            where_hist = "WHERE h.username = ?" + (f" AND {search_where_v}" if search_where_v else "")
-            cursor.execute(f"SELECT COUNT(*) FROM history h JOIN {VIDEOS_TABLE} v ON h.video_id = v.id {fts_join} {where_hist}", [identifier] + search_params)
-            count_recent = cursor.fetchone()[0]
-        
-        where_glob = ("WHERE " + search_where_v) if search_where_v else ""
-        cursor.execute(f"SELECT COUNT(DISTINCT h.video_id) FROM history h JOIN {VIDEOS_TABLE} v ON h.video_id = v.id {fts_join} {where_glob}", search_params)
-        count_global = cursor.fetchone()[0]
-
-    return jsonify({
-        "all": count_all,
-        "favorites": count_fav,
-        "recent": count_recent,
-        "frequent": count_recent,
-        "global_frequent": count_global,
-        "trending_day": 0,
-        "trending_month": 0
-    })
-
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        stats = {}
-        cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE}")
-        stats['videos'] = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM movies")
-        stats['movies'] = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM actresses")
-        stats['actresses'] = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM genres")
-        stats['genres'] = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM makers")
-        stats['makers'] = cursor.fetchone()[0]
-    return jsonify({"success": True, "stats": stats})
+        return jsonify({
+            "all": count_all,
+            "favorites": count_fav,
+            "recent": count_recent,
+            "frequent": count_recent,
+            "global_frequent": count_global,
+            "trending_day": 0,
+            "trending_month": 0
+        })
+    except sqlite3.OperationalError as e:
+        if 'interrupted' in str(e).lower():
+            custom_log("API", "⚠️ Query timeout trong /api/counts (>2s). Bỏ qua.")
+            return jsonify({"all": 0, "favorites": 0, "recent": 0, "frequent": 0, "global_frequent": 0, "trending_day": 0, "trending_month": 0})
+        raise
 
 @app.route('/api/videos', methods=['GET'])
 def get_videos():
@@ -931,105 +733,106 @@ def get_videos():
     offset = (page - 1) * per_page
     identifier = get_identifier()
 
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        where_clauses = []
-        params = []
-        from_clause = f"{VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd LEFT JOIN dvd_release dr ON v.id = dr.video_id LEFT JOIN dvd_cover dc ON v.id = dc.video_id"
-        
-        if tab == 'favorites':
-            if not identifier:
-                return jsonify({"items": [], "total": 0, "page": page})
-            from_clause += " JOIN favorites f ON v.id = f.video_id"
-            where_clauses.append("f.username = ?")
-            params.append(identifier)
-        elif tab in ['recent', 'frequent']:
-            if not identifier:
-                return jsonify({"items": [], "total": 0, "page": page})
-            from_clause += " JOIN history h ON v.id = h.video_id"
-            where_clauses.append("h.username = ?")
-            params.append(identifier)
-        elif tab == 'global_frequent':
-            from_clause += " JOIN (SELECT video_id, SUM(watch_count) as total_watches FROM history GROUP BY video_id) h ON v.id = h.video_id"
-        elif tab == 'trending_day':
-            day_ago = int(time.time()) - 86400
-            from_clause += " JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
-            params.append(day_ago)
-        elif tab == 'trending_month':
-            month_ago = int(time.time()) - 30*86400
-            from_clause += " JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
-            params.append(month_ago)
-
-        safe_key = ""
-        if search_key:
-            match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
-            if match_field:
-                field = match_field.group(1).lower()
-                val = match_field.group(2).strip()
+    try:
+        with db_lock:
+            with sqlite_timeout(db_conn_instance, 2.0):
+                cursor = db_conn_instance.cursor()
+                where_clauses = []
+                params = []
+                from_clause = f"{VIDEOS_TABLE} v"
                 
-                if field == 'actress': field = 'actresses'
-                elif field == 'genre': field = 'genres'
-                elif field == 'maker': field = 'makers'
-                
-                safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
-                if safe_val:
-                    from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
-                    where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
-                    safe_key = f"{field} : ({safe_val})"
-                    params.append(safe_key)
-            else:
-                safe_key_fmt = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
-                if safe_key_fmt:
-                    from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
-                    where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
-                    safe_key = safe_key_fmt
-                    params.append(safe_key)
-                
-        where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+                        
+                if tab == 'favorites':
+                    if not identifier:
+                        return jsonify({"items": [], "total": 0, "page": page})
+                    from_clause = f"{VIDEOS_TABLE} v JOIN favorites f ON v.id = f.video_id"
+                    where_clauses.append("f.username = ?")
+                    params.append(identifier)
+                elif tab in ['recent', 'frequent']:
+                    if not identifier:
+                        return jsonify({"items": [], "total": 0, "page": page})
+                    from_clause = f"{VIDEOS_TABLE} v JOIN history h ON v.id = h.video_id"
+                    where_clauses.append("h.username = ?")
+                    params.append(identifier)
+                elif tab == 'global_frequent':
+                    from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, SUM(watch_count) as total_watches FROM history GROUP BY video_id) h ON v.id = h.video_id"
+                elif tab == 'trending_day':
+                    day_ago = int(time.time()) - 86400
+                    from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
+                    params.append(day_ago)
+                elif tab == 'trending_month':
+                    month_ago = int(time.time()) - 30*86400
+                    from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
+                    params.append(month_ago)
         
-        if tab == 'global_frequent' and not search_key:
-            cursor.execute("SELECT COUNT(DISTINCT video_id) FROM history")
-            total = cursor.fetchone()[0]
-        else:
-            cursor.execute(f"SELECT COUNT(*) FROM {from_clause} {where_sql}", params)
-            total = cursor.fetchone()[0]
-            
-        if tab == 'favorites':
-            order_clause = "ORDER BY dr.release_date DESC, f.added_at DESC"
-        elif tab == 'recent':
-            order_clause = "ORDER BY h.last_watched DESC, dr.release_date DESC"
-        elif tab == 'frequent':
-            order_clause = "ORDER BY h.watch_count DESC, dr.release_date DESC"
-        elif tab == 'global_frequent':
-            order_clause = "ORDER BY h.total_watches DESC, dr.release_date DESC"
-        elif tab in ['trending_day', 'trending_month']:
-            order_clause = "ORDER BY h.c DESC, dr.release_date DESC"
-        elif safe_key:
-            order_clause = f"ORDER BY dr.release_date DESC, bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.added_at DESC"
-        else:
-            order_clause = "ORDER BY dr.release_date DESC, v.added_at DESC"
-            
-        query = f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw, v.source FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
-        cursor.execute(query, params + [per_page, offset])
-        rows = cursor.fetchall()
-        
-    videos = []
-    for row in rows:
-        videos.append({
-            "id": row[0],
-            "title": row[1],
-            "cover": f"/api/media?id={row[0]}",
-            "url": row[3],
-            "release_date": row[4] if len(row) > 4 else '',
-            "actress": row[5] if len(row) > 5 else '',
-            "genre": row[6] if len(row) > 6 else '',
-            "maker": row[7] if len(row) > 7 else '',
-            "details": row[8] if len(row) > 8 else '',
-            "dvd": row[9] if len(row) > 9 else '',
-            "release_date_raw": row[10] if len(row) > 10 else '',
-            "source": row[11] if len(row) > 11 else 'javtiful'
-        })
-    return jsonify({"items": videos, "total": total, "page": page})
+                safe_key = ""
+                if search_key:
+                    match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
+                    if match_field:
+                        field = match_field.group(1).lower()
+                        val = match_field.group(2).strip()
+                        safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
+                        if safe_val:
+                            from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                            where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
+                            safe_key = f"{field} : ({safe_val})"
+                            params.append(safe_key)
+                    else:
+                        safe_key_fmt = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
+                        if safe_key_fmt:
+                            from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                            where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
+                            safe_key = safe_key_fmt
+                            params.append(safe_key)
+                        
+                where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+                
+                if tab == 'global_frequent' and not search_key:
+                    cursor.execute("SELECT COUNT(DISTINCT video_id) FROM history")
+                    total = cursor.fetchone()[0]
+                else:
+                    cursor.execute(f"SELECT COUNT(*) FROM {from_clause} {where_sql}", params)
+                    total = cursor.fetchone()[0]
+                    
+                if tab == 'favorites':
+                    order_clause = "ORDER BY v.release_date DESC, f.added_at DESC"
+                elif tab == 'recent':
+                    order_clause = "ORDER BY h.last_watched DESC, v.release_date DESC"
+                elif tab == 'frequent':
+                    order_clause = "ORDER BY h.watch_count DESC, v.release_date DESC"
+                elif tab == 'global_frequent':
+                    order_clause = "ORDER BY h.total_watches DESC, v.release_date DESC"
+                elif tab in ['trending_day', 'trending_month']:
+                    order_clause = "ORDER BY h.c DESC, v.release_date DESC"
+                elif safe_key:
+                    order_clause = f"ORDER BY v.release_date DESC, bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.added_at DESC"
+                else:
+                    order_clause = "ORDER BY v.release_date DESC, v.added_at DESC"
+                    
+                query = f"SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
+                cursor.execute(query, params + [per_page, offset])
+                rows = cursor.fetchall()
+                
+        videos = []
+        for row in rows:
+            videos.append({
+                "id": row[0],
+                "title": row[1],
+                "cover": f"/api/media?id={row[0]}",
+                "url": row[3],
+                "release_date": row[4] if len(row) > 4 else '',
+                "actress": row[5] if len(row) > 5 else '',
+                "genre": row[6] if len(row) > 6 else '',
+                "maker": row[7] if len(row) > 7 else '',
+                "details": row[8] if len(row) > 8 else '',
+                "dvd": row[9] if len(row) > 9 else ''
+            })
+        return jsonify({"items": videos, "total": total, "page": page})
+    except sqlite3.OperationalError as e:
+        if 'interrupted' in str(e).lower():
+            custom_log("API", "⚠️ Query timeout trong /api/videos (>2s). Bỏ qua.")
+            return jsonify({"items": [], "total": 0, "page": page})
+        raise
 
 @app.route('/api/related', methods=['GET'])
 def get_related():
@@ -1037,85 +840,73 @@ def get_related():
     if not vid_id:
         return jsonify({"items": []})
         
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT v.title, m.actress_ids, m.genre_ids, m.maker_ids FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd WHERE v.id = ?", (vid_id,))
-        row = cursor.fetchone()
-        
-    if not row:
-        return jsonify({"items": []})
-        
-    title, actress_ids, genre_ids, maker_ids = row
-    actress = ""
-    if actress_ids:
-        cursor.execute("SELECT group_concat(name, ', ') FROM actresses WHERE ',' || ? || ',' LIKE '%,' || id || ',%'", (actress_ids,))
-        a_row = cursor.fetchone()
-        if a_row: actress = a_row[0]
-        
-    genre = ""
-    if genre_ids:
-        cursor.execute("SELECT group_concat(name, ', ') FROM genres WHERE ',' || ? || ',' LIKE '%,' || id || ',%'", (genre_ids,))
-        g_row = cursor.fetchone()
-        if g_row: genre = g_row[0]
-    
-    keywords = extract_clean_keywords_bulletproof(title) if title else []
-            
-    query_parts = []
-    if actress:
-        actresses = [a.strip() for a in actress.split(',')]
-        query_parts.append(' OR '.join([f'actresses : "{a}"' for a in actresses if a]))
-    if genre:
-        genres = [g.strip() for g in genre.split(',')]
-        query_parts.append(' OR '.join([f'genres : "{g}"' for g in genres if g]))
-    if maker:
-        query_parts.append(f'makers : "{maker}"')
-        
-    if keywords:
-        kw_str = ' OR '.join([f'"{k}"*' for k in keywords[:5]])
-        query_parts.append(f'title : ({kw_str})')
-        
-    fts_query = ' OR '.join([p for p in query_parts if p])
-    
-    if not fts_query:
-        return jsonify({"items": []})
-        
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        sql = f'''
-            SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw, v.source
-            FROM {VIDEOS_TABLE} v
-            LEFT JOIN movies m ON v.dvd = m.dvd
-            LEFT JOIN dvd_release dr ON v.id = dr.video_id
-            LEFT JOIN dvd_cover dc ON v.id = dc.video_id
-            JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid
-            WHERE {VIDEOS_TABLE}_fts MATCH ? AND v.id != ?
-            ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, dr.release_date DESC
-            LIMIT 12
-        '''
-        try:
-            cursor.execute(sql, (fts_query, vid_id))
-            rows = cursor.fetchall()
-        except Exception as e:
-            custom_log("System", f"❌ FTS Related Error: {e}")
-            rows = []
-            
-    videos = []
-    for row in rows:
-        videos.append({
-            "id": row[0],
-            "title": row[1],
-            "cover": f"/api/media?id={row[0]}",
-            "url": row[3],
-            "release_date": row[4] if row[4] else '',
-            "actress": row[5] if row[5] else '',
-            "genre": row[6] if row[6] else '',
-            "maker": row[7] if row[7] else '',
-            "details": row[8] if row[8] else '',
-            "dvd": row[9] if len(row) > 9 and row[9] else '',
-            "release_date_raw": row[10] if len(row) > 10 and row[10] else '',
-            "source": row[11] if len(row) > 11 and row[11] else 'javtiful'
-        })
-    return jsonify({"items": videos})
+    try:
+        with db_lock:
+            with sqlite_timeout(db_conn_instance, 2.0):
+                cursor = db_conn_instance.cursor()
+                cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE} WHERE id = ?", (vid_id,))
+                row = cursor.fetchone()
+                
+                if not row:
+                    return jsonify({"items": []})
+                    
+                title, actress, genre, maker = row
+                
+                if hasattr(scraper_instance, 'clean_keywords'):
+                    keywords = scraper_instance.clean_keywords(title) if title else []
+                else:
+                    keywords = extract_clean_keywords_bulletproof(title) if title else []
+                        
+                query_parts = []
+                if actress:
+                    actresses = [a.strip() for a in actress.split(',')]
+                    query_parts.append(' OR '.join([f'actress : "{a}"' for a in actresses if a]))
+                if genre:
+                    genres = [g.strip() for g in genre.split(',')]
+                    query_parts.append(' OR '.join([f'genre : "{g}"' for g in genres if g]))
+                if maker:
+                    query_parts.append(f'maker : "{maker}"')
+                    
+                if keywords:
+                    kw_str = ' OR '.join([f'"{k}"*' for k in keywords[:5]])
+                    query_parts.append(f'title : ({kw_str})')
+                    
+                fts_query = ' OR '.join([p for p in query_parts if p])
+                
+                if not fts_query:
+                    return jsonify({"items": []})
+                    
+                sql = f'''
+                    SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd
+                    FROM {VIDEOS_TABLE}_fts
+                    JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid
+                    WHERE {VIDEOS_TABLE}_fts MATCH ? AND v.id != ?
+                    ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.release_date DESC
+                    LIMIT 12
+                '''
+                cursor.execute(sql, (fts_query, vid_id))
+                rows = cursor.fetchall()
+                
+        videos = []
+        for row in rows:
+            videos.append({
+                "id": row[0],
+                "title": row[1],
+                "cover": f"/api/media?id={row[0]}",
+                "url": row[3],
+                "release_date": row[4] if row[4] else '',
+                "actress": row[5] if row[5] else '',
+                "genre": row[6] if row[6] else '',
+                "maker": row[7] if row[7] else '',
+                "details": row[8] if row[8] else '',
+                "dvd": row[9] if len(row) > 9 and row[9] else ''
+            })
+        return jsonify({"items": videos})
+    except sqlite3.OperationalError as e:
+        if 'interrupted' in str(e).lower():
+            custom_log("API", "⚠️ Query timeout trong /api/related (>2s). Bỏ qua.")
+            return jsonify({"items": []})
+        raise
 
 @app.route('/api/media', methods=['GET'])
 def get_media():
@@ -1135,15 +926,13 @@ def get_media():
         return Response(row[0], mimetype=row[1] or 'image/jpeg', headers={'Cache-Control': 'public, max-age=31536000'})
     else:
         cover_url = None
-        source = 'javtiful'
         with db_lock:
             cursor = db_conn_instance.cursor()
-            cursor.execute("SELECT v.source, dc.cover FROM dvd_cover dc JOIN videos v ON dc.video_id = v.id WHERE dc.video_id = ?", (vid_id,))
+            cursor.execute(f"SELECT cover FROM {VIDEOS_TABLE} WHERE id = ?", (vid_id,))
             vrow = cursor.fetchone()
             
         if vrow and vrow[0]:
-            source = vrow[0].lower() if vrow[0] else 'javtiful'
-            cover_url = vrow[1]
+            cover_url = vrow[0]
             if cover_url.startswith('//'):
                 cover_url = 'https:' + cover_url
         
@@ -1160,9 +949,8 @@ def get_media():
                     return Response(media_in_buffer['data'], mimetype=media_in_buffer['content_type'] or 'image/jpeg', headers={'Cache-Control': 'public, max-age=31536000'})
             
             downloading_media.add(vid_id)
-            scraper = scrapers.get(source) or list(scrapers.values())[0]
             try:
-                res = scraper.session.get(cover_url, headers={"Referer": getattr(scraper, 'referer', '')}, timeout=10)
+                res = scraper_instance.session.get(cover_url, headers={"Referer": getattr(scraper_instance, 'referer', '')}, timeout=app_args.parsed_timeout)
                 if res.status_code == 200:
                     content_type = res.headers.get('Content-Type', 'image/jpeg')
                     with memory_lock:
@@ -1181,26 +969,18 @@ def get_media():
 @app.route('/api/proxy', methods=['GET'])
 def proxy_video():
     target_url = request.args.get('url', '')
-    source_param = request.args.get('source', '')
     if not target_url:
         return Response(status=400)
         
-    scraper = scrapers.get(source_param)
-    if not scraper:
-        scraper = list(scrapers.values())[0]
-        for s in scrapers.values():
-            if s.referer and urlparse(s.referer).netloc in target_url:
-                scraper = s
-                break
-            
+    target_url = target_url.split('#')[0]
     client_range = request.headers.get('Range')
-    headers = {"Referer": getattr(scraper, 'referer', '')}
+    headers = {"Referer": getattr(scraper_instance, 'referer', '')}
         
     try:
-        is_m3u8 = target_url.split('?')[0].endswith('.m3u8')
+        is_m3u8 = target_url.split('?')[0].endswith('.m3u8') or target_url.split('?')[0].endswith('.vl')
         
         if is_m3u8:
-            res = scraper.session.get(target_url, headers=headers, timeout=15)
+            res = scraper_instance.session.get(target_url, headers=headers, timeout=app_args.parsed_timeout)
             content = res.text
             base_url = target_url.rsplit('/', 1)[0] + '/'
             
@@ -1235,16 +1015,17 @@ def proxy_video():
                         new_url = f"{parsed_base.scheme}://{parsed_base.netloc}{line}"
                     else:
                         new_url = base_url + line
-                    new_content.append(f"/api/proxy?url={quote(new_url)}&source={source_param}")
+                    new_content.append(f"/api/proxy?url={quote(new_url)}")
             body = '\n'.join(new_content).encode('utf-8')
             
             resp_headers = {k: v for k, v in res.headers.items() if k.lower() not in ['content-encoding', 'transfer-encoding', 'content-length', 'connection', 'access-control-allow-origin']}
             resp_headers['Access-Control-Allow-Origin'] = '*'
             resp_headers['Content-Length'] = str(len(body))
+            resp_headers['Content-Type'] = 'application/x-mpegURL'
             return Response(body, status=res.status_code, headers=resp_headers)
 
         # Bước 1: Request 2 byte đầu tiên để lấy Content-Length và kiểm tra HTTP Range
-        head_req = scraper.session.get(target_url, headers={"Referer": getattr(scraper, 'referer', ''), "Range": "bytes=0-1"}, timeout=10)
+        head_req = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": "bytes=0-1"}, timeout=app_args.parsed_timeout)
         
         total_size = 0
         is_range_supported = False
@@ -1260,17 +1041,21 @@ def proxy_video():
         if not is_range_supported or total_size == 0 or total_size < 5 * 1024 * 1024 or target_url.split('?')[0].endswith('.ts'):
             if client_range:
                 headers['Range'] = client_range
-            res = scraper.session.get(target_url, headers=headers, timeout=15, stream=True)
+            res = scraper_instance.session.get(target_url, headers=headers, timeout=app_args.parsed_timeout, stream=True)
             resp_headers = {k: v for k, v in res.headers.items() if k.lower() not in ['content-encoding', 'transfer-encoding', 'connection', 'access-control-allow-origin']}
             resp_headers['Access-Control-Allow-Origin'] = '*'
             
             def generate_fallback():
-                for chunk in res.iter_content(chunk_size=128*1024):
-                    if chunk:
-                        yield chunk
-                        global global_last_request_time
-                        global_last_request_time = time.time()
-                res.close()
+                try:
+                    for chunk in res.iter_content(chunk_size=app_args.chunk_size_bytes):
+                        if chunk:
+                            yield chunk
+                            global global_last_request_time
+                            global_last_request_time = time.time()
+                except GeneratorExit:
+                    pass
+                finally:
+                    res.close()
             return Response(generate_fallback(), status=res.status_code, headers=resp_headers)
             
         # Bước 2: Proxy Đa luồng (Hoạt động giống IDM để tăng tốc stream)
@@ -1288,7 +1073,7 @@ def proxy_video():
         if end >= total_size:
             end = total_size - 1
             
-        chunk_size = 256 * 1024  # 0.5MB mỗi khối (tối ưu cho 720p và tua cực mượt)
+        chunk_size = app_args.chunk_size_bytes
         ranges_to_fetch = []
         curr = start
         while curr <= end:
@@ -1307,27 +1092,40 @@ def proxy_video():
             status_code = 206
             resp_headers['Content-Range'] = f'bytes {start}-{end}/{total_size}'
             
+        abort_event = threading.Event()
+            
         def fetch_range(r):
             for _ in range(3): # Thử tối đa 3 lần nếu có lỗi tải khối này
+                if abort_event.is_set():
+                    return None
                 try:
-                    res = scraper.session.get(target_url, headers={"Referer": getattr(scraper, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=15)
-                    if res.status_code in (200, 206): return res.content
+                    # Dùng stream=True để ngắt kết nối lập tức (I/O Blocking fix) khi client hủy
+                    res = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=app_args.parsed_timeout, stream=True)
+                    if res.status_code in (200, 206):
+                        data = bytearray()
+                        for chunk in res.iter_content(chunk_size=app_args.chunk_size_bytes): 
+                            if abort_event.is_set():
+                                res.close()
+                                return None
+                            if chunk:
+                                data.extend(chunk)
+                        return bytes(data)
                 except Exception:
                     time.sleep(1)
             return None
             
         def generate_multithread():
             global global_last_request_time
-            max_workers = 9
+            max_workers = app_args.proxy_threads
+            window_size = app_args.max_keepalive
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
             try:
-                window_size = max_workers * 2 # Nạp trước một số khối (khoảng 4.5MB RAM) để luồng không bị rảnh rỗi
                 futures = {}
                 submit_idx = 0
                 
                 def submit_next():
                     nonlocal submit_idx
-                    if submit_idx < len(ranges_to_fetch):
+                    if submit_idx < len(ranges_to_fetch) and not abort_event.is_set():
                         futures[submit_idx] = executor.submit(fetch_range, ranges_to_fetch[submit_idx])
                         submit_idx += 1
                         
@@ -1340,17 +1138,19 @@ def proxy_video():
                     f = futures.pop(yield_idx)
                     data = f.result()
                     if data:
-                        # Trả về từng mảnh nhỏ 128KB để player dễ dàng hiển thị dần
-                        for i in range(0, len(data), 128*1024):
-                            yield data[i:i+128*1024]
+                        for i in range(0, len(data), app_args.chunk_size_bytes):
+                            yield data[i:i+app_args.chunk_size_bytes]
                             global_last_request_time = time.time()
                         
                         # Ngay khi 1 khối đã yield xong, nạp ngay khối mới để luồng nào xong việc có thể lấy chạy tiếp
                         submit_next()
                         yield_idx += 1
                     else:
-                        return # Ngắt quá trình stream nếu gặp block lỗi nặng
+                        break # Ngắt quá trình stream nếu gặp block lỗi nặng hoặc client abort
+            except GeneratorExit:
+                abort_event.set()
             finally:
+                abort_event.set()
                 if sys.version_info >= (3, 9): executor.shutdown(wait=False, cancel_futures=True)
                 else: executor.shutdown(wait=False)
                 
@@ -1361,38 +1161,38 @@ def proxy_video():
 
 @app.route('/api/sync', methods=['GET'])
 def sync_api():
+    domain_base = scraper_instance.domain.split('.')[0].lower()
+    source_name = getattr(scraper_instance, 'source_name', '').lower()
     with db_lock:
         cursor = db_conn_instance.cursor()
         cursor.execute("SELECT url_pattern FROM sync_tasks")
+        cursor.execute("SELECT url_pattern FROM sync_tasks WHERE LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ?", (f"%{domain_base}%", f"%{source_name}%"))
         tasks = cursor.fetchall()
     for task in tasks:
-        scraper = list(scrapers.values())[0]
-        for s in scrapers.values():
-            if s.referer and urlparse(s.referer).netloc in task[0]:
-                scraper = s
-                break
-        scraper.sync_list_page(task[0], 1)
+        scraper_instance.sync_list_page(task[0], 1)
     return jsonify({"success": True})
 
 @app.route('/api/video_url', methods=['GET'])
 def video_url_api():
     vid_id = request.args.get('id', '')
     force_refresh = request.args.get('refresh', '0').lower() in ['1', 'true', 'yes']
-    
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        cursor.execute("SELECT source FROM videos WHERE id = ?", (vid_id,))
-        row = cursor.fetchone()
-        
-    if not row:
-        return jsonify({"success": False, "error": "Video not found"})
-        
-    source = row[0].lower() if row[0] else 'javtiful'
-    scraper = scrapers.get(source) or list(scrapers.values())[0]
-    
-    url = scraper.get_video_url(vid_id, force_refresh=force_refresh)
+    url = scraper_instance.get_video_url(vid_id, force_refresh=force_refresh)
     if url:
-        return jsonify({"success": True, "url": url, "source": source})
+        play_config = {}
+        try:
+            with db_lock:
+                cursor = db_conn_instance.cursor()
+                cursor.execute("SELECT jwplayer_key, server, extra_data FROM play_configs WHERE video_id = ?", (vid_id,))
+                row = cursor.fetchone()
+                if row:
+                    play_config = {
+                        "jwplayer_key": row[0] if row[0] else "",
+                        "server": row[1] if row[1] else "",
+                        "extra_data": row[2] if row[2] else ""
+                    }
+        except Exception:
+            pass
+        return jsonify({"success": True, "url": url, "play_config": play_config})
     return jsonify({"success": False, "error": "Cannot extract URL"})
 
 @app.route('/api/video_details', methods=['GET'])
@@ -1403,7 +1203,7 @@ def video_details_api():
     
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT v.id, v.title, dc.cover, v.url, dr.release_date, (SELECT group_concat(name, ', ') FROM actresses WHERE ',' || m.actress_ids || ',' LIKE '%,' || actresses.id || ',%'), (SELECT group_concat(name, ', ') FROM genres WHERE ',' || m.genre_ids || ',' LIKE '%,' || genres.id || ',%'), (SELECT group_concat(name, ', ') FROM makers WHERE ',' || m.maker_ids || ',' LIKE '%,' || makers.id || ',%'), v.details, v.dvd, dr.release_date_raw, v.source FROM {VIDEOS_TABLE} v LEFT JOIN movies m ON v.dvd = m.dvd LEFT JOIN dvd_release dr ON v.id = dr.video_id LEFT JOIN dvd_cover dc ON v.id = dc.video_id WHERE v.id = ?", (vid_id,))
+        cursor.execute(f"SELECT id, title, cover, url, release_date, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE} WHERE id = ?", (vid_id,))
         row = cursor.fetchone()
         
     if row:
@@ -1419,9 +1219,7 @@ def video_details_api():
                 "genre": row[6] if row[6] else '',
                 "maker": row[7] if row[7] else '',
                 "details": row[8] if row[8] else '',
-                "dvd": row[9] if row[9] else '',
-                "release_date_raw": row[10] if row[10] else '',
-                "source": row[11] if row[11] else 'javtiful'
+                "dvd": row[9] if row[9] else ''
             }
         })
     return jsonify({"success": False, "error": "Not found"})
@@ -1429,130 +1227,251 @@ def video_details_api():
 @app.route('/api/search_suggestions', methods=['GET'])
 def search_suggestions():
     q = request.args.get('q', '').strip().lower()
+    tab = request.args.get('tab', 'all')
+    page = int(request.args.get('page', 1))
     identifier = get_identifier()
     suggestions = []
     
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        if identifier:
-            if not q:
-                cursor.execute("SELECT keyword FROM search_history WHERE username = ? ORDER BY searched_at DESC LIMIT 10", (identifier,))
-            else:
-                cursor.execute("SELECT keyword FROM search_history WHERE username = ? AND keyword LIKE ? ORDER BY searched_at DESC LIMIT 10", (identifier, f'%{q}%'))
-            for r in cursor.fetchall():
-                suggestions.append({"text": r[0], "type": "history"})
-            
-    if not q:
-        with db_lock:
-            cursor = db_conn_instance.cursor()
-            cursor.execute("SELECT keyword FROM tags_summary WHERE type='dvd' ORDER BY count DESC LIMIT 10")
-            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "dvd"})
-            
-            cursor.execute("SELECT keyword FROM tags_summary WHERE type='actress' ORDER BY count DESC LIMIT 10")
-            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "actress"})
-            
-            cursor.execute("SELECT keyword FROM tags_summary WHERE type='genre' ORDER BY count DESC LIMIT 10")
-            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "genre"})
-            
-            cursor.execute("SELECT keyword FROM tags_summary WHERE type='maker' ORDER BY count DESC LIMIT 10")
-            for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "maker"})
-            
-        return jsonify({"success": True, "suggestions": suggestions})
-    
-    else:
-        words = q.replace('"', '').split()
-        if not words:
-            return jsonify({"success": True, "suggestions": suggestions})
-            
-        safe_key_and = ' AND '.join([f'"{w}"*' for w in words])
-        safe_key_or = ' OR '.join([f'"{w}"*' for w in words])
-        
-        with db_lock:
-            cursor = db_conn_instance.cursor()
-            try:
-                cursor.execute('''
-                    SELECT keyword, type, count
-                    FROM tags_fts
-                    WHERE tags_fts MATCH ?
-                    ORDER BY count DESC
-                    LIMIT 100
-                ''', (safe_key_and,))
-                tag_rows = cursor.fetchall()
-            except Exception as e:
-                custom_log("System", f"❌ FTS tags search error: {e}")
-                tag_rows = []
-                
-            # Fuzzy Search (Tìm kiếm mờ) bổ sung nếu FTS không trả về đủ kết quả
-            if len(tag_rows) < 15:
-                load_tags_cache_if_needed(cursor)
-                seen_tags = set([r[0] for r in tag_rows])
-                q_low = q.lower()
-                q_sorted = " ".join(sorted(q_low.split()))
-                q_words = q_low.split()
-                
-                fuzzy_matches = []
-                for kw, t, c, low, sorted_low in tags_cache:
-                    if kw in seen_tags:
-                        continue
-                    # Nếu chứa chuỗi hoặc chứa đủ các từ khóa, gán điểm tuyệt đối
-                    if q_low in low:
-                        fuzzy_matches.append((1.0, c, kw, t))
-                    elif all(w in low for w in q_words):
-                        fuzzy_matches.append((0.95, c, kw, t))
-                    else:
-                        # Dùng difflib đo độ tương đồng, ngưỡng >= 0.75 để chặn nhiễu
-                        matcher = difflib.SequenceMatcher(None, q_sorted, sorted_low)
-                        if matcher.quick_ratio() >= 0.75:
-                            score = matcher.ratio()
-                            if score >= 0.75:
-                                fuzzy_matches.append((score, c, kw, t))
-                                
-                fuzzy_matches.sort(key=lambda x: (x[0], x[1]), reverse=True)
-                for score, c, kw, t in fuzzy_matches[:15]:
-                    tag_rows.append((kw, t, c))
-                    seen_tags.add(kw)
+    per_page = 30
+    offset = (page - 1) * per_page
 
-            match_actress = []
-            match_genre = []
-            match_maker = []
-            match_dvd = []
-            match_title = []
-            
-            for row in tag_rows:
-                k, t, c = row
-                if t == 'actress': match_actress.append({"text": k, "count": c})
-                elif t == 'genre': match_genre.append({"text": k, "count": c})
-                elif t == 'maker': match_maker.append({"text": k, "count": c})
-                elif t == 'dvd': match_dvd.append({"text": k, "count": c})
+    try:
+        with db_lock:
+            with sqlite_timeout(db_conn_instance, 2.0):
+                cursor = db_conn_instance.cursor()
                 
-            try:
-                cursor.execute(f'''
-                    SELECT v.title, v.id
-                    FROM {VIDEOS_TABLE} v
-                    JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid
-                    WHERE {VIDEOS_TABLE}_fts MATCH ?
-                    ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC LIMIT 10
-                ''', (f"title : ({safe_key_or})",))
-                for row in cursor.fetchall():
-                    t = row[0].strip()
-                    if t:
-                        match_title.append({"text": t[:80] + ("..." if len(t)>80 else ""), "type": "title", "id": row[1]})
-            except Exception as e:
-                custom_log("System", f"❌ FTS title search error: {e}")
+                if tab in ['actress', 'genre', 'maker']:
+                    if not q:
+                        cursor.execute("SELECT keyword FROM tags_summary WHERE type=? ORDER BY count DESC LIMIT ? OFFSET ?", (tab, per_page, offset))
+                        for r in cursor.fetchall():
+                            suggestions.append({"text": r[0], "type": tab})
+                    else:
+                        words = q.replace('"', '').split()
+                        if not words:
+                            return jsonify({"success": True, "suggestions": suggestions})
+                        safe_key_and = ' AND '.join([f'"{w}"*' for w in words])
+                        try:
+                            cursor.execute('''
+                                SELECT keyword
+                                FROM tags_fts
+                                WHERE tags_fts MATCH ? AND type=?
+                                ORDER BY count DESC
+                                LIMIT ? OFFSET ?
+                            ''', (safe_key_and, tab, per_page, offset))
+                            tag_rows = cursor.fetchall()
+                        except Exception as e:
+                            custom_log("System", f"❌ FTS tags search error: {e}")
+                            tag_rows = []
+
+                        if len(tag_rows) < 15 and page == 1:
+                            load_tags_cache_if_needed(cursor)
+                            seen_tags = set([r[0] for r in tag_rows])
+                            q_low = q.lower()
+                            q_no_accents = remove_accents(q_low)
+                            q_sorted = " ".join(sorted(q_no_accents.split()))
+                            q_words = q_no_accents.split()
+                            
+                            fuzzy_matches = []
+                            for kw, t, c, low, low_no_accents, sorted_low in tags_cache:
+                                if t != tab or kw in seen_tags:
+                                    continue
+                                if q_no_accents in low_no_accents:
+                                    fuzzy_matches.append((1.0, c, kw, t))
+                                elif all(w in low_no_accents for w in q_words):
+                                    fuzzy_matches.append((0.95, c, kw, t))
+                                else:
+                                    matcher = difflib.SequenceMatcher(None, q_sorted, sorted_low)
+                                    if matcher.quick_ratio() >= 0.75:
+                                        score = matcher.ratio()
+                                        if score >= 0.75:
+                                            fuzzy_matches.append((score, c, kw, t))
+                                            
+                            fuzzy_matches.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                            for score, c, kw, t in fuzzy_matches[:per_page - len(tag_rows)]:
+                                tag_rows.append((kw,))
+                                seen_tags.add(kw)
+
+                        for r in tag_rows:
+                            suggestions.append({"text": r[0], "type": tab})
+
+                    return jsonify({"success": True, "suggestions": suggestions})
+
+                if page > 1:
+                    return jsonify({"success": True, "suggestions": []})
+
+                if identifier:
+                    if not q:
+                        cursor.execute("SELECT keyword FROM search_history WHERE username = ? ORDER BY searched_at DESC LIMIT 10", (identifier,))
+                    else:
+                        cursor.execute("SELECT keyword FROM search_history WHERE username = ? AND keyword LIKE ? ORDER BY searched_at DESC LIMIT 10", (identifier, f'%{q}%'))
+                    for r in cursor.fetchall():
+                        suggestions.append({"text": r[0], "type": "history"})
+                    
+                if not q:
+                    if identifier:
+                        try:
+                            cursor.execute(f'''
+                                SELECT v.title, v.id, v.cover
+                                FROM history h
+                                JOIN {VIDEOS_TABLE} v ON h.video_id = v.id
+                                WHERE h.username = ?
+                                ORDER BY h.last_watched DESC
+                                LIMIT 5
+                            ''', (identifier,))
+                            for row in cursor.fetchall():
+                                t = row[0].strip()
+                                if t:
+                                    suggestions.append({
+                                        "text": t[:80] + ("..." if len(t)>80 else ""),
+                                        "type": "watch_history",
+                                        "id": row[1],
+                                        "cover": f"/api/media?id={row[1]}"
+                                    })
+                        except Exception as e:
+                            custom_log("System", f"❌ Lỗi gợi ý lịch sử xem (q rỗng): {e}")
+        
+                    cursor.execute("SELECT keyword FROM tags_summary WHERE type='actress' ORDER BY count DESC LIMIT 10")
+                    for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "actress"})
+                    
+                    cursor.execute("SELECT keyword FROM tags_summary WHERE type='genre' ORDER BY count DESC LIMIT 10")
+                    for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "genre"})
+                    
+                    cursor.execute("SELECT keyword FROM tags_summary WHERE type='maker' ORDER BY count DESC LIMIT 10")
+                    for r in cursor.fetchall(): suggestions.append({"text": r[0], "type": "maker"})
+                    
+                    return jsonify({"success": True, "suggestions": suggestions})
                 
-        chips = []
-        for d in match_dvd[:5]: chips.append({"text": d["text"], "type": "dvd"})
-        for a in match_actress[:5]: chips.append({"text": a["text"], "type": "actress"})
-        for g in match_genre[:5]: chips.append({"text": g["text"], "type": "genre"})
-        for m in match_maker[:5]: chips.append({"text": m["text"], "type": "maker"})
-            
-        for c in chips[:20]:
-            suggestions.append(c)
-            
-        for t in match_title:
-            suggestions.append(t)
-            
-        return jsonify({"success": True, "suggestions": suggestions})
+                else:
+                    words = q.replace('"', '').split()
+                    if not words:
+                        return jsonify({"success": True, "suggestions": suggestions})
+                        
+                    safe_key_and = ' AND '.join([f'"{w}"*' for w in words])
+                    safe_key_or = ' OR '.join([f'"{w}"*' for w in words])
+                    
+                    try:
+                        cursor.execute('''
+                            SELECT keyword, type, count
+                            FROM tags_fts
+                            WHERE tags_fts MATCH ?
+                            ORDER BY count DESC
+                            LIMIT 30
+                        ''', (safe_key_and,))
+                        tag_rows = cursor.fetchall()
+                    except Exception as e:
+                        custom_log("System", f"❌ FTS tags search error: {e}")
+                        tag_rows = []
+                        
+                    # Fuzzy Search (Tìm kiếm mờ) bổ sung nếu FTS không trả về đủ kết quả
+                    if len(tag_rows) < 15:
+                        load_tags_cache_if_needed(cursor)
+                        seen_tags = set([r[0] for r in tag_rows])
+                        q_low = q.lower()
+                        q_no_accents = remove_accents(q_low)
+                        q_sorted = " ".join(sorted(q_no_accents.split()))
+                        q_words = q_no_accents.split()
+                        
+                        fuzzy_matches = []
+                        for kw, t, c, low, low_no_accents, sorted_low in tags_cache:
+                            if kw in seen_tags:
+                                continue
+                            
+                            if q_no_accents in low_no_accents:
+                                fuzzy_matches.append((1.0, c, kw, t))
+                            elif all(w in low_no_accents for w in q_words):
+                                fuzzy_matches.append((0.95, c, kw, t))
+                            else:
+                                matcher = difflib.SequenceMatcher(None, q_sorted, sorted_low)
+                                if matcher.quick_ratio() >= 0.75:
+                                    score = matcher.ratio()
+                                    if score >= 0.75:
+                                        fuzzy_matches.append((score, c, kw, t))
+                                        
+                        fuzzy_matches.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                        for score, c, kw, t in fuzzy_matches[:15]:
+                            tag_rows.append((kw, t, c))
+                            seen_tags.add(kw)
+        
+                    match_actress = []
+                    match_genre = []
+                    match_maker = []
+                    
+                    for row in tag_rows:
+                        k, t, c = row
+                        if t == 'actress': match_actress.append({"text": k, "count": c})
+                        elif t == 'genre': match_genre.append({"text": k, "count": c})
+                        elif t == 'maker': match_maker.append({"text": k, "count": c})
+        
+                    match_watch_history = []
+                    if identifier:
+                        try:
+                            fts_query_for_history = ' '.join([f'"{w}"*' for w in q.replace('"', '').split()])
+                            if fts_query_for_history:
+                                cursor.execute(f'''
+                                    SELECT v.title, v.id, v.cover
+                                    FROM {VIDEOS_TABLE}_fts fts
+                                    JOIN {VIDEOS_TABLE} v ON v.rowid = fts.rowid
+                                    JOIN history h ON h.video_id = v.id
+                                    WHERE h.username = ? AND fts.{VIDEOS_TABLE}_fts MATCH ?
+                                    ORDER BY bm25(fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, h.last_watched DESC
+                                    LIMIT 5
+                                ''', (identifier, f"({fts_query_for_history})"))
+                                for row in cursor.fetchall():
+                                    t = row[0].strip()
+                                    if t:
+                                        match_watch_history.append({
+                                            "text": t[:80] + ("..." if len(t)>80 else ""),
+                                            "type": "watch_history",
+                                            "id": row[1],
+                                            "cover": f"/api/media?id={row[1]}"
+                                        })
+                        except Exception as e:
+                            custom_log("System", f"❌ Lỗi FTS lịch sử xem: {e}")
+                        
+                    match_title = []
+                    try:
+                        cursor.execute(f'''
+                            SELECT v.title, v.id, v.cover
+                            FROM {VIDEOS_TABLE}_fts
+                            JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid
+                            WHERE {VIDEOS_TABLE}_fts MATCH ?
+                            ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC LIMIT 10
+                        ''', (f"title : ({safe_key_or})",))
+                        for row in cursor.fetchall():
+                            t = row[0].strip()
+                            if t:
+                                match_title.append({
+                                    "text": t[:80] + ("..." if len(t)>80 else ""), 
+                                    "type": "title", 
+                                    "id": row[1],
+                                    "cover": f"/api/media?id={row[1]}"
+                                })
+                    except Exception as e:
+                        custom_log("System", f"❌ FTS title search error: {e}")
+                        
+                    history_ids = {item['id'] for item in match_watch_history}
+                    unique_match_title = [item for item in match_title if item['id'] not in history_ids]
+        
+                chips = []
+                for a in match_actress[:5]: chips.append({"text": a["text"], "type": "actress"})
+                for g in match_genre[:5]: chips.append({"text": g["text"], "type": "genre"})
+                for m in match_maker[:5]: chips.append({"text": m["text"], "type": "maker"})
+                    
+                for c in chips[:15]:
+                    suggestions.append(c)
+                    
+                for wh in match_watch_history:
+                    suggestions.append(wh)
+        
+                for t in unique_match_title:
+                    suggestions.append(t)
+                    
+                return jsonify({"success": True, "suggestions": suggestions})
+    except sqlite3.OperationalError as e:
+        if 'interrupted' in str(e).lower():
+            custom_log("API", "⚠️ Query timeout trong /api/search_suggestions (>2s). Bỏ qua.")
+            return jsonify({"success": True, "suggestions": []})
+        raise
 
 @app.route('/api/search_history', methods=['POST', 'DELETE'])
 def manage_search_history():
@@ -1838,42 +1757,6 @@ def favorites_status():
         exists = cursor.fetchone()
     return jsonify({"is_favorited": bool(exists)})
 
-@app.route('/api/actresses', methods=['GET'])
-def get_actresses():
-    q = request.args.get('q', '').strip()
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        if q:
-            cursor.execute("SELECT id, name, sources FROM actresses WHERE name LIKE ? ORDER BY name ASC LIMIT 50", (f'%{q}%',))
-        else:
-            cursor.execute("SELECT id, name, sources FROM actresses ORDER BY name ASC LIMIT 50")
-        items = [{"id": r[0], "name": r[1], "sources": json.loads(r[2]) if r[2] and r[2].startswith('[') else ([r[2]] if r[2] else [])} for r in cursor.fetchall()]
-    return jsonify({"success": True, "items": items})
-
-@app.route('/api/genres', methods=['GET'])
-def get_genres():
-    q = request.args.get('q', '').strip()
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        if q:
-            cursor.execute("SELECT id, name, sources FROM genres WHERE name LIKE ? ORDER BY name ASC LIMIT 50", (f'%{q}%',))
-        else:
-            cursor.execute("SELECT id, name, sources FROM genres ORDER BY name ASC LIMIT 50")
-        items = [{"id": r[0], "name": r[1], "sources": json.loads(r[2]) if r[2] and r[2].startswith('[') else ([r[2]] if r[2] else [])} for r in cursor.fetchall()]
-    return jsonify({"success": True, "items": items})
-
-@app.route('/api/makers', methods=['GET'])
-def get_makers():
-    q = request.args.get('q', '').strip()
-    with db_lock:
-        cursor = db_conn_instance.cursor()
-        if q:
-            cursor.execute("SELECT id, name, sources FROM makers WHERE name LIKE ? ORDER BY name ASC LIMIT 50", (f'%{q}%',))
-        else:
-            cursor.execute("SELECT id, name, sources FROM makers ORDER BY name ASC LIMIT 50")
-        items = [{"id": r[0], "name": r[1], "sources": json.loads(r[2]) if r[2] and r[2].startswith('[') else ([r[2]] if r[2] else [])} for r in cursor.fetchall()]
-    return jsonify({"success": True, "items": items})
-
 @app.route('/api/history/record', methods=['POST'])
 def history_record():
     payload = request.get_json(silent=True) or {}
@@ -1907,8 +1790,7 @@ def serve_html(path):
             content = f.read()
 
         if app_args and hasattr(app_args, 'source'):
-            sources_list = [s.strip().capitalize() for s in app_args.source.split(',')]
-            source_name = " & ".join(sources_list)
+            source_name = app_args.source.capitalize()
             new_title = f"{source_name} Player"
             content = re.sub(b'<title>.*?</title>', f'<title>{new_title}</title>'.encode('utf-8'), content, count=1, flags=re.IGNORECASE)
 
@@ -1927,7 +1809,7 @@ def migrate_old_database(db_conn, old_db_path):
         cursor.execute("ATTACH DATABASE ? AS old_db", (old_db_path,))
         
         tables_to_sync = [
-            VIDEOS_TABLE, 'movies', 'dvd_release', 'dvd_cover', 'actresses', 'genres', 'makers', 'media', 'identities', 'user_sessions', 
+            VIDEOS_TABLE, 'media', 'identities', 'user_sessions', 
             'favorites', 'history', 'sync_tasks', 'history_logs', 'search_history'
         ]
         
@@ -1953,25 +1835,6 @@ def migrate_old_database(db_conn, old_db_path):
             except Exception as e:
                 custom_log("System", f"❌ Lỗi khi đồng bộ bảng {table}: {e}")
         
-        for old_table in ['javtiful_videos', 'missav_videos']:
-            try:
-                cursor.execute(f"SELECT name FROM old_db.sqlite_master WHERE type='table' AND name='{old_table}'")
-                if cursor.fetchone():
-                    custom_log("System", f"⏳ Đang đồng bộ bảng cũ {old_table} sang videos...")
-                    source_val = 'javtiful' if 'javtiful' in old_table else 'missav'
-                    cursor.execute(f"PRAGMA old_db.table_info({old_table})")
-                    old_cols = [row[1] for row in cursor.fetchall()]
-                    
-                    sel_cols = ['id', 'title', 'url', 'added_at', 'details', 'dvd', 'details_fetched']
-                    avail_cols = [c for c in sel_cols if c in old_cols]
-                    
-                    if avail_cols:
-                        cols_str = ", ".join(avail_cols)
-                        cursor.execute(f"INSERT OR IGNORE INTO {VIDEOS_TABLE} ({cols_str}, source) SELECT {cols_str}, '{source_val}' FROM old_db.{old_table}")
-                        db_conn.commit()
-            except Exception as e:
-                custom_log("System", f"❌ Lỗi khi đồng bộ bảng cũ {old_table}: {e}")
-                
         cursor.execute("DETACH DATABASE old_db")
         custom_log("System", "✔️ Hoàn tất đồng bộ dữ liệu từ database cũ!")
     except Exception as e:
@@ -2031,24 +1894,52 @@ def main():
     parser.add_argument('-email', type=str, default="infor.dkeeps@gmail.com", help="Email to send OTP from")
     parser.add_argument('-old-sqlite3', type=str, default="", help="Path to an old SQLite3 database to migrate data from")
     parser.add_argument('-limit-bufer', '-limit-buffer', type=str, default='200M', dest='limit_buffer', help="Limit memory buffer size to avoid Termux killing the process")
-    parser.add_argument('-source', type=str, default='javtiful,missav', help="Các nguồn crawl, phân tách bằng dấu phẩy (ví dụ: javtiful,missav)")
+    parser.add_argument('-source', type=str, default='javtiful', help="Nguồn crawl dữ liệu (ví dụ: javtiful, missav)")
     parser.add_argument('-news-threads', type=int, default=0, help="Số luồng quét video mới (mặc định 0)")
     parser.add_argument('-detail-threads', type=int, default=0, help="Số luồng lấy chi tiết video (mặc định 0)")
     parser.add_argument('-videos-threads', type=int, default=0, help="Số luồng quét video backlog (mặc định 0)")
+    parser.add_argument('-domain', type=str, default=None, help="Tên miền (domain) cho scraper")
+    parser.add_argument('-chunk_size', type=str, default='128KB', help="Kích thước chunk proxy (e.g. 128KB)")
+    parser.add_argument('-max_connections', type=int, default=30, help="Số luồng connections tối đa")
+    parser.add_argument('-proxy-threads', type=int, default=8, help="Số luồng tải file (Proxy đa luồng)")
+    parser.add_argument('-max_keepalive', type=int, default=10, help="Số khối buffer keepalive tối đa trong RAM")
+    parser.add_argument('-timeout', type=str, default="connect=3.0,read=None", help="Cấu hình timeout proxy")
     
     args = parser.parse_args()
     
+    if '-port' not in sys.argv and args.source == 'vlxx':
+        args.port = 5005
+
     if args.sqlite3 is None:
         if os.name == 'nt':
-            args.sqlite3 = "D:\\Database\\database.db"
+            args.sqlite3 = f"D:\\Database\\{args.source}.db"
         else:
-            args.sqlite3 = "/sdcard/Projects/Database/database.db"
+            args.sqlite3 = f"/sdcard/Projects/Database/{args.source}.db"
+            
+    chunk_str = args.chunk_size.upper().replace('B', '')
+    if chunk_str.endswith('M'):
+        args.chunk_size_bytes = int(float(chunk_str[:-1]) * 1024 * 1024)
+    elif chunk_str.endswith('K'):
+        args.chunk_size_bytes = int(float(chunk_str[:-1]) * 1024)
+    else:
+        args.chunk_size_bytes = int(chunk_str)
+
+    connect_timeout = 3.0
+    read_timeout = None
+    if args.timeout:
+        parts = args.timeout.split(',')
+        for p in parts:
+            if p.startswith('connect='):
+                val = p.split('=')[1]
+                connect_timeout = float(val) if val.lower() != 'none' else None
+            elif p.startswith('read='):
+                val = p.split('=')[1]
+                read_timeout = float(val) if val.lower() != 'none' else None
+    args.parsed_timeout = connect_timeout if read_timeout is None else (connect_timeout, read_timeout)
     
-    global db_conn_instance, scrapers, app_args
+    global db_conn_instance, scraper_instance, app_args, VIDEOS_TABLE
     app_args = args
-    
-    sources = [s.strip().lower() for s in args.source.split(',') if s.strip()]
-    if not sources: sources = ['javtiful']
+    VIDEOS_TABLE = f"{args.source}_videos"
     
     # Xóa cache trong bộ nhớ khi khởi động hoặc tải lại để đảm bảo không có dữ liệu cũ
     global tags_cache
@@ -2063,31 +1954,24 @@ def main():
     start_reloader()
     threading.Thread(target=system_monitor_worker, daemon=True).start()
     
-    db_conn_instance = get_db_connection(args.sqlite3, args.limit_buffer)
+    source_module = load_source_module(args.source)
+    db_conn_instance = get_db_connection(args.sqlite3, args.limit_buffer, source_module)
     if args.old_sqlite3:
         migrate_old_database(db_conn_instance, args.old_sqlite3)
         
     rebuild_tags_fts(db_conn_instance)
     
-    scrapers = {}
-    for src in sources:
-        source_module = load_source_module(src)
-        scraper = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE)
-        scrapers[src] = scraper
-        
-        scanner = BackgroundScanner(
-            scraper, 
-            upgrade_all=args.upgrade_all,
-            news_threads=args.news_threads,
-            detail_threads=args.detail_threads,
-            videos_threads=args.videos_threads
-        )
-        scanner.start()
-        
+    scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE, domain=args.domain)
     threading.Thread(target=background_db_worker, args=(db_conn_instance,), daemon=True).start()
-    
-    sources_str = " & ".join([s.capitalize() for s in sources])
-    custom_log("System", f"✔️ {sources_str} Player workers started at http://localhost:{args.port}")
+    scanner = BackgroundScanner(
+        scraper_instance, 
+        upgrade_all=args.upgrade_all,
+        news_threads=args.news_threads,
+        detail_threads=args.detail_threads,
+        videos_threads=args.videos_threads
+    )
+    scanner.start()
+    custom_log("System", f"✔️ {args.source.capitalize()} Player worker started at http://localhost:{args.port}")
         
     def graceful_exit(sig, frame):
         custom_log("System", "⚠️ Nhận tín hiệu dừng (Ctrl+C), đang lưu dữ liệu an toàn...")

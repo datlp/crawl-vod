@@ -70,19 +70,16 @@ def convert_added_at(db_path):
         cursor.execute("UPDATE javtiful_videos SET added_at = ? WHERE id = ?", (dt_str, row_id))
     print(f"Đã cập nhật {len(rows)} bản ghi added_at trong javtiful_videos.")
     
-    try:
-        print("Đang chuyển đổi release_date trong bảng dvd_release...")
-        cursor.execute("SELECT video_id, release_date FROM dvd_release WHERE release_date IS NOT NULL AND release_date != ''")
-        rows = cursor.fetchall()
-        count_rd = 0
-        for video_id, release_date in rows:
-            new_rd = parse_release_date(release_date)
-            if new_rd != release_date:
-                cursor.execute("UPDATE dvd_release SET release_date = ? WHERE video_id = ?", (new_rd, video_id))
-                count_rd += 1
-        print(f"Đã cập nhật {count_rd} bản ghi release_date trong dvd_release.")
-    except Exception as e:
-        print(f"Bỏ qua chuyển đổi release_date trong dvd_release: {e}")
+    print("Đang chuyển đổi release_date trong bảng javtiful_videos...")
+    cursor.execute("SELECT id, release_date FROM javtiful_videos WHERE release_date IS NOT NULL AND release_date != ''")
+    rows = cursor.fetchall()
+    count_rd = 0
+    for row_id, release_date in rows:
+        new_rd = parse_release_date(release_date)
+        if new_rd != release_date:
+            cursor.execute("UPDATE javtiful_videos SET release_date = ? WHERE id = ?", (new_rd, row_id))
+            count_rd += 1
+    print(f"Đã cập nhật {count_rd} bản ghi release_date trong javtiful_videos.")
     
     print("Đang chuyển đổi added_at trong bảng favorites...")
     cursor.execute("SELECT username, video_id, added_at FROM favorites WHERE typeof(added_at) = 'integer'")

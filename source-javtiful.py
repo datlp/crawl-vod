@@ -52,25 +52,26 @@ def parse_release_date(date_str):
     return date_str
 
 class Scraper:
-    def __init__(self, db_conn, db_lock, memory_lock, db_buffer, table_name="javtiful_videos"):
+    def __init__(self, db_conn, db_lock, memory_lock, db_buffer, table_name="javtiful_videos", domain=None):
         self.db_conn = db_conn
         self.db_lock = db_lock
         self.memory_lock = memory_lock
         self.db_buffer = db_buffer
         self.table_name = table_name
+        self.domain = domain if domain else "javtiful.com"
         self.session = curl_requests.Session(impersonate="chrome120")
         self.sync_lock = threading.Lock()
-        self.referer = "https://javtiful.com/"
+        self.referer = f"https://{self.domain}/"
         self.source_name = "Javtiful"
 
     def update_sync_tasks_from_menu(self):
         custom_log(self.source_name, f"Khởi tạo sync_tasks cho {self.source_name}...")
         tasks = [
-            "https://javtiful.com/category/chinese-av?page={page}",
-            "https://javtiful.com/censored?page={page}",
-            "https://javtiful.com/uncensored?page={page}",
-            "https://javtiful.com/reducing-mosaic?page={page}",
-            "https://javtiful.com/videos?page={page}"
+            f"https://{self.domain}/category/chinese-av?page={{page}}",
+            f"https://{self.domain}/censored?page={{page}}",
+            f"https://{self.domain}/uncensored?page={{page}}",
+            f"https://{self.domain}/reducing-mosaic?page={{page}}",
+            f"https://{self.domain}/videos?page={{page}}"
         ]
         with self.db_lock:
             cursor = self.db_conn.cursor()
@@ -117,25 +118,25 @@ class Scraper:
                 img_tag = a_tag.select_one('img')
                 cover = img_tag.get('data-front-lazy-src') or img_tag.get('src') if img_tag else ''
                 if cover and cover.startswith('/'):
-                    cover = "https://javtiful.com" + cover
+                    cover = f"https://{self.domain}" + cover
                 
                 title_tag = item.select_one('a.front-video-title')
                 title = title_tag.text.strip() if title_tag else vid_id
                 dvd = title.split(' ')[0] if title else ''
                 
-                release_date_raw = ""
+                release_date = ""
                 meta_div = item.select_one('.front-video-meta')
                 if meta_div:
                     spans = meta_div.select('span')
                     if len(spans) >= 3:
-                        release_date_raw = spans[2].text.strip()
+                        release_date = spans[2].text.strip()
                 
-                release_date = parse_release_date(release_date_raw)
+                release_date = parse_release_date(release_date)
                 
                 if vid_id and cover:
                     pseudo_time = now - (page * 10000) - idx
                     added_at_dt = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(pseudo_time))
-                    videos.append((vid_id, title, cover, added_at_dt, release_date, release_date_raw, dvd))
+                    videos.append((vid_id, title, cover, added_at_dt, release_date, dvd))
                     
             with self.db_lock:
                 cursor = self.db_conn.cursor()
@@ -152,7 +153,7 @@ class Scraper:
                     for vid in videos:
                         vid_id = vid[0]
                         self.db_buffer['videos'][vid_id] = {
-                            'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4], 'release_date_raw': vid[5], 'dvd': vid[6], 'source': self.source_name
+                            'id': vid[0], 'title': vid[1], 'cover': vid[2], 'added_at': vid[3], 'release_date': vid[4], 'dvd': vid[5]
                         }
             custom_log(self.source_name, f"{self.source_name} {page} {len(videos)} video{'s' if len(videos) != 1 else ''}")
             return new_count, len(videos), total_pages
@@ -174,7 +175,7 @@ class Scraper:
                 if row and row[0]:
                     return row[0]
             
-        url = f"https://javtiful.com/video/{vid_id}"
+        url = f"https://{self.domain}/video/{vid_id}"
         custom_log(self.source_name, f"⏳ Fetching video URL for {vid_id}")
         try:
             res = self.session.get(url, timeout=15)
@@ -199,7 +200,7 @@ class Scraper:
 
     def sync_video_details(self, vid_id):
         with self.sync_lock:
-            url = f"https://javtiful.com/video/{vid_id}"
+            url = f"https://{self.domain}/video/{vid_id}"
             try:
                 res = self.session.get(url, timeout=15)
                 if res.status_code != 200:
@@ -209,7 +210,7 @@ class Scraper:
                         self.db_conn.commit()
                     return False
                 soup = BeautifulSoup(res.text, 'html.parser')
-                actress_arr, genre_arr, maker, details, release_date, release_date_raw = [], [], "", "", "", ""
+                actress_arr, genre_arr, maker, details, release_date = [], [], "", "", ""
                 for block in soup.select('.front-watch-detail'):
                     strong = block.select_one('strong')
                     if not strong: continue
@@ -223,11 +224,7 @@ class Scraper:
                         if a_tag: maker = a_tag.text.strip()
                     elif 'added on' in label or 'date' in label:
                         time_tag = block.select_one('time')
-                        if time_tag:
-                            release_date_raw = time_tag.text.strip()
-                            if time_tag.get('datetime'): release_date = time_tag.get('datetime').split('T')[0]
-                if release_date_raw and not release_date:
-                    release_date = release_date_raw
+                        if time_tag and time_tag.get('datetime'): release_date = time_tag.get('datetime').split('T')[0]
                 release_date = parse_release_date(release_date)
                 desc_meta = soup.find('meta', {'name': 'description'})
                 if desc_meta: details = desc_meta.get('content', '')
@@ -235,54 +232,10 @@ class Scraper:
                 genre_str = ", ".join(genre_arr)
                 with self.db_lock:
                     cursor = self.db_conn.cursor()
-                    
-                    cursor.execute(f"SELECT dvd FROM {self.table_name} WHERE id = ?", (vid_id,))
-                    dvd_row = cursor.fetchone()
-                    dvd = dvd_row[0] if dvd_row else ""
-                    
-                    if dvd:
-                        cursor.execute("SELECT actress_ids, genre_ids, maker_ids FROM movies WHERE dvd = ?", (dvd,))
-                        movie_row = cursor.fetchone()
-                        
-                        def process_tags(items, table, is_actress=False):
-                            ids = []
-                            for item in items:
-                                if not item: continue
-                                cursor.execute(f"SELECT id, sources FROM {table} WHERE name = ?", (item,))
-                                row = cursor.fetchone()
-                                if row:
-                                    t_id = row[0]
-                                    ids.append(str(t_id))
-                                    try: curr = json.loads(row[1]) if row[1] and row[1].startswith('[') else ([row[1]] if row[1] else [])
-                                    except: curr = [row[1]] if row[1] else []
-                                    if self.source_name not in curr:
-                                        curr.append(self.source_name)
-                                        cursor.execute(f"UPDATE {table} SET sources = ? WHERE id = ?", (json.dumps(curr), t_id))
-                                else:
-                                    if is_actress: cursor.execute(f"INSERT INTO {table} (name, other_names, sources) VALUES (?, '[]', ?)", (item, json.dumps([self.source_name])))
-                                    else: cursor.execute(f"INSERT INTO {table} (name, sources) VALUES (?, ?)", (item, json.dumps([self.source_name])))
-                                    ids.append(str(cursor.lastrowid))
-                            return ids
-                            
-                        a_ids = process_tags(actress_arr, "actresses", True)
-                        g_ids = process_tags(genre_arr, "genres")
-                        m_ids = process_tags([maker] if maker else [], "makers")
-                            
-                        if movie_row:
-                            ex_a_ids = [x.strip() for x in (movie_row[0] or "").split(',') if x.strip()]
-                            ex_g_ids = [x.strip() for x in (movie_row[1] or "").split(',') if x.strip()]
-                            ex_m_ids = [x.strip() for x in (movie_row[2] or "").split(',') if x.strip()]
-                            m_a_ids = list(set(a_ids + ex_a_ids))
-                            m_g_ids = list(set(g_ids + ex_g_ids))
-                            m_m_ids = list(set(m_ids + ex_m_ids))
-                            cursor.execute("UPDATE movies SET actress_ids = ?, genre_ids = ?, maker_ids = ? WHERE dvd = ?", (",".join(m_a_ids), ",".join(m_g_ids), ",".join(m_m_ids), dvd))
-                        else:
-                            cursor.execute("INSERT INTO movies (dvd, actress_ids, genre_ids, maker_ids) VALUES (?, ?, ?, ?)", (dvd, ",".join(set(a_ids)), ",".join(set(g_ids)), ",".join(set(m_ids))))
-
-                    if release_date or release_date_raw:
-                        cursor.execute("INSERT INTO dvd_release (video_id, dvd, release_date, release_date_raw) VALUES (?, ?, ?, ?) ON CONFLICT(video_id) DO UPDATE SET release_date = CASE WHEN excluded.release_date != '' THEN excluded.release_date ELSE release_date END, release_date_raw = CASE WHEN excluded.release_date_raw != '' THEN excluded.release_date_raw ELSE release_date_raw END", (vid_id, dvd, release_date, release_date_raw))
-
-                    cursor.execute(f'''UPDATE {self.table_name} SET details = ?, details_fetched = 1 WHERE id = ?''', (details, vid_id))
+                    if release_date:
+                        cursor.execute(f'''UPDATE {self.table_name} SET actress = ?, genre = ?, maker = ?, details = ?, release_date = ?, details_fetched = 1 WHERE id = ?''', (actress_str, genre_str, maker, details, release_date, vid_id))
+                    else:
+                        cursor.execute(f'''UPDATE {self.table_name} SET actress = ?, genre = ?, maker = ?, details = ?, details_fetched = 1 WHERE id = ?''', (actress_str, genre_str, maker, details, vid_id))
                     self.db_conn.commit()
                 custom_log(self.source_name, f"{self.source_name} {vid_id} {len(actress_arr)} actress{'es' if len(actress_arr) != 1 else ''}, {len(genre_arr)} genre{'s' if len(genre_arr) != 1 else ''}, {maker}")
                 return True

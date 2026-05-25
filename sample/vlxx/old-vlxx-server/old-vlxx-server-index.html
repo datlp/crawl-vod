@@ -5,13 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Javtiful Player</title>
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
-            background-color: #121212; color: rgba(255, 255, 255, 0.87); font-family: "Roboto", "Helvetica", "Arial", sans-serif;
+            background-color: #000; color: #fff; font-family: sans-serif;
             overflow: hidden;
             -webkit-touch-callout: none;
             -webkit-user-select: none;
@@ -20,46 +18,6 @@
         input {
             -webkit-user-select: auto;
             user-select: auto;
-        }
-        button.mui-btn {
-            font-family: "Roboto", "Helvetica", "Arial", sans-serif; font-weight: 500; font-size: 0.875rem; line-height: 1.75; letter-spacing: 0.02857em; text-transform: uppercase;
-            min-width: 64px; padding: 6px 16px; border-radius: 4px;
-            transition: background-color 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,border-color 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,color 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms;
-            border: 0; cursor: pointer;
-            box-shadow: 0px 3px 1px -2px rgba(0,0,0,0.2),0px 2px 2px 0px rgba(0,0,0,0.14),0px 1px 5px 0px rgba(0,0,0,0.12);
-            display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box;
-        }
-        button.mui-btn:disabled {
-            color: rgba(255, 255, 255, 0.3) !important; box-shadow: none; background-color: rgba(255, 255, 255, 0.12) !important; cursor: default;
-        }
-        .mui-btn-primary { background-color: #90caf9; color: rgba(0, 0, 0, 0.87); }
-        .mui-btn-primary:hover { background-color: #42a5f5; }
-        .mui-btn-secondary { background-color: #f48fb1; color: rgba(0, 0, 0, 0.87); }
-        .mui-btn-secondary:hover { background-color: #f06292; }
-        .mui-btn-error { background-color: #f44336; color: #fff; }
-        .mui-btn-error:hover { background-color: #d32f2f; }
-        .mui-btn-success { background-color: #66bb6a; color: rgba(0, 0, 0, 0.87); }
-        .mui-btn-success:hover { background-color: #388e3c; }
-        .mui-btn-contained { background-color: #333; color: #fff; }
-        .mui-btn-contained:hover { background-color: #555; }
-        .mui-btn-text { background-color: transparent; color: #90caf9; box-shadow: none; }
-        .mui-btn-text:hover { background-color: rgba(144, 202, 249, 0.08); box-shadow: none; }
-
-        input.mui-input {
-            font-family: "Roboto", "Helvetica", "Arial", sans-serif; font-weight: 400; font-size: 1rem; line-height: 1.4375em; letter-spacing: 0.00938em;
-            color: rgba(255, 255, 255, 0.87); box-sizing: border-box; cursor: text;
-            display: inline-flex; align-items: center; padding: 16.5px 14px; border-radius: 4px;
-            border: 1px solid rgba(255, 255, 255, 0.23); background: transparent; outline: none;
-            transition: border-color 200ms cubic-bezier(0.0, 0, 0.2, 1) 0ms; width: 100%;
-        }
-        input.mui-input:focus { border-color: #90caf9; border-width: 2px; padding: 15.5px 13px; }
-        input.mui-input::placeholder { color: rgba(255, 255, 255, 0.5); opacity: 1; }
-        input.hide-text { color: transparent !important; }
-        input.hide-text::placeholder { color: transparent !important; }
-        
-        .mui-paper {
-            background-color: #1e1e1e; color: rgba(255, 255, 255, 0.87); border-radius: 4px;
-            box-shadow: 0px 2px 1px -1px rgba(0,0,0,0.2),0px 1px 1px 0px rgba(0,0,0,0.14),0px 1px 3px 0px rgba(0,0,0,0.12);
         }
         #app {
             position: relative; width: 100%; height: 100%;
@@ -72,13 +30,13 @@
         .video-js { width: 100%; height: 100%; background-color: transparent; }
         .vjs-tech { object-fit: contain; }
         #overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 126px);
+            position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 90px);
             z-index: 10; touch-action: none;
             -webkit-touch-callout: none;
             user-select: none;
         }
         #bottom-bar {
-            position: absolute; bottom: 56px; left: 0; width: 100%; padding: 10px 15px; height: 70px;
+            position: absolute; bottom: 0; left: 0; width: 100%; padding: 10px 15px; height: 70px;
             box-sizing: border-box; background: rgba(0, 0, 0, 0.7);
             z-index: 20; display: flex; flex-direction: column; justify-content: center;
         }
@@ -102,7 +60,7 @@
         }
         
         #action-icons {
-            position: absolute; right: 0px; bottom: 140px;
+            position: absolute; right: 0px; bottom: 160px;
             display: flex; flex-direction: column; gap: 12px; z-index: 20;
         }
         .action-btn {
@@ -113,78 +71,76 @@
         }
         .action-btn:active { background: rgba(255,255,255,0.3); }
         .hide-ui #bottom-bar,
-        .hide-ui #action-icons,
         .hide-ui #bottom-navigation,
-        .hide-ui .media-counter {
+        .hide-ui #action-icons,
+        .hide-ui #top-right-controls {
             opacity: 0;
             pointer-events: none;
         }
-        #bottom-bar, #action-icons, #bottom-navigation, .media-counter {
+        #bottom-bar, #bottom-navigation, #action-icons, #top-right-controls {
             transition: opacity 0.3s ease;
         }
-        
-        #bottom-navigation {
-            position: absolute; bottom: 0; left: 0; width: 100%; height: 56px;
-            background: #1e1e1e;
-            z-index: 50; display: flex; justify-content: space-around; align-items: center;
-            border-top: 1px solid rgba(255,255,255,0.12);
-        }
-        .bottom-nav-item {
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            color: rgba(255,255,255,0.6); cursor: pointer; flex: 1; height: 100%;
-            transition: color 0.3s;
-        }
-        .bottom-nav-item.active { color: #90caf9; }
-        .bottom-nav-item .material-symbols-outlined { font-size: 24px; margin-bottom: 2px; }
-        .bottom-nav-item span:last-child { font-size: 0.6875rem; font-weight: 500; }
 
         .page-view {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
-            height: calc(100% - 56px);
-            background-color: #121212;
+            height: 100%;
+            background-color: #0a0a0a;
             z-index: 40;
             display: none;
             flex-direction: column;
+            padding-bottom: 60px;
+            box-sizing: border-box;
         }
         .page-view.active { display: flex; }
         .page-header {
-            padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; gap: 16px;
-            background-color: #272727; box-shadow: 0px 2px 4px -1px rgba(0,0,0,0.2); z-index: 110;
-        }
-        .page-header h3 {
-            font-weight: 500; font-size: 1.25rem;
+            padding: 15px; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 15px;
+            background-color: #111;
         }
         .close-page {
             font-size: 24px; cursor: pointer; line-height: 1; margin-left: -5px; padding-right: 10px; color: #fff;
         }
-        #search-container { padding: 12px 16px; background: #121212; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; position: relative; z-index: 100; }
+        #search-container { padding: 0; background: #111; border-bottom: 1px solid #333; display: flex; flex-direction: column; align-items: stretch; position: relative; z-index: 100; }
+        #active-search-chips {
+            display: none;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            gap: 8px;
+            padding: 0 0 2px 0;
+            scrollbar-width: none;
+            width: 100%;
+        }
+        .active-search-chip {
+            display: flex; align-items: center; background: #222; border: 1px solid #444; border-radius: 16px; padding: 4px 10px; font-size: 12px; color: #ddd; gap: 6px; flex-shrink: 0;
+        }
+        .active-search-chip .chip-left-icon { font-size: 14px; }
+        .active-search-chip .chip-delete { font-size: 16px; cursor: pointer; color: #aaa; }
+        .active-search-chip .chip-delete:hover { color: #ff4081; }
+        #active-search-chips::-webkit-scrollbar { display: none; }
         #search-input-wrapper { position: relative; flex-grow: 1; }
         #video-search {
-            padding-right: 70px; padding-top: 12px; padding-bottom: 12px;
+            width: 100%; padding: 10px; padding-right: 60px; border-radius: 6px;
+            border: 1px solid #333; background: #222; color: #fff; box-sizing: border-box; outline: none; font-size: 14px;
         }
-        #video-search:focus {
-            padding-right: 69px; padding-top: 11px; padding-bottom: 11px;
-        }
-        #clear-search { position: absolute; right: 40px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 20px; display: none; }
-        #submit-search { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 24px; }
+        #clear-search { position: absolute; right: 35px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 18px; display: none; }
+        #submit-search { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #aaa; font-size: 16px; }
         
         #search-suggestions {
-            position: fixed; top: 58px; left: 0; right: 0; background: #1e1e1e;
-            border: none; border-radius: 0; z-index: 150; box-shadow: none;
-            display: flex; flex-direction: column; overflow: hidden;
+            position: absolute; left: 0; right: 0; bottom: 60px; background: #0a0a0a;
+            border-top: 1px solid #333;
+            overflow-y: auto; z-index: 150;
         }
         .suggestion-item {
-            display: flex; align-items: center; padding: 12px 16px; cursor: pointer;
-            border-bottom: 1px solid rgba(255,255,255,0.05); gap: 10px;
+            display: flex; align-items: center; padding: 10px 15px; cursor: pointer;
+            border-bottom: 1px solid #333; gap: 10px;
         }
         .suggestion-item:last-child { border-bottom: none; }
-        .suggestion-item:hover { background: rgba(255,255,255,0.08); }
+        .suggestion-item:hover { background: #333; }
         .suggestion-icon { color: #888; font-size: 16px; width: 20px; text-align: center; }
         .suggestion-text { flex-grow: 1; color: #fff; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
-        .suggestion-type { font-size: 0.6875rem; color: #888; background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 10px; }
+        .suggestion-type { font-size: 11px; color: #888; background: #111; padding: 2px 6px; border-radius: 10px; }
         
         .gallery-grid {
             flex-grow: 1;
@@ -216,7 +172,7 @@
             aspect-ratio: 16 / 9;
             background-size: cover;
             background-position: center;
-            background-color: #1e1e1e;
+            background-color: #222;
             border-radius: 12px;
             transition: border-radius 0.2s ease;
         }
@@ -249,14 +205,19 @@
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             font-size: 18px; z-index: 5; color: #ccc;
         }
+        #top-right-controls {
+            position: absolute; top: 15px; right: 15px; z-index: 20;
+            display: flex; align-items: center; gap: 15px;
+            transition: opacity 0.3s ease;
+        }
         .media-counter {
-            position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.6);
-            padding: 5px 12px; border-radius: 20px; font-size: 13px; z-index: 20; font-weight: bold;
+            background: rgba(0,0,0,0.6);
+            padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: bold;
             cursor: pointer;
         }
         .toast {
-            background-color: #323232; color: #fff; padding: 14px 16px; border-radius: 4px;
-            font-size: 0.875rem; font-weight: 400; font-family: "Roboto", "Helvetica", "Arial", sans-serif; box-shadow: 0px 3px 5px -1px rgba(0,0,0,0.2),0px 6px 10px 0px rgba(0,0,0,0.14),0px 1px 18px 0px rgba(0,0,0,0.12);
+            background-color: #333; color: #fff; padding: 10px 20px; border-radius: 6px;
+            font-size: 14px; font-weight: 500; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
             transition: all 0.3s ease; opacity: 0; transform: translateY(10px);
         }
         .toast.show { opacity: 1; transform: translateY(0); }
@@ -272,31 +233,19 @@
         .animate-heart {
             animation: heartBeat 0.8s ease-out forwards;
         }
-        #gallery-tabs::-webkit-scrollbar, #profile-tabs::-webkit-scrollbar, #suggestion-tabs::-webkit-scrollbar { display: none; }
-        .mui-tab {
-            flex-shrink: 0; padding: 12px 24px; background: none; border: none; color: rgba(255,255,255,0.6); border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap;
-            font-family: "Roboto", "Helvetica", "Arial", sans-serif; text-transform: uppercase; font-size: 0.875rem; font-weight: 500;
-            transition: color 250ms, border-color 250ms;
-        }
-        .mui-tab.active {
-            color: #90caf9;
-            border-bottom-color: #90caf9;
-        }
+        #gallery-tabs::-webkit-scrollbar { display: none; }
         .tab-badge {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: rgba(255,255,255,0.12);
-            color: rgba(255,255,255,0.87);
+            background: #333;
+            color: #ccc;
             border-radius: 10px;
             padding: 2px 6px;
-            font-size: 0.75rem;
+            font-size: 11px;
             margin-left: 6px;
+            font-weight: 600;
             line-height: 1;
-        }
-        .mui-tab.active .tab-badge {
-            background: rgba(144, 202, 249, 0.16);
-            color: #90caf9;
         }
         .chips-container {
             display: flex;
@@ -308,50 +257,77 @@
         .detail-chip {
             padding: 5px 12px;
             border-radius: 16px;
-            font-size: 0.8125rem;
-            font-weight: 400;
+            font-size: 12px;
+            font-weight: 500;
             cursor: pointer;
             transition: all 0.2s ease;
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.23);
+            background: #222;
+            border: 1px solid #444;
             color: #ddd;
         }
-        .chip-maker { border-color: rgba(144, 202, 249, 0.5); color: #90caf9; }
-        .chip-actress { border-color: rgba(244, 143, 177, 0.5); color: #f48fb1; }
-        .chip-genre { border-color: rgba(129, 199, 132, 0.5); color: #81c784; }
-        .chip-title { border-color: rgba(255, 167, 38, 0.5); color: #ffa726; }
-        .chip-dvd { border-color: rgba(186, 104, 200, 0.5); color: #ba68c8; }
+        .chip-maker { border-color: #1e88e5; color: #90caf9; }
+        .chip-actress { border-color: #ff4081; color: #ff80ab; }
+        .chip-genre { border-color: #43a047; color: #a5d6a7; }
         .chip-maker:hover, .chip-actress:hover, .chip-genre:hover {
-            background: rgba(255,255,255,0.08);
-            border-color: rgba(255,255,255,0.87);
-            color: rgba(255,255,255,0.87);
+            background: #ff4081;
+            border-color: #ff4081;
+            color: #fff;
         }
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .item-fav-btn {
-            position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.5);
-            border-radius: 50%; width: 28px; height: 28px; display: flex;
-            justify-content: center; align-items: center; cursor: pointer; z-index: 10;
-            transition: background 0.3s;
-        }
-        .item-fav-btn:hover { background: rgba(0,0,0,0.8); }
-        .item-fav-btn .material-symbols-outlined { font-size: 18px; color: #fff; }
-        .item-fav-btn.favorited .material-symbols-outlined { color: #ff4081; font-variation-settings: 'FILL' 1; }
+        .suggestion-chips-container::-webkit-scrollbar { display: none; }
+        .suggestion-chips-container { scrollbar-width: none; -ms-overflow-style: none; }
 
-        .item-view-count {
-            position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.6);
-            border-radius: 4px; padding: 2px 6px; display: flex; align-items: center; gap: 4px;
-            font-size: 12px; color: #fff; z-index: 10; font-weight: 500;
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: calc(100% - 90px);
+            height: calc(100% - 150px);
+            z-index: 10; touch-action: none;
+            -webkit-touch-callout: none;
+            user-select: none;
         }
-        .item-view-count .material-symbols-outlined { font-size: 14px; }
+        #bottom-bar {
+            position: absolute; bottom: 60px; left: 0; width: 100%; padding: 10px 15px; height: 70px;
+            box-sizing: border-box; background: rgba(0, 0, 0, 0.7);
+            z-index: 20; display: flex; flex-direction: column; justify-content: center;
+        }
+        #bottom-navigation {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(4px);
+            z-index: 45;
+            display: flex;
+            justify-content: space-around;
+            align-items: stretch;
+        }
+        .bottom-nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #ccc;
+            cursor: pointer;
+            flex: 1;
+            padding: 4px 0;
+            gap: 2px;
+            font-size: 10px;
+            transition: background 0.2s ease;
+        }
+        .bottom-nav-item .bottom-nav-icon { font-size: 22px; }
+        .bottom-nav-item:active { background: rgba(255,255,255,0.1); }
+        #title-container {
+            display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;
+        }
     </style>
 </head>
 <body>
     <div id="app">
         <div id="loading" class="loading" style="display: none;">Đang tải...</div>
         <div id="media-container"></div>
-        <div class="media-counter" id="media-counter">0/0</div>
+        <div id="top-right-controls">
+            <div class="media-counter" id="media-counter">0/0</div>
+        </div>
         <div id="overlay"></div>
 
         <div id="bottom-bar">
@@ -364,109 +340,114 @@
             </div>
         </div>
 
-        <div id="toastContainer" style="position: fixed; bottom: 76px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 200; pointer-events: none;"></div>
+        <div id="toastContainer" style="position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 100; pointer-events: none;"></div>
 
         <div id="heart-animation" style="position: absolute; display: none; pointer-events: none; z-index: 100;">
-            <span class="material-symbols-outlined" style="font-size: 80px; color: #ff4081; font-variation-settings: 'FILL' 1;">favorite</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="#ff4081" stroke="#ff4081" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+            </svg>
         </div>
 
         <div id="profile-page" class="page-view">
-            <div class="page-header" style="flex-shrink: 0;">
-                <span id="close-profile-page" class="close-page material-symbols-outlined">arrow_back</span>
-                <h3 style="margin:0; font-size:16px;">Cá nhân</h3>
+            <div class="page-header">
+                <span id="close-profile-page" class="close-page">&#8592;</span>
+                <h3 style="margin:0; font-size:16px; flex-grow: 1;">Tài khoản</h3>
             </div>
-            <div id="profile-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none; background: #121212; border-bottom: 1px solid rgba(255,255,255,0.12);">
-                <button id="tabProfileYou" class="mui-tab active">Tài khoản</button>
-                <button id="tabProfileRecent" class="mui-tab">Gần đây <span class="tab-badge" id="badge-recent">0</span></button>
-                <button id="tabProfileFav" class="mui-tab">Đã thích <span class="tab-badge" id="badge-favorites">0</span></button>
-                <button id="tabProfileFrequent" class="mui-tab">Xem nhiều <span class="tab-badge" id="badge-frequent">0</span></button>
-            </div>
-            <div id="profile-content-you" style="padding: 15px; overflow-y: auto; flex-grow: 1;">
+            <div id="profile-content" style="padding: 15px; overflow-y: auto;">
                 <div id="sessionDisplay" style="margin-bottom: 10px; font-size: 14px; color: #aaa; word-break: break-all;"></div>
-                <button id="logoutBtn" class="mui-btn mui-btn-contained" style="display:none; width: 100%; margin-bottom: 16px;">Thoát</button>
-                <button id="identifyBtn" class="mui-btn mui-btn-error" style="width: 100%; margin-bottom: 16px;">Định danh</button>
+                <button id="logoutBtn" style="display:none; padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; margin-bottom: 10px;">Thoát</button>
+                <button id="identifyBtn" style="padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; margin-bottom: 10px;">Định danh</button>
 
-                <div id="identifyForm" class="mui-paper" style="display:none; flex-direction: column; gap: 16px; padding: 16px; margin-bottom: 16px;">
-                    <input type="text" id="identifyUsername" class="mui-input" placeholder="Username" autocomplete="off">
-                    <div id="usernameStatus" style="font-size: 0.75rem; color: rgba(255,255,255,0.6); display: none; margin-top: -12px; margin-left: 14px;"></div>
-                    <input type="password" id="identifyPassword" class="mui-input" placeholder="Password" style="display:none;" autocomplete="new-password">
-                    <input type="password" id="identifyRetypePassword" class="mui-input" placeholder="Nhập lại Password" style="display:none;" autocomplete="new-password">
+                <div id="identifyForm" style="display:none; flex-direction: column; gap: 10px; background: #111; padding: 15px; border-radius: 6px;">
+                    <input type="text" id="identifyUsername" placeholder="Username" style="padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" autocomplete="off">
+                    <div id="usernameStatus" style="font-size: 12px; color: #aaa; display: none;"></div>
+                    <input type="password" id="identifyPassword" placeholder="Password" style="display:none; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" autocomplete="new-password">
+                    <input type="password" id="identifyRetypePassword" placeholder="Nhập lại Password" style="display:none; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" autocomplete="new-password">
                     
-                    <div id="otpGroup" style="display:none; gap: 10px; align-items: stretch;">
-                        <input type="text" id="identifyOtp" class="mui-input" placeholder="Mã OTP" style="flex: 1;">
-                        <button id="sendOtpBtn" class="mui-btn mui-btn-contained" style="white-space: nowrap;">Gửi OTP</button>
+                    <div id="otpGroup" style="display:none; gap: 10px;">
+                        <input type="text" id="identifyOtp" placeholder="Mã OTP" style="flex: 1; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;">
+                        <button id="sendOtpBtn" style="padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;">Gửi OTP</button>
                     </div>
 
-                    <button id="submitIdentityBtn" class="mui-btn mui-btn-error" style="display:none; width: 100%;">Tiếp tục</button>
+                    <button id="submitIdentityBtn" style="display:none; padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Tiếp tục</button>
                     
-                    <div style="display: flex; justify-content: space-between;">
-                        <button id="toggleOtpLoginBtn" class="mui-btn mui-btn-text" style="display:none; padding: 4px 8px; font-size: 0.75rem;">Đăng nhập bằng OTP?</button>
-                        <button id="forgotPasswordBtn" class="mui-btn mui-btn-text" style="display:none; padding: 4px 8px; font-size: 0.75rem;">Quên mật khẩu?</button>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px;">
+                        <span id="toggleOtpLoginBtn" style="display:none; color: #aaa; cursor: pointer;">Đăng nhập bằng OTP?</span>
+                        <span id="forgotPasswordBtn" style="display:none; color: #aaa; cursor: pointer;">Quên mật khẩu?</span>
                     </div>
                 </div>
 
-                <div id="profileSection" style="display:none; flex-direction: column; gap: 16px; margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 16px;">
-                    <h4 style="margin: 0; font-weight: 500; font-size: 1.25rem;">Quản lý Tài Khoản</h4>
+                <div id="profileSection" style="display:none; flex-direction: column; gap: 10px; margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
+                    <h4 style="margin: 0; color: #f1f1f1;">Quản lý Tài Khoản</h4>
                     
-                    <div class="mui-paper" style="display: flex; flex-direction: column; gap: 16px; padding: 16px;">
+                    <div style="display: flex; flex-direction: column; gap: 10px; background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label style="font-size: 0.875rem; color: rgba(255,255,255,0.6);">Email</label>
-                            <span id="emailVerifiedBadge" style="display:none; background: #4caf50; color: rgba(0,0,0,0.87); padding: 4px 8px; border-radius: 16px; font-size: 0.75rem; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">check_circle</span>Đã xác thực</span>
-                            <span id="emailUnverifiedBadge" style="display:none; background: #f44336; color: white; padding: 4px 8px; border-radius: 16px; font-size: 0.75rem; font-weight: 500;">Chưa xác thực</span>
+                            <label style="font-size: 14px; color: #ccc;">Email</label>
+                            <span id="emailVerifiedBadge" style="display:none; background: #43a047; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px;">Đã xác thực ✔</span>
+                            <span id="emailUnverifiedBadge" style="display:none; background: #e53935; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px;">Chưa xác thực</span>
                         </div>
-                        <div style="display: flex; gap: 10px; align-items: stretch;">
-                            <input type="email" id="profileEmail" class="mui-input" placeholder="Nhập email của bạn" style="flex: 1;">
-                            <button id="btnSaveEmail" class="mui-btn mui-btn-primary" style="white-space: nowrap;">Lưu</button>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="email" id="profileEmail" placeholder="Nhập email của bạn" style="flex: 1; padding: 10px; background: #111; border: 1px solid #333; color: white; border-radius: 4px;">
+                            <button id="btnSaveEmail" style="padding: 10px; background: #1e88e5; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;">Lưu</button>
                         </div>
-                        <div id="emailCallToAction" style="font-size: 0.75rem; color: #ffb300; display:none;">* Vui lòng thêm và xác thực email để có thể đổi/khôi phục mật khẩu.</div>
+                        <div id="emailCallToAction" style="font-size: 12px; color: #ffb300; display:none;">* Vui lòng thêm và xác thực email để có thể đổi/khôi phục mật khẩu.</div>
                         
-                        <div id="verifyEmailGroup" style="display:none; flex-direction: column; gap: 16px;">
-                            <div style="display: flex; gap: 10px; align-items: stretch;">
-                                <input type="text" id="verifyOtpInput" class="mui-input" placeholder="Mã OTP" style="flex: 1;">
-                                <button id="btnSendVerifyOtp" class="mui-btn mui-btn-contained" style="white-space: nowrap;">Gửi OTP</button>
+                        <div id="verifyEmailGroup" style="display:none; flex-direction: column; gap: 10px; margin-top: 5px;">
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="verifyOtpInput" placeholder="Mã OTP" style="flex: 1; padding: 10px; background: #111; border: 1px solid #333; color: white; border-radius: 4px;">
+                                <button id="btnSendVerifyOtp" style="padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;">Gửi OTP</button>
                             </div>
-                            <button id="btnSubmitVerifyOtp" class="mui-btn mui-btn-error" style="display:none; width: 100%;">Xác thực</button>
+                            <button id="btnSubmitVerifyOtp" style="display:none; padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer;">Xác thực</button>
                         </div>
                     </div>
 
-                    <div class="mui-paper" style="display: flex; flex-direction: column; gap: 16px; padding: 16px;">
-                        <label style="font-size: 0.875rem; color: rgba(255,255,255,0.6);">Đổi mật khẩu</label>
-                        <input type="password" id="editPassword" class="mui-input" placeholder="Mật khẩu mới" autocomplete="new-password">
-                        <button id="btnUpdatePassword" class="mui-btn mui-btn-contained" disabled>Cập nhật mật khẩu</button>
+                    <div style="display: flex; flex-direction: column; gap: 10px; background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444; margin-top: 10px;">
+                        <label style="font-size: 14px; color: #ccc;">Đổi mật khẩu</label>
+                        <input type="password" id="editPassword" placeholder="Mật khẩu mới" style="padding: 10px; background: #111; border: 1px solid #333; color: white; border-radius: 4px;" autocomplete="new-password">
+                        <button id="btnUpdatePassword" style="padding: 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer;" disabled>Cập nhật mật khẩu</button>
                     </div>
                 </div>
             </div>
-            <div id="profile-gallery-grid" class="gallery-grid" style="display: none;"></div>
-            <div id="profile-load-more" style="text-align: center; padding: 15px; color: #aaa; font-size: 14px; display: none;">Đang tải thêm...</div>
         </div>
 
         <div id="gallery-page" class="page-view">
             <div id="search-container" style="flex-shrink: 0;">
-                <span id="close-gallery-page" class="close-page material-symbols-outlined" style="margin-left: 5px;">arrow_back</span>
-                <div id="search-input-wrapper">
-                <div id="search-chip-display" style="position: absolute; left: 14px; right: 70px; top: 0; bottom: 0; display: none; align-items: center; gap: 4px; overflow: hidden; pointer-events: none; z-index: 2; white-space: nowrap;"></div>
-                    <input type="text" id="video-search" class="mui-input" placeholder="Tìm kiếm videos..." autocomplete="off">
-                    <span id="clear-search" class="material-symbols-outlined">close</span>
-                    <span id="submit-search" class="material-symbols-outlined">search</span>
-                    <div id="search-suggestions" style="display: none;">
-                        <div id="suggestion-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none; border-bottom: 1px solid rgba(255,255,255,0.12);">
-                            <button id="sugTabAll" class="mui-tab active">Tất cả</button>
-                            <button id="sugTabActress" class="mui-tab">Diễn viên</button>
-                            <button id="sugTabGenre" class="mui-tab">Thể loại</button>
-                            <button id="sugTabMaker" class="mui-tab">Nhà SX</button>
-                        </div>
-                        <div id="suggestion-content" style="flex-grow: 1; overflow-y: auto; padding-bottom: 20px;"></div>
+                <div style="display: flex; align-items: center; width: 100%; padding: 15px; box-sizing: border-box;">
+                    <span id="close-gallery-page" class="close-page">&#8592;</span>
+                    
+                    <div id="gallery-header-content" style="flex-grow: 1; display: flex; align-items: center; overflow: hidden; margin-right: 10px;">
+                        <h3 id="gallery-title-text" style="margin:0; font-size:16px; color: #fff; white-space: nowrap;">Danh sách Video</h3>
+                        <div id="active-search-chips"></div>
                     </div>
+
+                    <div id="source-multi-select" style="position: relative; margin-right: 10px; display: none; align-items: center;">
+                        <div id="source-select-btn" style="background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; padding: 0 8px; height: 30px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 5px;">
+                            <span id="source-select-label">Tất cả Server</span>
+                            <span style="font-size: 10px;">▼</span>
+                        </div>
+                        <div id="source-dropdown" style="display: none; position: absolute; top: 100%; right: 0; background: #222; border: 1px solid #444; border-radius: 4px; padding: 8px; z-index: 200; min-width: 150px; flex-direction: column; gap: 8px; margin-top: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.5);">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #ddd;"><input type="checkbox" value="all" id="source-all-cb" style="accent-color: #ff4081;" checked> Tất cả</label>
+                            <div id="source-checkboxes" style="display: flex; flex-direction: column; gap: 8px; margin-left: 5px; border-left: 1px solid #444; padding-left: 8px;"></div>
+                        </div>
+                    </div>
+
+                    <span id="gallery-search-icon" class="header-search-icon" style="font-size: 20px; cursor: pointer; padding: 0 5px; color: #fff;">🔍</span>
+                    
+                    <div id="search-input-wrapper" style="display: none;">
+                        <input type="text" id="video-search" placeholder="Tìm kiếm videos..." autocomplete="off">
+                        <span id="clear-search" style="right: 40px;">&times;</span>
+                        <span id="submit-search">🔍</span>
+                    </div>
+                    <span id="close-search-input" style="display: none; font-size: 24px; cursor: pointer; color: #fff; margin-left: 15px; line-height: 1;">&times;</span>
                 </div>
             </div>
-            <div id="gallery-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none;">
-                <button id="tabAll" class="mui-tab active">Tất cả <span class="tab-badge" id="badge-all">0</span></button>
-                <button id="tabGlobalFrequent" class="mui-tab">Top thế giới <span class="tab-badge" id="badge-global_frequent">0</span></button>
-                <div style="width: 1px; background: rgba(255,255,255,0.12); margin: 10px 4px;"></div>
-                <a id="linkJavtiful" class="mui-tab" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> Javtiful</a>
-                <a id="linkMissav" class="mui-tab" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> MissAV</a>
-                <a id="linkVlxx" class="mui-tab" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> VLXX</a>
-                <a id="linkSextop1" class="mui-tab" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> Sextop1</a>
+            <div id="search-suggestions" style="display: none;"></div>
+            <div id="gallery-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none; background: #0a0a0a; border-bottom: 1px solid #333; padding: 0 10px;">
+                <button id="tabAll" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #ff4081; border-bottom: 2px solid #ff4081; font-weight: 500; cursor: pointer; white-space: nowrap;">Tất cả <span class="tab-badge" id="badge-all" style="background: rgba(255, 64, 129, 0.2); color: #ff4081;">0</span></button>
+                <button id="tabFav" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #aaa; border-bottom: 2px solid transparent; font-weight: 500; cursor: pointer; white-space: nowrap;">Yêu thích <span class="tab-badge" id="badge-favorites">0</span></button>
+                <button id="tabRecent" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #aaa; border-bottom: 2px solid transparent; font-weight: 500; cursor: pointer; white-space: nowrap;">Gần đây <span class="tab-badge" id="badge-recent">0</span></button>
+                <button id="tabFrequent" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #aaa; border-bottom: 2px solid transparent; font-weight: 500; cursor: pointer; white-space: nowrap;">Xem nhiều <span class="tab-badge" id="badge-frequent">0</span></button>
+                <button id="tabGlobalFrequent" style="flex-shrink: 0; padding: 12px 16px; background: none; border: none; color: #aaa; border-bottom: 2px solid transparent; font-weight: 500; cursor: pointer; white-space: nowrap;">Top thế giới <span class="tab-badge" id="badge-global_frequent">0</span></button>
             </div>
             <div id="gallery-grid" class="gallery-grid"></div>
             <div id="load-more" style="text-align: center; padding: 15px; color: #aaa; font-size: 14px; display: none;">Đang tải thêm...</div>
@@ -474,54 +455,55 @@
 
         <div id="details-page" class="page-view">
             <div class="page-header">
-                <span id="close-details-page" class="close-page material-symbols-outlined">arrow_back</span>
-                <h3 style="margin:0; font-size:16px;">Chi tiết Video</h3>
+                <span id="close-details-page" class="close-page">&#8592;</span>
+                <h3 style="margin:0; font-size:16px; flex-grow: 1;">Chi tiết Video</h3>
+                <span class="header-search-icon" style="font-size: 20px; cursor: pointer; padding: 0 5px; color: #fff;">🔍</span>
             </div>
             <div id="details-content" style="padding: 15px; overflow-y: auto; flex-grow: 1;">
                 <div style="text-align: center; margin-bottom: 15px;">
                     <img id="details-cover" src="" style="max-width: 100%; border-radius: 8px; max-height: 200px; object-fit: contain; background: #222; cursor: pointer;">
                 </div>
-                <h3 id="details-title" style="margin-top: 0; margin-bottom: 5px; font-size: 1.125rem; font-weight: 500; color: #90caf9; text-align: center;"></h3>
+                <h3 id="details-title" style="margin-top: 0; margin-bottom: 5px; font-size: 18px; color: #ff4081; text-align: center;"></h3>
                 <div style="text-align: center; margin-bottom: 15px; font-size: 14px; color: #aaa;" id="details-date"></div>
                 <div id="details-chips" class="chips-container"></div>
-                <div id="details-desc-wrapper" style="margin-bottom: 15px; font-size: 14px; line-height: 1.5; display: none;"><strong>Mô tả:</strong> <div id="details-desc" style="margin-top: 5px; color: #aaa;"></div></div>
-                <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 20px;">
-                    <button id="btn-watch-now" class="mui-btn mui-btn-success" style="width: 100%;"><span class="material-symbols-outlined">play_circle</span> Xem ngay</button>
-                    <button id="btn-open-javtiful" class="mui-btn mui-btn-error" style="width: 100%;"><span class="material-symbols-outlined">language</span> Javtiful</button>
-                    <button id="btn-search-list" class="mui-btn mui-btn-primary" style="width: 100%;"><span class="material-symbols-outlined">list</span> Xem trong danh sách</button>
+                <div style="margin-bottom: 15px; font-size: 14px; line-height: 1.5;"><strong>Mô tả:</strong> <div id="details-desc" style="margin-top: 5px; color: #aaa;"></div></div>
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                    <button id="btn-watch-now" style="padding: 10px; background: #43a047; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">▶ Xem ngay</button>
+                    <button id="btn-open-source" style="padding: 10px; background: #e53935; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">🌐 Trang gốc</button>
+                    <button id="btn-search-list" style="padding: 10px; background: #1e88e5; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">🔍 Xem trong danh sách video</button>
                 </div>
             </div>
         </div>
 
         <div id="image-viewer" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:150; justify-content:center; align-items:center; touch-action: none;">
             <img id="fullscreen-image" src="" style="max-width:100%; max-height:100%; object-fit:contain; transition: transform 0.1s ease-out; transform-origin: center;">
-            <div id="close-image-viewer" style="position:absolute; top:20px; right:20px; color:#fff; cursor:pointer; z-index:151; width:40px; height:40px; display:flex; justify-content:center; align-items:center; background:rgba(0,0,0,0.5); border-radius:50%;"><span class="material-symbols-outlined" style="font-size: 24px;">close</span></div>
+            <div id="close-image-viewer" style="position:absolute; top:20px; right:20px; font-size:30px; color:#fff; cursor:pointer; z-index:151; width:40px; height:40px; display:flex; justify-content:center; align-items:center; background:rgba(0,0,0,0.5); border-radius:50%;">&times;</div>
+        </div>
+
+        <div id="bottom-navigation">
+            <div class="bottom-nav-item" id="btn-list" title="Danh sách">
+                <span class="bottom-nav-icon">☰</span>
+                <span class="bottom-nav-label">Danh sách</span>
+            </div>
+            <div class="bottom-nav-item" id="btn-search" title="Tìm kiếm">
+                <span class="bottom-nav-icon">🔍</span>
+                <span class="bottom-nav-label">Tìm kiếm</span>
+            </div>
+            <div class="bottom-nav-item" id="btn-profile" title="Tài khoản">
+                <span class="bottom-nav-icon">👤</span>
+                <span class="bottom-nav-label">Tài khoản</span>
+            </div>
         </div>
 
         <div id="action-icons">
-            <div class="action-btn" id="btn-favorite" title="Yêu thích"><span class="material-symbols-outlined" id="fav-icon">favorite_border</span></div>
-            <div class="action-btn" id="btn-sync" title="Đồng bộ"><span class="material-symbols-outlined">sync</span></div>
-            <div class="action-btn" id="btn-fullscreen" title="Toàn màn hình"><span class="material-symbols-outlined">fullscreen</span></div>
-            <div class="action-btn" id="btn-play-pause" title="Play/Pause"><span class="material-symbols-outlined" id="play-pause-icon">play_arrow</span></div>
-            <div class="action-btn" id="btn-prev" title="Video trước"><span class="material-symbols-outlined">skip_previous</span></div>
-            <div class="action-btn" id="btn-next" title="Video sau"><span class="material-symbols-outlined">skip_next</span></div>
+            <div class="action-btn" id="btn-favorite" title="Yêu thích">🤍</div>
+            <div class="action-btn" id="btn-sync" title="Đồng bộ">🔄</div>
+            <div class="action-btn" id="btn-search" title="Tìm kiếm">🔍</div>
+            <div class="action-btn" id="btn-fullscreen" title="Toàn màn hình">⛶</div>
+            <div class="action-btn" id="btn-play-pause" title="Play/Pause">▶</div>
+            <div class="action-btn" id="btn-prev" title="Video trước">▲</div>
+            <div class="action-btn" id="btn-next" title="Video sau">▼</div>
         </div>
-        
-        <div id="bottom-navigation">
-            <div class="bottom-nav-item" id="nav-list">
-                <span class="material-symbols-outlined">home</span>
-                <span>Trang chủ</span>
-            </div>
-            <div class="bottom-nav-item" id="nav-search">
-                <span class="material-symbols-outlined">search</span>
-                <span>Tìm kiếm</span>
-            </div>
-            <div class="bottom-nav-item" id="nav-profile">
-                <span class="material-symbols-outlined">person</span>
-                <span>Tài khoản</span>
-            </div>
-        </div>
-
         <div id="fast-seek-indicator" style="display: none; position: absolute; top: 15%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 20px; font-size: 16px; font-weight: bold; color: #fff; z-index: 50; pointer-events: none; backdrop-filter: blur(4px);"></div>
     </div>
 
@@ -533,17 +515,22 @@
         let hasMore = true;
         let searchKey = null;
         let currentTab = null;
+        let currentSource = 'all';
         let currentVideoIndex = -1;
         let currentDetailIndex = -1;
         let currentPlayingVideo = null;
         let currentRenderId = 0;
         let lastNavTime = 0;
-        let currentFetchId = 0;
         
         let isSeekingUI = false;
         let seekThrottleTimeout = null;
         let pendingSeekTime = null;
         let lastSeekTime = 0;
+
+        // New state for history suggestions infinite scroll
+        let historySuggestionPage = 1;
+        let isLoadingHistorySuggestions = false;
+        let hasMoreHistorySuggestions = true;
 
         function throttledSeek(time) {
             pendingSeekTime = time;
@@ -581,71 +568,9 @@
         const clearSearchBtn = document.getElementById('clear-search');
         const submitSearchBtn = document.getElementById('submit-search');
         const btnPlayPause = document.getElementById('btn-play-pause');
-        
-        function updateSuggestionHeight() {
-            const sug = document.getElementById('search-suggestions');
-            const searchContainer = document.getElementById('search-container');
-            if (sug && sug.style.display !== 'none' && searchContainer) {
-                const rect = searchContainer.getBoundingClientRect();
-                const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-                sug.style.top = rect.bottom + 'px';
-                sug.style.height = (viewportHeight - rect.bottom) + 'px';
-            }
-        }
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', updateSuggestionHeight);
-            window.visualViewport.addEventListener('scroll', updateSuggestionHeight);
-        } else {
-            window.addEventListener('resize', updateSuggestionHeight);
-        }
 
         let searchTimeout = null;
         let activePlayer = null;
-
-        function updateSearchVisuals() {
-            const val = videoSearchInput.value;
-            const isFocused = document.activeElement === videoSearchInput;
-            const display = document.getElementById('search-chip-display');
-            if (!display) return;
-            
-            let hasChips = false;
-            let formattedChips = [];
-            const regex = /(actress|genre|maker|title|dvd)\s*:\s*(?:"([^"]+)"|([^\s]+))/gi;
-            let lastIndex = 0;
-            let match;
-
-            while ((match = regex.exec(val)) !== null) {
-                hasChips = true;
-                if (match.index > lastIndex) {
-                    const preText = val.substring(lastIndex, match.index);
-                    if (preText.trim()) formattedChips.push(`<span style="color: rgba(255,255,255,0.87); font-size: 14px;">${preText.replace(/</g, '&lt;')}</span>`);
-                }
-                const typeClass = match[1].toLowerCase();
-                const value = match[2] || match[3];
-                let typeIcon = 'label';
-                if (typeClass === 'actress') typeIcon = 'person';
-                else if (typeClass === 'maker') typeIcon = 'business';
-                else if (typeClass === 'title') typeIcon = 'movie';
-                else if (typeClass === 'dvd') typeIcon = 'album';
-                
-                formattedChips.push(`<span class="detail-chip chip-${typeClass}" style="display: inline-flex; align-items: center; padding: 2px 8px; font-size: 12px; margin: 0; background: rgba(255,255,255,0.12);"><span class="material-symbols-outlined" style="font-size: 14px; margin-right: 4px;">${typeIcon}</span>${value}</span>`);
-                lastIndex = regex.lastIndex;
-            }
-            
-            if (lastIndex < val.length) {
-                const postText = val.substring(lastIndex);
-                if (postText.trim()) formattedChips.push(`<span style="color: rgba(255,255,255,0.87); font-size: 14px;">${postText.replace(/</g, '&lt;')}</span>`);
-            }
-
-            if (!isFocused && hasChips) {
-                display.innerHTML = formattedChips.join(' ');
-                videoSearchInput.classList.add('hide-text');
-                display.style.display = 'flex';
-            } else {
-                videoSearchInput.classList.remove('hide-text');
-                display.style.display = 'none';
-            }
-        }
 
         function saveSearchHistory(keyword) {
             if (!keyword) return;
@@ -657,8 +582,16 @@
         }
         
         function performSearch() {
-            const val = videoSearchInput.value.trim();
-            if (val !== searchKey) {
+            let val = videoSearchInput.value.trim();
+            const madonnaRegex = /\bmaker\s*:\s*("madonna"|madonna)\b/ig;
+            if (madonnaRegex.test(val)) {
+                showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                val = val.replace(madonnaRegex, '').replace(/\s+/g, ' ').trim();
+                videoSearchInput.value = val;
+                renderDrawerSearchChips();
+            }
+
+            if (val !== searchKey) { // Compare with original searchKey
                 const p = getBaseUrlParams();
                 if (val) {
                     p.set('searchKey', val);
@@ -672,238 +605,304 @@
                 history.pushState(null, '', `/?${p.toString()}`);
                 handleNavigation();
             }
-            videoSearchInput.blur();
-            updateSearchVisuals();
-            const sug = document.getElementById('search-suggestions');
-            if(sug) sug.style.display = 'none';
+            if (typeof closeSearchInput === 'function') {
+                closeSearchInput();
+            }
         }
         
         submitSearchBtn.addEventListener('click', performSearch);
 
-        let currentSugTab = 'all';
-        let currentSuggestions = [];
-        let currentSugQuery = '';
-        let currentSugPage = 1;
-        let isSugLoading = false;
-        let sugHasMore = true;
-
-        function switchSugTab(tab) {
-            if (currentSugTab === tab) return;
-            currentSugTab = tab;
-            const tabMapping = { 'all': 'sugTabAll', 'actress': 'sugTabActress', 'genre': 'sugTabGenre', 'maker': 'sugTabMaker' };
-            Object.keys(tabMapping).forEach(key => {
-                const btn = document.getElementById(tabMapping[key]);
-                if (btn) btn.classList.toggle('active', key === tab);
-            });
-            currentSugPage = 1;
-            sugHasMore = true;
-            currentSuggestions = [];
-            const content = document.getElementById('suggestion-content');
-            if (content) {
-                content.innerHTML = '';
-                content.scrollTop = 0;
+        function appendOrReplaceLastTerm(currentVal, newTerm) {
+            const lastPartRegex = /(?:(?:actress|genre|maker|title)\s*:\s*)?(?:"[^"]*|[^\s]*)$/i;
+            const match = currentVal.match(lastPartRegex);
+            if (match && match[0]) {
+                return currentVal.substring(0, match.index) + newTerm;
             }
-            handleSuggestionFetch(true);
+            return currentVal ? currentVal + ' ' + newTerm : newTerm;
         }
 
-        setTimeout(() => {
-            document.getElementById('sugTabAll')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('all'); });
-            document.getElementById('sugTabActress')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('actress'); });
-            document.getElementById('sugTabGenre')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('genre'); });
-            document.getElementById('sugTabMaker')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); switchSugTab('maker'); });
+        function renderActiveSearchChips(query) {
+            const container = document.getElementById('active-search-chips');
+            const titleText = document.getElementById('gallery-title-text');
+            if (!container) return;
+            container.innerHTML = '';
+            if (!query) {
+                container.style.display = 'none';
+                if (titleText) titleText.style.display = 'block';
+                return;
+            }
             
-            const sugContent = document.getElementById('suggestion-content');
-            if (sugContent) {
-                sugContent.addEventListener('scroll', () => {
-                    if (currentSugTab !== 'all' && sugHasMore && !isSugLoading) {
-                        if (sugContent.scrollTop + sugContent.clientHeight >= sugContent.scrollHeight - 100) {
-                            handleSuggestionFetch(true);
-                        }
-                    }
+            if (titleText) titleText.style.display = 'none';
+            const pattern = /(actress|genre|maker|title)\s*:\s*(?:"([^"]+)"|([^\s]+))/gi;
+            let match;
+            let remaining = query;
+            const chips = [];
+            
+            while ((match = pattern.exec(query)) !== null) {
+                chips.push({
+                    fullMatch: match[0],
+                    field: match[1].toLowerCase(),
+                    value: match[2] || match[3]
                 });
+                remaining = remaining.replace(match[0], '');
             }
-        }, 100);
-
-        function renderSuggestions(newSuggestions, query, append = false) {
-            const container = document.getElementById('search-suggestions');
-            if (!append) {
-                currentSuggestions = newSuggestions;
-                currentSugQuery = query;
-                if (newSuggestions.length === 0) {
-                    container.style.display = 'none';
-                    return;
-                }
+            
+            remaining = remaining.trim();
+            if (remaining) {
+                chips.push({ fullMatch: remaining, field: 'text', value: remaining });
+            }
+            
+            if (chips.length > 0) {
+                chips.forEach(chip => {
+                    const el = document.createElement('div');
+                    el.className = 'active-search-chip';
+                    let icon = '🔍'; let typeText = 'Từ khóa';
+                    if (chip.field === 'actress') { icon = '👩'; typeText = 'Diễn viên'; }
+                    else if (chip.field === 'genre') { icon = '🏷️'; typeText = 'Thể loại'; }
+                    else if (chip.field === 'maker' || chip.field === 'studio') { icon = '🏢'; typeText = 'Studio'; }
+                    else if (chip.field === 'title') { icon = '🎬'; typeText = 'Phim'; }
+                    
+                    el.innerHTML = `<span class="chip-left-icon" title="${typeText}">${icon}</span><span class="chip-text">${chip.value}</span><span class="chip-delete" title="Xóa từ khóa này">&times;</span>`;
+                    el.querySelector('.chip-delete').onclick = () => {
+                        videoSearchInput.value = query.replace(chip.fullMatch, '').replace(/\s+/g, ' ').trim();
+                        performSearch();
+                    };
+                    container.appendChild(el);
+                });
                 container.style.display = 'flex';
-                updateSuggestionHeight();
-                renderSuggestionsContent(newSuggestions, false);
+                setTimeout(() => {
+                    container.scrollLeft = container.scrollWidth;
+                }, 50);
             } else {
-                if (newSuggestions.length === 0) return;
-                currentSuggestions = currentSuggestions.concat(newSuggestions);
-                renderSuggestionsContent(newSuggestions, true);
+                container.style.display = 'none';
+                if (titleText) titleText.style.display = 'block';
             }
         }
 
-        function renderSuggestionsContent(items, append = false) {
-            const container = document.getElementById('search-suggestions');
-            const content = document.getElementById('suggestion-content');
-            if (!content) return;
-            
-            if (!append) {
-                content.innerHTML = '';
+        function renderDrawerSearchChips() {
+            const container = document.getElementById('drawer-search-chips');
+            if (!container) return;
+            container.innerHTML = '';
+            const query = videoSearchInput.value.trim();
+            if (!query) {
+                container.style.display = 'none';
+                return;
             }
             
-            const historyItems = items.filter(s => s.type === 'history');
-            const actresses = items.filter(s => s.type === 'actress');
-            const genres = items.filter(s => ['genre', 'trend_month_genre'].includes(s.type));
-            const makers = items.filter(s => ['maker', 'studio'].includes(s.type));
-            const dates = items.filter(s => s.type === 'releasedate');
-            const watchHistory = items.filter(s => s.type === 'watch_history');
-            const titles = items.filter(s => !['history', 'actress', 'genre', 'trend_month_genre', 'maker', 'studio', 'releasedate', 'watch_history'].includes(s.type));
-
-            const renderListItem = (s) => {
-                const item = document.createElement('div');
-                item.className = 'suggestion-item';
-                
-                let icon = 'search';
-                if (s.type === 'history') icon = 'history';
-                else if (s.type === 'trend' || s.type === 'trend_day_title') icon = 'trending_up';
-                else if (s.type === 'title') icon = 'movie';
-                else if (s.type === 'actress') icon = 'person';
-                else if (s.type === 'genre' || s.type === 'trend_month_genre') icon = 'label';
-                else if (s.type === 'maker' || s.type === 'studio') icon = 'business';
-                
-                let typeText = s.type;
-                if (s.type === 'history') typeText = 'Lịch sử';
-                else if (s.type === 'trend' || s.type === 'trend_day_title') typeText = 'Xu hướng';
-                else if (s.type === 'title') typeText = 'Video';
-                else if (s.type === 'actress') typeText = 'Diễn viên';
-                else if (s.type === 'genre' || s.type === 'trend_month_genre') typeText = 'Thể loại';
-                else if (s.type === 'maker' || s.type === 'studio') typeText = 'Nhà SX';
-
-                let deleteBtnHtml = '';
-                if (s.type === 'history') {
-                    deleteBtnHtml = `<div class="delete-history-btn" title="Xóa" style="color: #aaa; cursor: pointer; padding: 0 5px; display: flex; align-items: center;"><span class="material-symbols-outlined" style="font-size: 20px;">close</span></div>`;
-                }
-
-                let displayText = s.text;
-                let formattedChips = [];
-                const regex = /(actress|genre|maker|title|dvd)\s*:\s*(?:"([^"]+)"|([^\s]+))/gi;
-                let lastIndex = 0;
-                let match;
-                while ((match = regex.exec(s.text)) !== null) {
-                    if (match.index > lastIndex) {
-                        formattedChips.push(`<span>${s.text.substring(lastIndex, match.index)}</span>`);
-                    }
-                    const typeClass = match[1].toLowerCase();
-                    const value = match[2] || match[3];
-                    let typeIcon = 'label';
-                    if (typeClass === 'actress') typeIcon = 'person';
-                    else if (typeClass === 'maker') typeIcon = 'business';
-                    else if (typeClass === 'title') typeIcon = 'movie';
-                    else if (typeClass === 'dvd') typeIcon = 'album';
+            const pattern = /(actress|genre|maker|title)\s*:\s*(?:"([^"]+)"|([^\s]+))/gi;
+            let match;
+            let remaining = query;
+            const chips = [];
+            
+            while ((match = pattern.exec(query)) !== null) {
+                chips.push({
+                    fullMatch: match[0],
+                    field: match[1].toLowerCase(),
+                    value: match[2] || match[3]
+                });
+                remaining = remaining.replace(match[0], '');
+            }
+            
+            remaining = remaining.trim();
+            if (remaining) {
+                chips.push({ fullMatch: remaining, field: 'text', value: remaining });
+            }
+            
+            if (chips.length > 0) {
+                chips.forEach(chip => {
+                    const el = document.createElement('div');
+                    el.className = 'active-search-chip';
+                    let icon = '🔍'; let typeText = 'Từ khóa';
+                    if (chip.field === 'actress') { icon = '👩'; typeText = 'Diễn viên'; }
+                    else if (chip.field === 'genre') { icon = '🏷️'; typeText = 'Thể loại'; }
+                    else if (chip.field === 'maker' || chip.field === 'studio') { icon = '🏢'; typeText = 'Studio'; }
+                    else if (chip.field === 'title') { icon = '🎬'; typeText = 'Phim'; }
                     
-                    formattedChips.push(`<span class="detail-chip chip-${typeClass}" style="display: inline-flex; align-items: center; padding: 2px 8px; font-size: 12px; margin: 0;"><span class="material-symbols-outlined" style="font-size: 14px; margin-right: 4px;">${typeIcon}</span>${value}</span>`);
-                    lastIndex = regex.lastIndex;
-                }
-                if (lastIndex < s.text.length) {
-                    formattedChips.push(`<span>${s.text.substring(lastIndex)}</span>`);
-                }
-                if (formattedChips.length > 0) {
-                    displayText = formattedChips.join('');
-                }
-                
-                item.innerHTML = `
-                    <div class="suggestion-icon"><span class="material-symbols-outlined" style="font-size: 20px;">${icon}</span></div>
-                    <div class="suggestion-text" style="display: flex; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap;">${displayText}</div>
-                    <div class="suggestion-type">${typeText}</div>
-                    ${deleteBtnHtml}
-                `;
-                
-                const delBtn = item.querySelector('.delete-history-btn');
-                if (delBtn) {
-                    delBtn.onclick = (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        delBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">hourglass_empty</span>';
-                        
-                        setTimeout(async () => {
-                            try {
-                                const res = await apiFetch('/api/search_history', {
-                                    method: 'DELETE',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ keyword: s.text })
-                                });
-                                if (res.success) {
-                                    delBtn.innerHTML = '<span class="material-symbols-outlined" style="color: #4caf50; font-size: 20px;">check</span>';
-                                    setTimeout(() => {
-                                        item.remove();
-                                        if (content.children.length === 0) container.style.display = 'none';
-                                    }, 300);
-                                } else {
-                                    throw new Error(res.error || 'Error');
-                                }
-                            } catch (err) {
-                                delBtn.innerHTML = '<span class="material-symbols-outlined" style="color: #e53935; font-size: 20px;">close</span>';
-                                setTimeout(() => {
-                                    delBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 20px;">close</span>';
-                                }, 1000);
-                            }
-                        }, 400);
+                    el.innerHTML = `<span class="chip-left-icon" title="${typeText}">${icon}</span><span class="chip-text">${chip.value}</span><span class="chip-delete" title="Xóa từ khóa này">&times;</span>`;
+                    el.querySelector('.chip-delete').onclick = () => {
+                        videoSearchInput.value = videoSearchInput.value.replace(chip.fullMatch, '').replace(/\s+/g, ' ').trim();
+                        renderDrawerSearchChips();
+                        clearSearchBtn.style.display = videoSearchInput.value ? 'block' : 'none';
+                        handleSuggestionFetch();
+                        videoSearchInput.focus();
                     };
+                    container.appendChild(el);
+                });
+                container.style.display = 'flex';
+                setTimeout(() => {
+                    container.scrollLeft = container.scrollWidth;
+                }, 50);
+            } else {
+                container.style.display = 'none';
+            }
+            
+            // Tự động căn chỉnh lại top-offset của menu gợi ý
+            const sugContainer = document.getElementById('search-suggestions');
+            if (sugContainer && sugContainer.style.display === 'block') {
+                sugContainer.style.top = document.getElementById('search-container').offsetHeight + 'px';
+            }
+        }
+
+        const renderListItem = (s) => {
+            const item = document.createElement('div');
+            item.className = 'suggestion-item';
+            
+            let icon = '🔍';
+            if (s.type === 'history') icon = '🕒';
+            else if (s.type === 'trend' || s.type === 'trend_day_title') icon = '📈';
+            else if (s.type === 'title') icon = '🎬';
+            else if (s.type === 'actress') icon = '👩';
+            else if (s.type === 'genre') icon = '🏷️';
+            else if (s.type === 'maker' || s.type === 'studio') icon = '🏢';
+            
+            let typeText = s.type;
+            if (s.type === 'history') typeText = 'Lịch sử';
+            else if (s.type === 'trend' || s.type === 'trend_day_title') typeText = 'Xu hướng';
+            else if (s.type === 'title') typeText = s.source ? s.source.charAt(0).toUpperCase() + s.source.slice(1) : 'Phim';
+            else if (s.type === 'actress') typeText = 'Diễn viên';
+            else if (s.type === 'genre') typeText = 'Thể loại';
+            else if (s.type === 'maker' || s.type === 'studio') typeText = 'Studio';
+
+            let rightActionsHtml = '';
+            if (s.type === 'history') {
+                rightActionsHtml += `<div class="add-suggestion-btn" title="Thêm (AND)" style="color: #1e88e5; cursor: pointer; padding: 0 10px; font-size: 18px; font-weight: bold;">+</div>`;
+                rightActionsHtml += `<div class="delete-history-btn" title="Xóa lịch sử" style="color: #aaa; cursor: pointer; padding: 0 5px; font-size: 16px;">&times;</div>`;
+            } else {
+                rightActionsHtml += `<div class="add-suggestion-btn" title="Thêm (AND)" style="color: #1e88e5; cursor: pointer; padding: 0 10px; font-size: 18px; font-weight: bold;">+</div>`;
+            }
+            
+            item.innerHTML = `
+                <div class="suggestion-icon" title="${typeText}">${icon}</div>
+                <div class="suggestion-text">${s.text}</div>
+                <div class="suggestion-type">${typeText}</div>
+                ${rightActionsHtml}
+            `;
+            
+            const delBtn = item.querySelector('.delete-history-btn');
+            if (delBtn) {
+                delBtn.onmousedown = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    delBtn.innerHTML = '<span style="font-size: 12px;">⏳</span>';
+                    
+                    setTimeout(async () => {
+                        try {
+                            const res = await apiFetch('/api/search_history', {
+                                method: 'DELETE',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ keyword: s.text })
+                            });
+                            if (res.success) {
+                                delBtn.innerHTML = '<span style="color: #4caf50; font-size: 12px;">✔️</span>';
+                                setTimeout(() => {
+                                    item.remove();
+                                    const container = document.getElementById('search-suggestions');
+                                    if (container.children.length === 0) container.style.display = 'none';
+                                }, 300);
+                            } else {
+                                throw new Error(res.error || 'Error');
+                            }
+                        } catch (err) {
+                            delBtn.innerHTML = '<span style="color: #e53935; font-size: 12px;">❌</span>';
+                            setTimeout(() => {
+                                delBtn.innerHTML = '&times;';
+                            }, 1000);
+                        }
+                    }, 400);
+                };
+            }
+
+            const addBtn = item.querySelector('.add-suggestion-btn');
+            if (addBtn) {
+                addBtn.onmousedown = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    let currentVal = videoSearchInput.value;
+                    if (s.type === 'maker' && s.text.toLowerCase() === 'madonna') {
+                        showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                        return;
+                    }
+                    let addText = s.text;
+                    if (['actress', 'genre', 'maker', 'title'].includes(s.type)) {
+                        addText = `${s.type}:"${s.text}"`;
+                    } else if (s.type === 'history') {
+                        addText = s.text; 
+                    } else if (s.type !== 'title' && s.type !== 'trend_day_title') {
+                        addText = `"${s.text}"`;
+                    }
+                    
+                    videoSearchInput.value = appendOrReplaceLastTerm(currentVal, addText);
+                    clearSearchBtn.style.display = 'block';
+                    videoSearchInput.focus();
+                    renderDrawerSearchChips();
+                    handleSuggestionFetch();
+                };
+            }
+            
+            item.onmousedown = (e) => {
+                if (e.target.closest('.delete-history-btn') || e.target.closest('.add-suggestion-btn')) return;
+                e.preventDefault();
+                
+                let finalVal = s.text;
+                if (['actress', 'genre', 'maker'].includes(s.type)) {
+                    if (s.type === 'maker' && s.text.toLowerCase() === 'madonna') {
+                        showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                        document.getElementById('search-suggestions').style.display = 'none';
+                        videoSearchInput.focus();
+                        return;
+                    }
+                    finalVal = `${s.type}:"${s.text}"`;
+                } else if (s.type === 'title' || s.type === 'trend_day_title') {
+                    if (s.id) {
+                        document.getElementById('search-suggestions').style.display = 'none';
+                        videoSearchInput.blur();
+                        const p = getBaseUrlParams();
+                        p.set('watch', s.id);
+                        history.pushState(null, '', `/?${p.toString()}`);
+                        handleNavigation();
+                        return;
+                    } else {
+                        finalVal = `${s.type}:"${s.text}"`;
+                    }
                 }
                 
-                item.onclick = (e) => {
-                    if (e.target.closest('.delete-history-btn')) return;
-                    e.preventDefault();
-                    
-                    if (s.type === 'history') {
-                        videoSearchInput.value = s.text;
-                        clearSearchBtn.style.display = 'block';
-                        container.style.display = 'none';
-                        updateSearchVisuals();
-                        performSearch();
-                    } else if (s.type === 'title' || s.type === 'trend_day_title') {
-                        if (s.id) {
-                            container.style.display = 'none';
-                            videoSearchInput.blur();
-                            updateSearchVisuals();
-                            const p = getBaseUrlParams();
-                            p.set('watch', s.id);
-                            history.pushState(null, '', `/?${p.toString()}`);
-                            handleNavigation();
-                        } else {
-                            videoSearchInput.value = s.text;
-                            clearSearchBtn.style.display = 'block';
-                            container.style.display = 'none';
-                            updateSearchVisuals();
-                            performSearch();
-                        }
-                    } else if (['actress', 'genre', 'maker', 'studio', 'releasedate'].includes(s.type)) {
-                        let typeClass = s.type === 'studio' ? 'maker' : s.type;
-                        videoSearchInput.value = `${typeClass}:"${s.text}"`;
-                        clearSearchBtn.style.display = 'block';
-                        container.style.display = 'none';
-                        updateSearchVisuals();
-                        performSearch();
-                    } else {
-                        videoSearchInput.value = s.text;
-                        clearSearchBtn.style.display = 'block';
-                        container.style.display = 'none';
-                        updateSearchVisuals();
-                        performSearch();
-                    }
-                };
+                if (s.type === 'history') {
+                    videoSearchInput.value = s.text;
+                } else {
+                    videoSearchInput.value = appendOrReplaceLastTerm(videoSearchInput.value, finalVal);
+                }
                 
-                return item;
+                clearSearchBtn.style.display = 'block';
+                document.getElementById('search-suggestions').style.display = 'none';
+                renderDrawerSearchChips();
+                performSearch();
             };
+            
+            return item;
+        };
+
+        function renderSuggestions(suggestions, query) {
+            const container = document.getElementById('search-suggestions');
+            container.innerHTML = '';
+            if (suggestions.length === 0) {
+                container.style.display = 'none';
+                return;
+            }
+            
+            const historyItems = suggestions.filter(s => s.type === 'history');
+            const actresses = suggestions.filter(s => s.type === 'actress');
+            const genres = suggestions.filter(s => ['genre', 'trend_month_genre'].includes(s.type));
+            const makers = suggestions.filter(s => ['maker', 'studio'].includes(s.type));
+            const dates = suggestions.filter(s => s.type === 'releasedate');
+            const titles = suggestions.filter(s => !['history', 'actress', 'genre', 'trend_month_genre', 'maker', 'studio', 'releasedate'].includes(s.type));
 
             const renderChipGroup = (title, items, typeClass, icon) => {
                 if (items.length === 0) return null;
                 
                 const group = document.createElement('div');
-                group.style.padding = '12px 16px';
-                group.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                group.style.padding = '10px 15px';
+                group.style.borderBottom = '1px solid #333';
                 
                 const titleEl = document.createElement('div');
                 titleEl.innerText = title;
@@ -913,20 +912,50 @@
                 group.appendChild(titleEl);
                 
                 const chipsDiv = document.createElement('div');
-                chipsDiv.style.display = 'flex';
-                chipsDiv.style.flexWrap = 'wrap';
-                chipsDiv.style.gap = '8px';
+                chipsDiv.className = 'suggestion-chips-container';
+                chipsDiv.style.cssText = `
+                    display: flex;
+                    overflow-x: auto;
+                    flex-wrap: nowrap;
+                    gap: 8px;
+                    padding: 4px 0;
+                `;
                 
                 items.forEach(s => {
                     const chip = document.createElement('span');
                     chip.className = `detail-chip chip-${typeClass}`;
-                    chip.innerHTML = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 4px;">${icon}</span>${s.text}`;
+                    chip.innerHTML = `<span class="chip-icon">${icon}</span> <span class="chip-text">${s.text}</span> <span class="chip-add-btn" title="Thêm (AND)" style="margin-left:5px; color:#1e88e5; font-weight:bold; padding:0 5px;">+</span>`;
                     
-                    chip.onclick = (e) => {
+                    const addBtn = chip.querySelector('.chip-add-btn');
+                    addBtn.onmousedown = (e) => {
                         e.preventDefault();
-                        videoSearchInput.value = `${typeClass}:"${s.text}"`;
+                        e.stopPropagation();
+                        if (typeClass === 'maker' && s.text.toLowerCase() === 'madonna') {
+                            showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                            return;
+                        }
+                        let currentVal = videoSearchInput.value;
+                        let addText = `${typeClass}:"${s.text}"`;
+                        videoSearchInput.value = appendOrReplaceLastTerm(currentVal, addText);
+                        clearSearchBtn.style.display = 'block';
+                        videoSearchInput.focus();
+                        renderDrawerSearchChips();
+                        handleSuggestionFetch();
+                    };
+
+                    chip.onmousedown = (e) => {
+                        if(e.target.closest('.chip-add-btn')) return;
+                        e.preventDefault();
+                        if (typeClass === 'maker' && s.text.toLowerCase() === 'madonna') {
+                            showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                            return;
+                        }
+                        let currentVal = videoSearchInput.value;
+                        let addText = `${typeClass}:"${s.text}"`;
+                        videoSearchInput.value = appendOrReplaceLastTerm(currentVal, addText);
                         clearSearchBtn.style.display = 'block';
                         container.style.display = 'none';
+                        renderDrawerSearchChips();
                         performSearch();
                     };
                     chipsDiv.appendChild(chip);
@@ -936,217 +965,123 @@
                 return group;
             };
 
-            const renderVideoGrid = (headerText, videoItems) => {
-                if (videoItems.length === 0) return null;
+            if (historyItems.length > 0) {
+                const grp = document.createElement('div');
+                grp.className = 'suggestion-group-history';
+                if (actresses.length > 0 || genres.length > 0 || makers.length > 0 || dates.length > 0 || titles.length > 0) {
+                    grp.style.borderBottom = '1px solid #333';
+                }
+                historyItems.forEach(s => grp.appendChild(renderListItem(s)));
+                container.appendChild(grp);
+            }
 
-                const titleGrp = document.createElement('div');
-                titleGrp.style.padding = '15px';
-                titleGrp.style.borderTop = '1px solid rgba(255,255,255,0.05)';
-                
-                const titleHeader = document.createElement('div');
-                titleHeader.innerText = headerText;
-                titleHeader.style.fontSize = '14px';
-                titleHeader.style.fontWeight = 'bold';
-                titleHeader.style.color = '#ff4081';
-                titleHeader.style.marginBottom = '15px';
-                titleGrp.appendChild(titleHeader);
+            const actressGroup = renderChipGroup('Diễn viên', actresses, 'actress', '👩');
+            if (actressGroup) container.appendChild(actressGroup);
 
-                const grid = document.createElement('div');
-                grid.style.display = 'grid';
-                grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(140px, 1fr))';
-                grid.style.gap = '15px';
-                
-                videoItems.forEach(s => {
-                    const item = document.createElement('div');
-                    item.className = 'gallery-item';
-                    
-                    item.innerHTML = `
-                        <div class="gallery-item-thumb" style="background-image: url('${s.cover || ''}')"></div>
-                        <div class="item-info">
-                            <div class="item-title" style="font-size: 13px;">${s.text}</div>
-                        </div>
-                    `;
-                    
-                    item.onclick = (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        videoSearchInput.value = s.text;
-                        clearSearchBtn.style.display = 'block';
-                        container.style.display = 'none';
-                        videoSearchInput.blur();
-                        const p = getBaseUrlParams();
-                        p.set('searchKey', s.text);
-                        p.set('video', s.id);
-                        history.pushState(null, '', `/?${p.toString()}`);
-                        handleNavigation();
-                    };
-                    grid.appendChild(item);
-                });
-                titleGrp.appendChild(grid);
-                return titleGrp;
+            const genreGroup = renderChipGroup('Thể loại', genres, 'genre', '🏷️');
+            if (genreGroup) container.appendChild(genreGroup);
+
+            const makerGroup = renderChipGroup('Nhà sản xuất', makers, 'maker', '🏢');
+            if (makerGroup) container.appendChild(makerGroup);
+
+            const dateGroup = renderChipGroup('Ngày phát hành', dates, 'releasedate', '📅');
+            if (dateGroup) container.appendChild(dateGroup);
+
+            if (titles.length > 0) {
+                const grp = document.createElement('div');
+                titles.forEach(s => grp.appendChild(renderListItem(s)));
+                container.appendChild(grp);
+            }
+
+            if (container.lastChild && container.lastChild.style) {
+                container.lastChild.style.borderBottom = 'none';
+            }
+            
+            container.onscroll = () => {
+                if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+                    fullSuggestionInfiniteScrollHistory();
+                }
             };
 
-            if (currentSugTab === 'all') {
-                if (historyItems.length > 0) {
-                    const grp = document.createElement('div');
-                    if (actresses.length > 0 || genres.length > 0 || makers.length > 0 || dates.length > 0 || titles.length > 0) {
-                        grp.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
-                    }
-                    historyItems.forEach(s => grp.appendChild(renderListItem(s)));
-                    content.appendChild(grp);
-                }
-
-                const actressGroup = renderChipGroup('Diễn viên', actresses, 'actress', 'person');
-                if (actressGroup) content.appendChild(actressGroup);
-
-                const genreGroup = renderChipGroup('Thể loại', genres, 'genre', 'label');
-                if (genreGroup) content.appendChild(genreGroup);
-
-                const makerGroup = renderChipGroup('Nhà sản xuất', makers, 'maker', 'business');
-                if (makerGroup) content.appendChild(makerGroup);
-
-                const dateGroup = renderChipGroup('Ngày phát hành', dates, 'releasedate', 'calendar_month');
-                if (dateGroup) content.appendChild(dateGroup);
-
-                const watchHistoryGrid = renderVideoGrid('Từ Lịch sử xem', watchHistory);
-                if (watchHistoryGrid) content.appendChild(watchHistoryGrid);
-
-                const titlesGrid = renderVideoGrid('Phim đề xuất', titles);
-                if (titlesGrid) content.appendChild(titlesGrid);
-
-                if (content.lastChild && content.lastChild.style) {
-                    content.lastChild.style.borderBottom = 'none';
-                }
-            } else if (currentSugTab === 'actress') {
-                if (items.length > 0) {
-                    items.forEach(s => content.appendChild(renderListItem(s)));
-                } else if (!append) {
-                    content.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">Không có dữ liệu diễn viên</div>';
-                }
-            } else if (currentSugTab === 'genre') {
-                if (items.length > 0) {
-                    items.forEach(s => content.appendChild(renderListItem(s)));
-                } else if (!append) {
-                    content.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">Không có dữ liệu thể loại</div>';
-                }
-            } else if (currentSugTab === 'maker') {
-                if (items.length > 0) {
-                    items.forEach(s => content.appendChild(renderListItem(s)));
-                } else if (!append) {
-                    content.innerHTML = '<div style="padding: 20px; text-align: center; color: #888;">Không có dữ liệu nhà sản xuất</div>';
-                }
-            }
+            container.style.top = document.getElementById('search-container').offsetHeight + 'px';
+            container.style.display = 'block';
         }
 
         let suggestionTimeout = null;
-        let currentSugFetchId = 0;
-
-        function handleSuggestionFetch(force = false) {
+        async function fullSuggestionInfiniteScrollHistory() {
             const q = videoSearchInput.value.trim();
-            if (!force && q === currentSugQuery && currentSugPage === 1 && currentSuggestions.length > 0) return;
-            
-            clearTimeout(suggestionTimeout);
-            suggestionTimeout = setTimeout(async () => {
-                if (currentSugPage === 1) {
-                    sugHasMore = true;
-                }
-                if (isSugLoading || !sugHasMore) return;
-                isSugLoading = true;
-                
-                const fetchId = ++currentSugFetchId;
-                
-                try {
-                    const res = await apiFetch(`/api/search_suggestions?q=${encodeURIComponent(q)}&tab=${currentSugTab}&page=${currentSugPage}`);
-                    if (fetchId !== currentSugFetchId) return;
-                    
-                    if (res.success && res.suggestions) {
-                        if (res.suggestions.length === 0) {
-                            sugHasMore = false;
-                        } else {
-                            const uniqueSuggestions = [];
-                            const seen = new Set(currentSuggestions.map(s => s.text.toLowerCase()));
-                            for (const s of res.suggestions) {
-                                if (!seen.has(s.text.toLowerCase())) {
+            if (isLoadingHistorySuggestions || !hasMoreHistorySuggestions || q) {
+                return;
+            }
+            isLoadingHistorySuggestions = true;
+            historySuggestionPage++;
+
+            try {
+                const res = await apiFetch(`/api/search_suggestions?q=&history_page=${historySuggestionPage}&source=${currentSource || 'all'}`);
+                if (res.success && res.suggestions) {
+                    if (res.suggestions.length > 0) {
+                        const container = document.getElementById('search-suggestions');
+                        const historyGroup = container.querySelector('.suggestion-group-history');
+                        if (historyGroup) {
+                            const seen = new Set(Array.from(historyGroup.querySelectorAll('.suggestion-text')).map(el => el.textContent.toLowerCase()));
+                            res.suggestions.forEach(s => {
+                                if (s.type === 'history' && !seen.has(s.text.toLowerCase())) {
+                                    historyGroup.appendChild(renderListItem(s));
                                     seen.add(s.text.toLowerCase());
-                                    uniqueSuggestions.push(s);
                                 }
-                            }
-                            renderSuggestions(uniqueSuggestions, q, currentSugPage > 1);
-                            currentSugPage++;
+                            });
                         }
                     } else {
-                        sugHasMore = false;
+                        hasMoreHistorySuggestions = false;
                     }
+                }
+            } catch (e) {
+                console.error('Error fetching more history:', e);
+            } finally {
+                isLoadingHistorySuggestions = false;
+            }
+        }
+
+        function handleSuggestionFetch() {
+            const q = videoSearchInput.value.trim();
+            clearTimeout(suggestionTimeout);
+            historySuggestionPage = 1;
+            isLoadingHistorySuggestions = false;
+            hasMoreHistorySuggestions = true;
+            const suggestionsContainer = document.getElementById('search-suggestions');
+            suggestionsContainer.innerHTML = '';
+            suggestionsContainer.onscroll = null;
+
+            suggestionTimeout = setTimeout(async () => {
+                let suggestions = [];
+                try {
+                    const res = await apiFetch(`/api/search_suggestions?q=${encodeURIComponent(q)}&history_page=1&source=${currentSource || 'all'}`);
+                    if (res.success && res.suggestions) suggestions = res.suggestions;
+                    
+                    const seen = new Set();
+                    const uniqueSuggestions = [];
+                    for (const s of suggestions) {
+                        if (!seen.has(s.text.toLowerCase())) {
+                            seen.add(s.text.toLowerCase());
+                            uniqueSuggestions.push(s);
+                        }
+                    }
+                    renderSuggestions(uniqueSuggestions, q);
                 } catch (e) {
                     console.error(e);
-                } finally {
-                    if (fetchId === currentSugFetchId) {
-                        isSugLoading = false;
-                    }
                 }
             }, 150);
         }
 
         videoSearchInput.addEventListener('focus', function() {
-            this.select();
-            currentSugPage = 1;
-            sugHasMore = true;
-            const content = document.getElementById('suggestion-content');
-            if (content) content.scrollTop = 0;
             handleSuggestionFetch();
-            updateSearchVisuals();
+            updateBottomNavState();
         });
 
-        let isInteractingWithSuggestions = false;
-        const searchSuggestionsContainer = document.getElementById('search-suggestions');
-
-        const setInteracting = () => { isInteractingWithSuggestions = true; };
-        const clearInteracting = () => { setTimeout(() => { isInteractingWithSuggestions = false; }, 300); };
-
-        searchSuggestionsContainer.addEventListener('touchstart', setInteracting, { passive: true });
-        searchSuggestionsContainer.addEventListener('mousedown', setInteracting, { passive: true });
-        searchSuggestionsContainer.addEventListener('touchend', clearInteracting, { passive: true });
-        searchSuggestionsContainer.addEventListener('mouseup', clearInteracting, { passive: true });
-
-        searchSuggestionsContainer.addEventListener('touchmove', () => {
-            if (document.activeElement === videoSearchInput) {
-                videoSearchInput.blur();
-            }
-        }, { passive: true });
-
-        let sugStartX = 0;
-        let sugStartY = 0;
-        const sugTabsOrder = ['all', 'actress', 'genre', 'maker'];
-        
-        searchSuggestionsContainer.addEventListener('touchstart', e => {
-            sugStartX = e.changedTouches[0].clientX;
-            sugStartY = e.changedTouches[0].clientY;
-        }, {passive: true});
-
-        searchSuggestionsContainer.addEventListener('touchend', e => {
-            if (e.target.closest('#suggestion-tabs') || Math.abs(e.changedTouches[0].clientX - sugStartX) < 10) return; 
-            const dx = e.changedTouches[0].clientX - sugStartX;
-            const dy = e.changedTouches[0].clientY - sugStartY;
-            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-                const currentIndex = sugTabsOrder.indexOf(currentSugTab || 'all');
-                const tabMappingSug = { 'all': 'sugTabAll', 'actress': 'sugTabActress', 'genre': 'sugTabGenre', 'maker': 'sugTabMaker' };
-                if (dx > 0 && currentIndex > 0) {
-                    switchSugTab(sugTabsOrder[currentIndex - 1]);
-                    document.getElementById(tabMappingSug[sugTabsOrder[currentIndex - 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
-                } else if (dx < 0 && currentIndex < sugTabsOrder.length - 1) {
-                    switchSugTab(sugTabsOrder[currentIndex + 1]);
-                    document.getElementById(tabMappingSug[sugTabsOrder[currentIndex + 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
-                }
-            }
-        }, {passive: true});
-
         videoSearchInput.addEventListener('blur', () => {
-            updateSearchVisuals();
             setTimeout(() => {
-                if (!isInteractingWithSuggestions) {
-                    const sug = document.getElementById('search-suggestions');
-                    if(sug) sug.style.display = 'none';
-                }
+                const sug = document.getElementById('search-suggestions');
+                if(sug) sug.style.display = 'none';
             }, 200);
         });
 
@@ -1156,15 +1091,6 @@
                 performSearch();
             }
         });
-
-        const hideSuggestionsOutside = (e) => {
-            if (!e.target.closest('#search-container')) {
-                const sug = document.getElementById('search-suggestions');
-                if (sug) sug.style.display = 'none';
-            }
-        };
-        document.addEventListener('touchstart', hideSuggestionsOutside, { passive: true });
-        document.addEventListener('mousedown', hideSuggestionsOutside, { passive: true });
 
         function showToast(msg, type = 'info') {
             const container = document.getElementById('toastContainer');
@@ -1262,26 +1188,15 @@
         }
 
         const profilePage = document.getElementById('profile-page');
-        document.getElementById('nav-profile').addEventListener('click', () => {
-            const p = getBaseUrlParams();
-            if (!['favorites', 'recent', 'frequent'].includes(currentTab)) {
-                p.delete('tab');
-            }
-            history.pushState(null, '', `/?${p.toString()}#profile`);
-            handleNavigation();
+        document.getElementById('btn-profile').addEventListener('click', () => {
+            window.location.hash = 'profile';
         });
         function closeProfilePage() {
             const now = Date.now();
             if (now - lastNavTime < 500) return;
             lastNavTime = now;
-            if (window.location.hash === '#profile' || ['favorites', 'recent', 'frequent', 'you'].includes(currentTab)) {
-                const p = getBaseUrlParams();
-                p.delete('tab');
-                history.pushState(null, '', `/?${p.toString()}`);
-                handleNavigation();
-            } else {
-                profilePage.classList.remove('active');
-            }
+            if (window.location.hash === '#profile') history.back();
+            else profilePage.classList.remove('active');
         }
         document.getElementById('close-profile-page').addEventListener('click', closeProfilePage);
 
@@ -1299,16 +1214,14 @@
         document.getElementById('close-details-page').addEventListener('click', closeDetailsPage);
 
         function updateFavoriteIcon(isFavorited) {
-            const favIcon = document.getElementById('fav-icon');
-            if (favIcon) {
+            const btnFav = document.getElementById('btn-favorite');
+            if (btnFav) {
                 if (isFavorited) {
-                    favIcon.innerText = 'favorite';
-                    favIcon.style.color = '#ff4081';
-                    favIcon.style.fontVariationSettings = "'FILL' 1";
+                    btnFav.innerText = '❤️';
+                    btnFav.style.color = '#ff4081';
                 } else {
-                    favIcon.innerText = 'favorite_border';
-                    favIcon.style.color = '#fff';
-                    favIcon.style.fontVariationSettings = "'FILL' 0";
+                    btnFav.innerText = '🤍';
+                    btnFav.style.color = '#fff';
                 }
             }
         }
@@ -1324,8 +1237,9 @@
 
         function getBaseUrlParams() {
             const params = new URLSearchParams();
-            if (currentTab && currentTab !== 'all' && currentTab !== 'you') params.set('tab', currentTab);
+            if (currentTab && currentTab !== 'all') params.set('tab', currentTab);
             if (searchKey) params.set('searchKey', searchKey);
+            if (currentSource && currentSource !== 'all') params.set('source', currentSource);
             return params;
         }
 
@@ -1333,30 +1247,23 @@
             Object.keys(tabMapping).forEach(key => {
                 const btn = document.getElementById(tabMapping[key]);
                 if (!btn) return;
+                const badge = document.getElementById(`badge-${key}`);
                 if (key === tabKey) {
-                    btn.classList.add('active');
+                    btn.style.color = '#ff4081';
+                    btn.style.borderBottomColor = '#ff4081';
+                    if (badge) {
+                        badge.style.background = 'rgba(255, 64, 129, 0.2)';
+                        badge.style.color = '#ff4081';
+                    }
                 } else {
-                    btn.classList.remove('active');
+                    btn.style.color = '#aaa';
+                    btn.style.borderBottomColor = 'transparent';
+                    if (badge) {
+                        badge.style.background = '#333';
+                        badge.style.color = '#ccc';
+                    }
                 }
             });
-            
-            if (['favorites', 'recent', 'frequent', 'you'].includes(tabKey)) {
-                if (tabKey === 'you') {
-                    document.getElementById('profile-content-you').style.display = 'block';
-                    document.getElementById('profile-gallery-grid').style.display = 'none';
-                    document.getElementById('profile-load-more').style.display = 'none';
-                } else {
-                    document.getElementById('profile-content-you').style.display = 'none';
-                    document.getElementById('profile-gallery-grid').style.display = 'grid';
-                }
-            }
-        }
-
-        function updateBottomNav(activeId) {
-            document.querySelectorAll('.bottom-nav-item').forEach(el => el.classList.remove('active'));
-            if (activeId) {
-                document.getElementById(activeId)?.classList.add('active');
-            }
         }
 
         function handleNavigation() {
@@ -1365,22 +1272,15 @@
             const videoId = urlParams.get('video');
             const focusId = urlParams.get('id');
             const hash = window.location.hash;
+            const showSearch = urlParams.get('showSearch');
 
             const urlTab = urlParams.get('tab') || 'all';
             const urlSearchKey = urlParams.get('searchKey') || '';
-            
-            let targetTab = urlTab;
-            if (hash === '#profile') {
-                if (!['favorites', 'recent', 'frequent'].includes(urlTab)) {
-                    targetTab = 'you';
-                }
-            } else if (targetTab === 'you') {
-                targetTab = 'all';
-            }
+            const urlSource = urlParams.get('source') || 'all';
             
             let needReset = false;
-            if (targetTab !== currentTab) {
-                currentTab = targetTab;
+            if (urlTab !== currentTab) {
+                currentTab = urlTab;
                 updateTabUI(currentTab);
                 needReset = true;
             }
@@ -1391,65 +1291,80 @@
                 localStorage.setItem('missav_search_key', searchKey);
                 needReset = true;
             }
-
-            updateSearchVisuals();
+            if (urlSource !== currentSource) {
+                currentSource = urlSource;
+                const allCb = document.getElementById('source-all-cb');
+                const cbs = document.querySelectorAll('.source-cb');
+                const label = document.getElementById('source-select-label');
+                if (allCb && cbs.length > 0) {
+                    if (!currentSource || currentSource === 'all') {
+                        allCb.checked = true;
+                        cbs.forEach(cb => cb.checked = false);
+                        label.textContent = 'Tất cả Server';
+                    } else {
+                        allCb.checked = false;
+                        const selectedArr = currentSource.split(',').map(s => s.trim());
+                        let count = 0;
+                        cbs.forEach(cb => {
+                            if (selectedArr.includes(cb.value)) { cb.checked = true; count++; }
+                            else { cb.checked = false; }
+                        });
+                        label.textContent = count === cbs.length ? 'Tất cả Server' : `${count} Server`;
+                        if (count === cbs.length) { allCb.checked = true; cbs.forEach(cb => cb.checked = false); label.textContent = 'Tất cả Server'; }
+                    }
+                }
+                needReset = true;
+            }
+            renderActiveSearchChips(searchKey);
 
             if (needReset) {
                 videos = [];
                 currentPage = 1;
                 hasMore = true;
-                isLoading = false;
-                currentFetchId++;
                 currentVideoIndex = -1;
                 currentDetailIndex = -1;
                 galleryGrid.innerHTML = '';
                 document.getElementById('video-search').placeholder = 'Tìm kiếm videos...';
                 fetchTabCounts();
                 fetchVideos().then(() => {
-                    executeNavigationState(watchId, videoId, focusId, hash);
+                    executeNavigationState(watchId, videoId, focusId, hash, showSearch);
                 });
             } else {
-                executeNavigationState(watchId, videoId, focusId, hash);
+                executeNavigationState(watchId, videoId, focusId, hash, showSearch);
             }
         }
 
-        function executeNavigationState(watchId, videoId, focusId, hash) {
-            if (videoId) {
-                profilePage.classList.remove('active');
-                galleryPage.classList.remove('active');
-                detailsPage.classList.add('active');
-                updateBottomNav('');
-                showVideoDetailById(videoId);
-            } else if (watchId) {
-                profilePage.classList.remove('active');
-                galleryPage.classList.remove('active');
-                detailsPage.classList.remove('active');
-                updateBottomNav('');
-                playVideoById(watchId);
-            } else if (hash === '#profile' || ['favorites', 'recent', 'frequent', 'you'].includes(currentTab)) {
+        function executeNavigationState(watchId, videoId, focusId, hash, showSearch) {
+            document.body.classList.remove('hide-ui'); // Đảm bảo thanh điều hướng không bị ẩn khi mở các Drawer
+            
+            if (hash === '#profile') {
                 profilePage.classList.add('active');
                 galleryPage.classList.remove('active');
                 detailsPage.classList.remove('active');
-                updateBottomNav('nav-profile');
-                
-                let targetGrid = document.getElementById('profile-gallery-grid');
-                let targetItem = null;
-                if (focusId) {
-                    targetItem = targetGrid.querySelector(`.gallery-item[data-id="${focusId}"]`);
-                }
-                if (!targetItem) {
-                    targetItem = targetGrid.querySelector('.gallery-item.active');
-                }
-                targetGrid.querySelectorAll('.gallery-item.focused').forEach(el => el.classList.remove('focused'));
-                if (targetItem) {
-                    if (focusId) targetItem.classList.add('focused');
-                    setTimeout(() => targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
-                }
+                return;
             } else {
                 profilePage.classList.remove('active');
+            }
+
+            if (videoId) {
+                galleryPage.classList.remove('active');
+                detailsPage.classList.add('active');
+                showVideoDetailById(videoId);
+            } else if (watchId) {
+                galleryPage.classList.remove('active');
+                detailsPage.classList.remove('active');
+                playVideoById(watchId);
+            } else {
                 galleryPage.classList.add('active');
                 detailsPage.classList.remove('active');
-                updateBottomNav(searchKey ? 'nav-search' : 'nav-list');
+                
+                if (showSearch) {
+                    if (typeof openSearchInput === 'function') openSearchInput();
+                    const p = new URLSearchParams(window.location.search);
+                    p.delete('showSearch');
+                    history.replaceState(null, '', `/?${p.toString()}`);
+                    return;
+                }
                 
                 let targetItem = null;
                 if (focusId) {
@@ -1477,7 +1392,7 @@
                 showVideoDetail(idx);
             } else {
                 try {
-                    const res = await apiFetch(`/api/video_details?id=${id}`);
+                    const res = await apiFetch(`/api/video_details?id=${encodeURIComponent(id)}`);
                     if (res.success && res.data) {
                         showVideoDetail(-1, res.data);
                     }
@@ -1496,7 +1411,7 @@
                 renderCurrentVideo();
             } else {
                 try {
-                    const res = await apiFetch(`/api/video_details?id=${id}`);
+                    const res = await apiFetch(`/api/video_details?id=${encodeURIComponent(id)}`);
                     if (res.success && res.data) {
                         videos.push(res.data);
                         currentVideoIndex = videos.length - 1;
@@ -1557,18 +1472,22 @@
                                 hide(el.emailCallToAction);
                                 hide(el.verifyEmailGroup);
                                 el.btnUpdatePassword.disabled = false;
+                                el.btnUpdatePassword.style.background = '#43a047';
                                 el.profileEmail.disabled = true;
-                                el.profileEmail.style.color = 'rgba(255,255,255,0.5)';
+                                el.profileEmail.style.color = '#888';
                                 el.btnSaveEmail.innerText = 'Sửa';
+                                el.btnSaveEmail.style.background = '#333';
                             } else {
                                 hide(el.emailVerifiedBadge);
                                 show(el.emailUnverifiedBadge, 'inline-block');
                                 show(el.emailCallToAction);
                                 show(el.verifyEmailGroup, 'flex');
                                 el.btnUpdatePassword.disabled = true;
+                                el.btnUpdatePassword.style.background = '#333';
                                 el.profileEmail.disabled = false;
                                 el.profileEmail.style.color = 'white';
                                 el.btnSaveEmail.innerText = 'Lưu';
+                                el.btnSaveEmail.style.background = '#1e88e5';
                             }
                         } else {
                             hide(el.emailVerifiedBadge);
@@ -1576,9 +1495,11 @@
                             show(el.emailCallToAction);
                             hide(el.verifyEmailGroup);
                             el.btnUpdatePassword.disabled = true;
+                            el.btnUpdatePassword.style.background = '#333';
                             el.profileEmail.disabled = false;
                             el.profileEmail.style.color = 'white';
                             el.btnSaveEmail.innerText = 'Lưu';
+                            el.btnSaveEmail.style.background = '#1e88e5';
                         }
                     }
                 } catch(e) {}
@@ -1880,6 +1801,7 @@
                 el.profileEmail.disabled = false;
                 el.profileEmail.style.color = 'white';
                 el.btnSaveEmail.innerText = 'Lưu';
+                el.btnSaveEmail.style.background = '#1e88e5';
                 el.profileEmail.focus();
                 return;
             }
@@ -1930,26 +1852,19 @@
             videos = [];
             currentPage = 1;
             hasMore = true;
-            isLoading = false;
-            currentFetchId++;
             currentVideoIndex = -1;
             currentDetailIndex = -1;
             galleryGrid.innerHTML = '';
-            document.getElementById('profile-gallery-grid').innerHTML = '';
-            galleryGrid.scrollTop = 0;
-            document.getElementById('profile-gallery-grid').scrollTop = 0;
             document.getElementById('video-search').placeholder = 'Tìm kiếm videos...';
             fetchTabCounts();
-            if (currentTab !== 'you') {
-                fetchVideos();
-            }
+            fetchVideos();
         }
 
         clearSearchBtn.addEventListener('click', () => {
             videoSearchInput.value = '';
             clearSearchBtn.style.display = 'none';
             videoSearchInput.focus();
-            updateSearchVisuals();
+            renderDrawerSearchChips();
             if (searchKey !== '') {
                 const p = getBaseUrlParams();
                 p.delete('searchKey');
@@ -1958,48 +1873,30 @@
                 p.delete('id');
                 history.pushState(null, '', `/?${p.toString()}`);
                 handleNavigation();
-            } else {
-                const sug = document.getElementById('search-suggestions');
-                if(sug) sug.style.display = 'none';
             }
         });
 
         videoSearchInput.addEventListener('input', (e) => {
             clearSearchBtn.style.display = e.target.value ? 'block' : 'none';
-            currentSugPage = 1;
-            sugHasMore = true;
-            const content = document.getElementById('suggestion-content');
-            if (content) content.scrollTop = 0;
+            renderDrawerSearchChips();
             handleSuggestionFetch();
-            updateSearchVisuals();
         });
 
         const tabMapping = {
             'all': 'tabAll',
-            'global_frequent': 'tabGlobalFrequent',
-            'favorites': 'tabProfileFav',
-            'recent': 'tabProfileRecent',
-            'frequent': 'tabProfileFrequent',
-            'you': 'tabProfileYou'
+            'favorites': 'tabFav',
+            'recent': 'tabRecent',
+            'frequent': 'tabFrequent',
+            'global_frequent': 'tabGlobalFrequent'
         };
 
         function switchGalleryTab(tabKey) {
             const p = getBaseUrlParams();
-            if (tabKey === 'you') {
-                p.delete('tab');
-                history.pushState(null, '', `/?${p.toString()}#profile`);
-                handleNavigation();
-                return;
-            }
             p.set('tab', tabKey);
             p.delete('watch');
             p.delete('video');
             p.delete('id');
-            let hash = '';
-            if (['favorites', 'recent', 'frequent'].includes(tabKey)) {
-                hash = '#profile';
-            }
-            history.pushState(null, '', `/?${p.toString()}${hash}`);
+            history.pushState(null, '', `/?${p.toString()}`);
             handleNavigation();
         }
         Object.keys(tabMapping).forEach(key => {
@@ -2037,7 +1934,7 @@
 
         async function fetchTabCounts() {
             try {
-                const res = await apiFetch(`/api/counts?search_key=${encodeURIComponent(searchKey || '')}`);
+                const res = await apiFetch(`/api/counts?search_key=${encodeURIComponent(searchKey || '')}&source=${currentSource || 'all'}`);
                 if (res) {
                     const keys = ['all', 'favorites', 'recent', 'frequent', 'global_frequent'];
                     keys.forEach(key => {
@@ -2053,23 +1950,14 @@
         }
 
         async function fetchVideos() {
-            if (isLoading || !hasMore || currentTab === 'you') return;
+            if (isLoading || !hasMore) return;
             isLoading = true;
-            
-            const isProfileTab = ['favorites', 'recent', 'frequent'].includes(currentTab);
-            const loadMoreEl = document.getElementById(isProfileTab ? 'profile-load-more' : 'load-more');
-            const targetGrid = document.getElementById(isProfileTab ? 'profile-gallery-grid' : 'gallery-grid');
-            
-            loadMoreEl.style.display = 'block';
-
-            const fetchId = currentFetchId;
+            document.getElementById('load-more').style.display = 'block';
 
             try {
-                let url = `${API_URL}?page=${currentPage}&search_key=${encodeURIComponent(searchKey || '')}&tab=${currentTab || 'all'}`;
+                let url = `${API_URL}?page=${currentPage}&search_key=${encodeURIComponent(searchKey || '')}&tab=${currentTab || 'all'}&source=${currentSource || 'all'}`;
                 const data = await apiFetch(url);
                 
-                if (fetchId !== currentFetchId) return;
-
                 if (data.total !== undefined) {
                     document.getElementById('video-search').placeholder = `Tìm kiếm trong ${data.total} videos...`;
                 }
@@ -2090,41 +1978,21 @@
                         
                         let dateStr = '';
                         if (video.added_at) {
-                            dateStr = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 2px;">schedule</span>${formatTimeAgo(video.added_at)}`;
+                            dateStr = `🕒 ${formatTimeAgo(video.added_at)}`;
                         } else if (video.release_date) {
-                            dateStr = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 2px;">calendar_today</span>${formatTimeAgo(video.release_date)}`;
+                            dateStr = `📅 ${formatTimeAgo(video.release_date)}`;
                         }
                         
-                        const isFavTab = currentTab === 'favorites';
-                        const favClass = isFavTab ? 'favorited' : '';
-                        const favIcon = isFavTab ? 'favorite' : 'favorite_border';
+                        let viewsStr = video.views ? `👁️ ${video.views}` : '';
+                        let sourceBadge = video.source ? `<span style="background: #333; color: #ccc; padding: 2px 6px; border-radius: 4px; font-size: 10px; text-transform: capitalize;">${video.source}</span>` : '';
 
                         item.innerHTML = `
-                            <div class="gallery-item-thumb" style="background-image: url('${video.cover}')">
-                                <div class="item-fav-btn ${favClass}" data-id="${video.id}" title="Yêu thích">
-                                    <span class="material-symbols-outlined">${favIcon}</span>
-                                </div>
-                                <div class="item-view-count" title="Lượt xem">
-                                    <span class="material-symbols-outlined">visibility</span>
-                                    <span>${video.views || 0}</span>
-                                </div>
-                            </div>
+                            <div class="gallery-item-thumb" style="background-image: url('${video.cover}')"></div>
                             <div class="item-info">
                                 <div class="item-title">${video.title}</div>
-                                <div class="item-meta"><span>${dateStr}</span></div>
+                                <div class="item-meta"><span>${dateStr}</span><div style="display:flex; gap: 5px; align-items:center;">${sourceBadge}${viewsStr}</div></div>
                             </div>
                         `;
-
-                        const favBtn = item.querySelector('.item-fav-btn');
-                        favBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            const isFav = favBtn.classList.contains('favorited');
-                            
-                            // Toggle icon local trước để UI mượt mà, sau đó gọi API xử lý
-                            favBtn.classList.toggle('favorited', !isFav);
-                            favBtn.querySelector('.material-symbols-outlined').innerText = !isFav ? 'favorite' : 'favorite_border';
-                            toggleFavorite(video.id, e.clientX, e.clientY, isFav ? 'remove' : 'add');
-                        };
 
                         item.querySelector('.gallery-item-thumb').onclick = (e) => {
                             e.stopPropagation();
@@ -2140,7 +2008,7 @@
                             history.pushState(null, '', `/?${p.toString()}`);
                             handleNavigation();
                         };
-                        targetGrid.appendChild(item);
+                        galleryGrid.appendChild(item);
                     });
                     currentPage++;
                 } else {
@@ -2148,29 +2016,20 @@
                     if (videos.length === 0) {
                         titleEl.innerText = 'Không tìm thấy kết quả';
                         mediaCounter.innerText = '0/0';
-                        if (isProfileTab) {
-                            targetGrid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: #888; padding: 20px;">Không có video nào</div>';
-                        }
                     }
                 }
             } catch (error) {
                 console.error('Fetch error:', error);
             } finally {
-                if (fetchId === currentFetchId) {
-                    isLoading = false;
-                    loadMoreEl.style.display = 'none';
-                }
+                isLoading = false;
+                document.getElementById('load-more').style.display = 'none';
             }
         }
 
         function formatTime(seconds) {
             if (isNaN(seconds)) return "00:00";
-            const h = Math.floor(seconds / 3600);
-            const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
             const s = Math.floor(seconds % 60).toString().padStart(2, '0');
-            if (h > 0) {
-                return `${h}:${m}:${s}`;
-            }
             return `${m}:${s}`;
         }
 
@@ -2204,22 +2063,19 @@
             }
 
             try {
-                const data = await apiFetch(`/api/video_url?id=${encodeURIComponent(video.id)}`);
+                let urlReq = `/api/video_url?id=${encodeURIComponent(video.id)}`;
+                if (video.source) urlReq += `&source=${encodeURIComponent(video.source)}`;
+                const data = await apiFetch(urlReq);
                 
                 if (renderId !== currentRenderId) return;
 
                 if (data.success && data.url) {
-                    // 1. Tách bỏ phần #jwkey (nếu có) trước khi đưa vào proxy
                     let cleanUrl = data.url.split('#')[0];
-                    
-                    // 2. Tạo URL proxy an toàn
                     let url = `/api/proxy?url=${encodeURIComponent(cleanUrl)}`;
-                    
-                    // 3. Phân loại luồng Video, bổ sung hỗ trợ đặc biệt cho đuôi .vl của VLXX
+                    let proxySource = data.source || video.source;
+                    if (proxySource) url += `&source=${encodeURIComponent(proxySource)}`;
                     let videoType = 'video/mp4';
-                    if (cleanUrl.includes('.m3u8') || cleanUrl.includes('.vl')) {
-                        videoType = 'application/x-mpegURL';
-                    }
+                    if (cleanUrl.includes('.m3u8') || cleanUrl.includes('.vl')) videoType = 'application/x-mpegURL';
                     
                     const videoEl = document.createElement('video');
                     videoEl.id = 'vjs-current-video';
@@ -2243,8 +2099,8 @@
                         }
                     });
 
-                    activePlayer.on('play', () => { document.getElementById('play-pause-icon').innerText = 'pause'; });
-                    activePlayer.on('pause', () => { document.getElementById('play-pause-icon').innerText = 'play_arrow'; });
+                    activePlayer.on('play', () => { btnPlayPause.innerText = '❚❚'; });
+                    activePlayer.on('pause', () => { btnPlayPause.innerText = '▶'; });
 
                     activePlayer.on('timeupdate', () => {
                         if (isDraggingSeek || isSeekingUI) return;
@@ -2256,7 +2112,7 @@
                     });
                     
                     activePlayer.on('loadedmetadata', () => {
-                        timeDisplay.innerText = `${formatTime(0)} / ${formatTime(activePlayer.duration())}`;
+                        timeDisplay.innerText = `00:00 / ${formatTime(activePlayer.duration())}`;
                         loadingIndicator.style.display = 'none';
                     });
 
@@ -2269,15 +2125,17 @@
                             showToast(`Đang thử lại link mới lần ${errorRetryCount}/3...`, "warning");
                             loadingIndicator.style.display = 'block';
                             try {
-                                const newData = await apiFetch(`/api/video_url?id=${encodeURIComponent(video.id)}&refresh=true`);
+                                let newUrlReq = `/api/video_url?id=${encodeURIComponent(video.id)}&refresh=true`;
+                                if (video.source) newUrlReq += `&source=${encodeURIComponent(video.source)}`;
+                                const newData = await apiFetch(newUrlReq);
                                 if (renderId !== currentRenderId) return;
                                 if (newData.success && newData.url) {
                                     let cleanNewUrl = newData.url.split('#')[0];
                                     let newUrl = `/api/proxy?url=${encodeURIComponent(cleanNewUrl)}`;
+                                    let newProxySource = newData.source || video.source;
+                                    if (newProxySource) newUrl += `&source=${encodeURIComponent(newProxySource)}`;
                                     let newVideoType = 'video/mp4';
-                                    if (cleanNewUrl.includes('.m3u8') || cleanNewUrl.includes('.vl')) {
-                                        newVideoType = 'application/x-mpegURL';
-                                    }
+                                    if (cleanNewUrl.includes('.m3u8') || cleanNewUrl.includes('.vl')) newVideoType = 'application/x-mpegURL';
                                     
                                     activePlayer.error(null); // Xóa lỗi cũ
                                     activePlayer.src({ src: newUrl, type: newVideoType });
@@ -2467,6 +2325,7 @@
             const now = Date.now();
             if (now - lastNavTime < 500) return;
             lastNavTime = now;
+            if (typeof closeSearchInput === 'function') closeSearchInput();
             
             const urlParams = new URLSearchParams(window.location.search);
             if (!urlParams.has('watch') && !urlParams.has('video')) {
@@ -2481,55 +2340,19 @@
             }
         }
 
-        document.getElementById('nav-list').addEventListener('click', () => {
-            history.pushState(null, '', '/');
-            currentTab = null;
-            searchKey = null;
-            handleNavigation();
-            galleryGrid.scrollTop = 0;
-        });
-        document.getElementById('nav-search').addEventListener('click', () => {
-            openGalleryPage();
-            setTimeout(() => { document.getElementById('video-search').focus(); }, 300);
-        });
+        document.getElementById('btn-list').addEventListener('click', openGalleryPage);
         mediaCounter.addEventListener('click', openGalleryPage);
         document.getElementById('close-gallery-page').addEventListener('click', closeGalleryPage);
-
-        let bnavStartX = 0;
-        let bnavStartY = 0;
-        const bnavOrder = ['nav-list', 'nav-search', 'nav-profile'];
-        const bottomNavEl = document.getElementById('bottom-navigation');
-
-        bottomNavEl.addEventListener('touchstart', e => {
-            bnavStartX = e.changedTouches[0].clientX;
-            bnavStartY = e.changedTouches[0].clientY;
-        }, {passive: true});
-
-        bottomNavEl.addEventListener('touchend', e => {
-            const dx = e.changedTouches[0].clientX - bnavStartX;
-            const dy = e.changedTouches[0].clientY - bnavStartY;
-            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
-                const currentActive = bottomNavEl.querySelector('.bottom-nav-item.active');
-                let currentIndex = currentActive ? bnavOrder.indexOf(currentActive.id) : 0;
-                
-                if (dx > 0 && currentIndex > 0) { 
-                    document.getElementById(bnavOrder[currentIndex - 1]).click();
-                } else if (dx < 0 && currentIndex < bnavOrder.length - 1) { 
-                    document.getElementById(bnavOrder[currentIndex + 1]).click();
-                }
-            }
-        }, {passive: true});
 
         let wasHolding = false;
         let holdResetTimeout;
         let fastSeekInterval = null;
         let originalPlaybackRate = 1;
         let originalWasPlaying = false;
-        let isFastSeekingActive = false;
         const fastSeekIndicator = document.getElementById('fast-seek-indicator');
 
         function startFastSeek(player, speed) {
-            if (isFastSeekingActive) {
+            if (fastSeekIndicator.style.display === 'block') {
                 if (fastSeekInterval) {
                     clearInterval(fastSeekInterval);
                     fastSeekInterval = null;
@@ -2537,12 +2360,12 @@
             } else {
                 originalPlaybackRate = player.playbackRate();
                 originalWasPlaying = !player.paused();
-                isFastSeekingActive = true;
             }
             
             if (speed > 0) {
                 player.playbackRate(speed);
                 if (!originalWasPlaying) player.play();
+                fastSeekIndicator.innerHTML = '⏩ x' + speed;
             } else {
                 player.pause(); // Dừng video để tua ngược
                 fastSeekInterval = setInterval(() => {
@@ -2551,13 +2374,13 @@
                     player.currentTime(newTime);
                     if (newTime === 0) stopFastSeek();
                 }, 100);
+                fastSeekIndicator.innerHTML = '⏪ x' + Math.abs(speed);
             }
+            fastSeekIndicator.style.display = 'block';
         }
 
         function stopFastSeek() {
-            if (!isFastSeekingActive) return;
-            isFastSeekingActive = false;
-            
+            fastSeekIndicator.style.display = 'none';
             if (!activePlayer) return;
             const player = activePlayer;
             
@@ -2620,21 +2443,7 @@
                         if (res.added) showToast('Đã thêm vào yêu thích', 'success');
                         else showToast('Đã xoá khỏi yêu thích', 'info');
                     }
-                    
-                    // Đồng bộ cập nhật nút tim ở video đang phát nếu trùng id
-                    if (currentPlayingVideo && currentPlayingVideo.id === vidId) {
-                        updateFavoriteIcon(res.added);
-                    }
-                    
-                    // Đồng bộ cập nhật tất cả các nút tim có chung id trong danh sách (VideoDrawer)
-                    const galleryItems = document.querySelectorAll(`.item-fav-btn[data-id="${vidId}"]`);
-                    galleryItems.forEach(btn => {
-                        btn.classList.toggle('favorited', res.added);
-                        const icon = btn.querySelector('.material-symbols-outlined');
-                        if (icon) {
-                            icon.innerText = res.added ? 'favorite' : 'favorite_border';
-                        }
-                    });
+                    updateFavoriteIcon(res.added);
                 }
             }).catch(() => {});
         }
@@ -2862,63 +2671,24 @@
             }
         }
 
-        let profileStartX = 0;
-        let profileStartY = 0;
-        const profileTabsOrder = ['you', 'recent', 'favorites', 'frequent'];
-        profilePage.addEventListener('touchstart', e => {
-            profileStartX = e.changedTouches[0].clientX;
-            profileStartY = e.changedTouches[0].clientY;
-        }, {passive: true});
-        profilePage.addEventListener('touchend', e => {
-            if (e.target.closest('#profile-tabs') || Math.abs(e.changedTouches[0].clientX - profileStartX) < 10) return; 
-            const dx = e.changedTouches[0].clientX - profileStartX;
-            const dy = e.changedTouches[0].clientY - profileStartY;
-            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-                const currentIndex = profileTabsOrder.indexOf(currentTab || 'you');
-                if (dx > 0) {
-                    if (currentIndex > 0) {
-                        switchGalleryTab(profileTabsOrder[currentIndex - 1]);
-                        document.getElementById(tabMapping[profileTabsOrder[currentIndex - 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
-                    } else {
-                        closeProfilePage();
-                    }
-                } else {
-                    if (currentIndex < profileTabsOrder.length - 1) {
-                        switchGalleryTab(profileTabsOrder[currentIndex + 1]);
-                        document.getElementById(tabMapping[profileTabsOrder[currentIndex + 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
-                    }
+        function attachPageSwipeToBack(pageEl, closeHandler) {
+            let startX = 0;
+            let startY = 0;
+            pageEl.addEventListener('touchstart', e => {
+                startX = e.changedTouches[0].clientX;
+                startY = e.changedTouches[0].clientY;
+            }, {passive: true});
+            pageEl.addEventListener('touchend', e => {
+                if (e.target.closest('#gallery-tabs')) return; 
+                const dx = e.changedTouches[0].clientX - startX;
+                const dy = e.changedTouches[0].clientY - startY;
+                if (dx > Math.abs(dy) && dx > 50) {
+                    closeHandler();
                 }
-            }
-        }, {passive: true});
-
-        let galleryStartX = 0;
-        let galleryStartY = 0;
-        const galleryTabsOrder = ['all', 'global_frequent'];
-        galleryPage.addEventListener('touchstart', e => {
-            galleryStartX = e.changedTouches[0].clientX;
-            galleryStartY = e.changedTouches[0].clientY;
-        }, {passive: true});
-        galleryPage.addEventListener('touchend', e => {
-            if (e.target.closest('#gallery-tabs') || e.target.closest('#search-suggestions') || Math.abs(e.changedTouches[0].clientX - galleryStartX) < 10) return; 
-            const dx = e.changedTouches[0].clientX - galleryStartX;
-            const dy = e.changedTouches[0].clientY - galleryStartY;
-            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-                const currentIndex = galleryTabsOrder.indexOf(currentTab || 'all');
-                if (dx > 0) {
-                    if (currentIndex > 0) {
-                        switchGalleryTab(galleryTabsOrder[currentIndex - 1]);
-                        document.getElementById(tabMapping[galleryTabsOrder[currentIndex - 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
-                    } else {
-                        closeGalleryPage();
-                    }
-                } else {
-                    if (currentIndex < galleryTabsOrder.length - 1) {
-                        switchGalleryTab(galleryTabsOrder[currentIndex + 1]);
-                        document.getElementById(tabMapping[galleryTabsOrder[currentIndex + 1]])?.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
-                    }
-                }
-            }
-        }, {passive: true});
+            }, {passive: true});
+        }
+        attachPageSwipeToBack(profilePage, closeProfilePage);
+        attachPageSwipeToBack(galleryPage, closeGalleryPage);
 
         let detailStartX = 0;
         let detailStartY = 0;
@@ -3024,13 +2794,6 @@
                 fetchVideos();
             }
         });
-        
-        document.getElementById('profile-gallery-grid').addEventListener('scroll', () => {
-            const grid = document.getElementById('profile-gallery-grid');
-            if (grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 100) {
-                fetchVideos();
-            }
-        });
 
         function renderChips(containerId, videoData) {
             const container = document.getElementById(containerId);
@@ -3041,7 +2804,7 @@
             container.style.gap = '12px';
             container.style.marginBottom = '15px';
             
-            const createBlock = (title, items, type, icon) => {
+            const createBlock = (title, items, type) => {
                 const block = document.createElement('div');
                 block.style.display = 'flex';
                 block.style.flexDirection = 'column';
@@ -3061,7 +2824,7 @@
                 if (!items || items.length === 0 || items[0] === 'N/A' || items[0] === 'Đang tải...') {
                     const emptyChip = document.createElement('span');
                     emptyChip.className = `detail-chip chip-${type}`;
-                    emptyChip.innerHTML = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 4px;">${icon}</span>N/A`;
+                    emptyChip.innerText = 'N/A';
                     emptyChip.style.cursor = 'default';
                     emptyChip.style.opacity = '0.5';
                     chipsDiv.appendChild(emptyChip);
@@ -3070,10 +2833,14 @@
                         if (!text) return;
                         const chip = document.createElement('span');
                         chip.className = `detail-chip chip-${type}`;
-                        chip.innerHTML = `<span class="material-symbols-outlined" style="font-size: 14px; vertical-align: text-bottom; margin-right: 4px;">${icon}</span>${text}`;
+                        chip.innerText = text;
                         chip.onclick = () => {
+                            if (type === 'maker' && text.toLowerCase() === 'madonna') {
+                                showToast('Không hỗ trợ tìm kiếm cho nhà sản xuất "Madonna".', 'warning');
+                                return;
+                            }
                             const p = getBaseUrlParams();
-                            p.set('searchKey', text);
+                            p.set('searchKey', `${type}:"${text}"`);
                             p.set('tab', 'all');
                             p.delete('watch');
                             p.delete('video');
@@ -3093,9 +2860,9 @@
             const genres = videoData.genre ? videoData.genre.split(',').map(s => s.trim()).filter(Boolean) : [];
             const makers = videoData.maker ? videoData.maker.split(',').map(s => s.trim()).filter(Boolean) : [];
 
-            container.appendChild(createBlock('Diễn viên', actresses, 'actress', 'person'));
-            container.appendChild(createBlock('Thể loại', genres, 'genre', 'label'));
-            container.appendChild(createBlock('Nhà sản xuất', makers, 'maker', 'business'));
+            container.appendChild(createBlock('Diễn viên', actresses, 'actress'));
+            container.appendChild(createBlock('Thể loại', genres, 'genre'));
+            container.appendChild(createBlock('Nhà sản xuất', makers, 'maker'));
         }
 
         async function showVideoDetail(index, fallbackVideo = null) {
@@ -3114,14 +2881,7 @@
             document.getElementById('details-title').innerText = video.title || '';
             document.getElementById('details-date').innerText = video.release_date || 'Đang tải...';
             renderChips('details-chips', video);
-            
-            if (video.details && video.details.trim() !== '') {
-                document.getElementById('details-desc-wrapper').style.display = 'block';
-                document.getElementById('details-desc').innerText = video.details;
-            } else {
-                document.getElementById('details-desc-wrapper').style.display = 'none';
-                document.getElementById('details-desc').innerText = '';
-            }
+            document.getElementById('details-desc').innerText = video.details || 'Đang tải...';
             
             const setupButtons = (v) => {
                 document.getElementById('btn-watch-now').onclick = () => {
@@ -3130,7 +2890,24 @@
                     history.pushState(null, '', `/?${p.toString()}`);
                     handleNavigation();
                 };
-                document.getElementById('btn-open-javtiful').onclick = () => window.open(v.url || `https://javtiful.com/video/${v.id}`, '_blank');
+                
+                let sourceName = 'Trang gốc';
+                let sourceUrl = v.url || '#';
+                if (v.source === 'javtiful') { sourceName = 'Javtiful'; sourceUrl = v.url || `https://javtiful.com/video/${v.id}`; }
+                else if (v.source === 'vlxx') { sourceName = 'VLXX'; sourceUrl = v.url || `https://vlxx.moi/video/${v.id}`; }
+                else if (v.source === 'javmost') { sourceName = 'Javmost'; sourceUrl = v.url || `https://javmost.ws/${v.id}`; }
+                else if (v.source === 'sextop1') { sourceName = 'Sextop1'; sourceUrl = v.url || `https://sextop1.buzz/${v.id}`; }
+                else if (v.source === 'javtrailer') { sourceName = 'Javtrailer'; sourceUrl = v.url || `https://javtrailers.com/video/${v.id}`; }
+                else if (v.source === 'missav') { sourceName = 'MissAV'; sourceUrl = v.url || `https://missav.ai/en/${v.id}`; }
+                else if (v.source === 'fshare') { sourceName = 'Fshare'; sourceUrl = `https://www.fshare.vn/file/${v.id}`; }
+                else if (v.source) { sourceName = v.source.charAt(0).toUpperCase() + v.source.slice(1); }
+
+                const btnOpenSource = document.getElementById('btn-open-source');
+                if (btnOpenSource) {
+                    btnOpenSource.innerHTML = `🌐 ${sourceName}`;
+                    btnOpenSource.onclick = () => window.open(sourceUrl, '_blank');
+                }
+
                 document.getElementById('btn-search-list').onclick = () => {
                     const p = getBaseUrlParams();
                     p.set('id', v.id);
@@ -3143,21 +2920,16 @@
             setupButtons(video);
             
             try {
-                const res = await apiFetch(`/api/video_details?id=${video.id}`);
+                let urlReq = `/api/video_details?id=${encodeURIComponent(video.id)}`;
+                if (video.source) urlReq += `&source=${encodeURIComponent(video.source)}`;
+                const res = await apiFetch(urlReq);
                 if (res.success && res.data) {
                     const d = res.data;
                     document.getElementById('details-cover').src = d.cover || '';
                     document.getElementById('details-title').innerText = d.title || '';
                     document.getElementById('details-date').innerText = d.release_date || 'N/A';
                     renderChips('details-chips', d);
-                    
-                    if (d.details && d.details.trim() !== '') {
-                        document.getElementById('details-desc-wrapper').style.display = 'block';
-                        document.getElementById('details-desc').innerText = d.details;
-                    } else {
-                        document.getElementById('details-desc-wrapper').style.display = 'none';
-                    }
-                    
+                    document.getElementById('details-desc').innerText = d.details || 'N/A';
                     setupButtons(d);
                 }
             } catch(e) {
@@ -3173,6 +2945,59 @@
                 handleNavigation();
             }
         };
+
+        function openSearchDrawer() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const isGalleryOpen = !urlParams.has('watch') && !urlParams.has('video') && window.location.hash !== '#profile';
+
+            if (!isGalleryOpen) {
+                // Not on gallery page, navigate to it and tell it to open search.
+                const p = getBaseUrlParams();
+                if (currentPlayingVideo && urlParams.has('watch')) {
+                    p.set('id', currentPlayingVideo.id);
+                } else if (urlParams.has('video')) {
+                    p.set('id', urlParams.get('video'));
+                }
+                p.set('showSearch', '1');
+                history.pushState(null, '', `/?${p.toString()}`);
+                handleNavigation();
+            } else {
+                // Already on gallery page, just open search.
+                openSearchInput();
+            }
+        }
+
+        function openSearchInput() {
+            const headerContent = document.getElementById('gallery-header-content');
+            const searchIcon = document.getElementById('gallery-search-icon');
+            const inputWrapper = document.getElementById('search-input-wrapper');
+            const closeBtn = document.getElementById('close-search-input');
+            if (headerContent) headerContent.style.display = 'none';
+            if (searchIcon) searchIcon.style.display = 'none';
+            if (inputWrapper) inputWrapper.style.display = 'block';
+            if (closeBtn) closeBtn.style.display = 'block';
+            renderDrawerSearchChips();
+            videoSearchInput.focus();
+        }
+        function closeSearchInput() {
+            const headerContent = document.getElementById('gallery-header-content');
+            const searchIcon = document.getElementById('gallery-search-icon');
+            const inputWrapper = document.getElementById('search-input-wrapper');
+            const closeBtn = document.getElementById('close-search-input');
+            if (headerContent) headerContent.style.display = 'flex';
+            if (searchIcon) searchIcon.style.display = 'block';
+            if (inputWrapper) inputWrapper.style.display = 'none';
+            if (closeBtn) closeBtn.style.display = 'none';
+            document.getElementById('drawer-search-chips').style.display = 'none';
+            videoSearchInput.value = searchKey || '';
+            clearSearchBtn.style.display = videoSearchInput.value ? 'block' : 'none';
+            videoSearchInput.blur();
+            const sug = document.getElementById('search-suggestions');
+            if (sug) sug.style.display = 'none';
+        }
+        document.getElementById('close-search-input').addEventListener('click', closeSearchInput);
+        document.getElementById('btn-search').addEventListener('click', openSearchDrawer);
+        document.querySelectorAll('.header-search-icon').forEach(el => el.addEventListener('click', openSearchDrawer));
 
     const imageViewer = document.getElementById('image-viewer');
     const fsImage = document.getElementById('fullscreen-image');
@@ -3250,18 +3075,104 @@
     }
     }
 
+    async function initSourceSelector() {
+        const multiSelectContainer = document.getElementById('source-multi-select');
+        const selectBtn = document.getElementById('source-select-btn');
+        const dropdown = document.getElementById('source-dropdown');
+        const checkboxesContainer = document.getElementById('source-checkboxes');
+        const allCb = document.getElementById('source-all-cb');
+        
+        if (!multiSelectContainer) return;
+
+        try {
+            const res = await apiFetch('/api/sources');
+            if (res.success && res.sources) {
+                checkboxesContainer.innerHTML = '';
+                res.sources.forEach(source => {
+                    const lbl = document.createElement('label');
+                    lbl.style.cssText = 'display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #ddd;';
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = source;
+                    cb.className = 'source-cb';
+                    cb.style.accentColor = '#ff4081';
+                    lbl.appendChild(cb);
+                    lbl.appendChild(document.createTextNode(source.charAt(0).toUpperCase() + source.slice(1)));
+                    checkboxesContainer.appendChild(lbl);
+                });
+                multiSelectContainer.style.display = 'flex';
+
+                const cbs = document.querySelectorAll('.source-cb');
+
+                selectBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!multiSelectContainer.contains(e.target)) {
+                        dropdown.style.display = 'none';
+                    }
+                });
+
+                allCb.addEventListener('change', (e) => {
+                    if (allCb.checked) {
+                        cbs.forEach(cb => cb.checked = false);
+                    } else {
+                        allCb.checked = true;
+                    }
+                    applySourceSelection();
+                });
+
+                cbs.forEach(cb => {
+                    cb.addEventListener('change', () => {
+                        const anyChecked = Array.from(cbs).some(c => c.checked);
+                        if (anyChecked) {
+                            allCb.checked = false;
+                        } else {
+                            allCb.checked = true;
+                        }
+                        applySourceSelection();
+                    });
+                });
+
+                function applySourceSelection() {
+                    const checkedCbs = Array.from(cbs).filter(c => c.checked);
+                    let sourceParam = 'all';
+                    if (allCb.checked || checkedCbs.length === 0 || checkedCbs.length === cbs.length) {
+                        sourceParam = 'all';
+                    } else {
+                        sourceParam = checkedCbs.map(c => c.value).join(',');
+                    }
+
+                    if (currentSource !== sourceParam) {
+                        const p = new URLSearchParams(window.location.search);
+                        if (sourceParam !== 'all') { p.set('source', sourceParam); } 
+                        else { p.delete('source'); }
+                        p.delete('watch'); p.delete('video'); p.delete('id');
+                        history.pushState(null, '', `/?${p.toString()}`);
+                        handleNavigation();
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load sources', e);
+        }
+    }
+
         // Khởi tạo ứng dụng
         async function initApp() {
-            setupExternalLinks();
             await initSessionId();
             
             const urlParams = new URLSearchParams(window.location.search);
             let initTab = urlParams.get('tab') || 'all';
             let initSearch = urlParams.has('searchKey') ? urlParams.get('searchKey') : (localStorage.getItem('missav_search_key') || '');
+            let initSource = urlParams.get('source') || 'all';
             
             const p = new URLSearchParams(window.location.search);
             if (initTab !== 'all') p.set('tab', initTab);
             if (initSearch) p.set('searchKey', initSearch);
+            if (initSource !== 'all') p.set('source', initSource);
             
             let newUrl = window.location.pathname;
             const qs = p.toString();
@@ -3270,37 +3181,10 @@
             
             history.replaceState(null, '', newUrl);
 
+            await initSourceSelector();
             handleNavigation();
             updateIdentityDisplay();
         }
-
-        function setupExternalLinks() {
-            const hostname = window.location.hostname;
-            const protocol = window.location.protocol;
-            const port = window.location.port || (protocol === 'https:' ? '443' : '80');
-
-            const links = [
-                { id: 'linkJavtiful', port: '5004', name: 'Javtiful' },
-                { id: 'linkMissav', port: '5003', name: 'MissAV' },
-                { id: 'linkVlxx', port: '5002', name: 'VLXX' },
-                { id: 'linkSextop1', port: '5001', name: 'Sextop1' }
-            ];
-
-            links.forEach(link => {
-                const el = document.getElementById(link.id);
-                if (el) {
-                    el.href = `${protocol}//${hostname}:${link.port}`;
-                    if (port === link.port) {
-                        el.classList.add('active');
-                        el.removeAttribute('target');
-                        el.href = 'javascript:void(0)';
-                        el.style.cursor = 'default';
-                        el.innerHTML = `<span class="material-symbols-outlined" style="font-size: 16px;">check_circle</span> ${link.name}`;
-                    }
-                }
-            });
-        }
-
         initApp();
         
     </script>
