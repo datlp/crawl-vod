@@ -15,7 +15,6 @@ import importlib.util
 import builtins
 import difflib
 import signal
-import queue
 import unicodedata
 import contextlib
 from urllib.parse import urlparse, parse_qs, quote
@@ -235,44 +234,47 @@ def get_db_connection(db_path, limit_buffer='200M', source_module=None):
         except sqlite3.OperationalError:
             pass
             
-        cursor = conn.cursor()
-        cursor.execute(f"UPDATE {VIDEOS_TABLE} SET dvd = substr(title, 1, instr(title || ' ', ' ') - 1) WHERE dvd IS NULL OR dvd = ''")
-        
-        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_details_fetched ON {VIDEOS_TABLE}(details_fetched, added_at ASC)')
-        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_actress ON {VIDEOS_TABLE}(actress)')
-        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_genre ON {VIDEOS_TABLE}(genre)')
-        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_maker ON {VIDEOS_TABLE}(maker)')
-        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_details ON {VIDEOS_TABLE}(details)')
-        conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_title ON {VIDEOS_TABLE}(title)')
-
-        cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE}_fts)")
-        fts_cols = [row[1] for row in cursor.fetchall()]
-        if 'dvd' not in fts_cols:
-            cursor.execute(f"DROP TABLE IF EXISTS {VIDEOS_TABLE}_fts")
-            cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ai")
-            cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ad")
-            cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_au")
-
-        conn.execute(f'''
-            CREATE VIRTUAL TABLE IF NOT EXISTS {VIDEOS_TABLE}_fts USING fts5(
-                title, actress, genre, maker, details, dvd,
-                content='{VIDEOS_TABLE}', content_rowid='rowid'
-            )
-        ''')
-        for trigger_sql in [
-            f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ai AFTER INSERT ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;",
-            f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ad AFTER DELETE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); END;",
-            f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_au AFTER UPDATE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;"
-        ]:
-            conn.execute(trigger_sql)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"UPDATE {VIDEOS_TABLE} SET dvd = substr(title, 1, instr(title || ' ', ' ') - 1) WHERE dvd IS NULL OR dvd = ''")
             
-        cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE}_fts")
-        if cursor.fetchone()[0] == 0:
-            custom_log("System", "⏳ Backfilling FTS index...")
-            cursor.execute(f'''
-                INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd)
-                SELECT rowid, title, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE}
+            conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_details_fetched ON {VIDEOS_TABLE}(details_fetched, added_at ASC)')
+            conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_actress ON {VIDEOS_TABLE}(actress)')
+            conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_genre ON {VIDEOS_TABLE}(genre)')
+            conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_maker ON {VIDEOS_TABLE}(maker)')
+            conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_details ON {VIDEOS_TABLE}(details)')
+            conn.execute(f'CREATE INDEX IF NOT EXISTS idx_{VIDEOS_TABLE}_search_title ON {VIDEOS_TABLE}(title)')
+
+            cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE}_fts)")
+            fts_cols = [row[1] for row in cursor.fetchall()]
+            if 'dvd' not in fts_cols:
+                cursor.execute(f"DROP TABLE IF EXISTS {VIDEOS_TABLE}_fts")
+                cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ai")
+                cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_ad")
+                cursor.execute(f"DROP TRIGGER IF EXISTS {VIDEOS_TABLE}_au")
+
+            conn.execute(f'''
+                CREATE VIRTUAL TABLE IF NOT EXISTS {VIDEOS_TABLE}_fts USING fts5(
+                    title, actress, genre, maker, details, dvd,
+                    content='{VIDEOS_TABLE}', content_rowid='rowid'
+                )
             ''')
+            for trigger_sql in [
+                f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ai AFTER INSERT ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;",
+                f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_ad AFTER DELETE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); END;",
+                f"CREATE TRIGGER IF NOT EXISTS {VIDEOS_TABLE}_au AFTER UPDATE ON {VIDEOS_TABLE} BEGIN INSERT INTO {VIDEOS_TABLE}_fts({VIDEOS_TABLE}_fts, rowid, title, actress, genre, maker, details, dvd) VALUES ('delete', old.rowid, old.title, old.actress, old.genre, old.maker, old.details, old.dvd); INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd) VALUES (new.rowid, new.title, new.actress, new.genre, new.maker, new.details, new.dvd); END;"
+            ]:
+                conn.execute(trigger_sql)
+                
+            cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE}_fts")
+            if cursor.fetchone()[0] == 0:
+                custom_log("System", "⏳ Backfilling FTS index...")
+                cursor.execute(f'''
+                    INSERT INTO {VIDEOS_TABLE}_fts(rowid, title, actress, genre, maker, details, dvd)
+                    SELECT rowid, title, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE}
+                ''')
+        except Exception as e:
+            custom_log("System", f"⚠️ Cảnh báo lỗi database (Có thể file .db đã bị hỏng): {e}")
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS media (
@@ -413,185 +415,6 @@ def rebuild_tags_fts(db_conn):
     tags_cache = []
     custom_log("System", "✔️ Hoàn tất tổng hợp tags.")
 
-class BackgroundScanner(threading.Thread):
-    def __init__(self, scraper, upgrade_all=False, news_threads=0, detail_threads=0, videos_threads=0):
-        super().__init__(daemon=True)
-        self.scraper = scraper
-        self.upgrade_all = upgrade_all
-        self.news_threads = news_threads
-        self.detail_threads = detail_threads
-        self.videos_threads = videos_threads
-        self.news_queue = queue.Queue()
-
-    def run(self):
-        self.scraper.update_sync_tasks_from_menu()
-        
-        if self.upgrade_all:
-            domain_base = self.scraper.domain.split('.')[0].lower()
-            source_name = getattr(self.scraper, 'source_name', '').lower()
-            with db_lock:
-                cursor = self.scraper.db_conn.cursor()
-                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0")
-                cursor.execute("UPDATE sync_tasks SET current_page = 1, is_completed = 0 WHERE LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ?", (f"%{domain_base}%", f"%{source_name}%"))
-                self.scraper.db_conn.commit()
-                
-        if self.news_threads > 0:
-            threading.Thread(target=self.news_dispatcher_loop, daemon=True).start()
-        
-        for i in range(self.news_threads):
-            threading.Thread(target=self.news_scan_worker, args=(i+1,), daemon=True).start()
-            
-        for i in range(self.detail_threads):
-            threading.Thread(target=self.details_scan_worker, args=(i+1,), daemon=True).start()
-            
-        for i in range(self.videos_threads):
-            threading.Thread(target=self.backlog_scan_worker, args=(i+1,), daemon=True).start()
-            
-        while True:
-            time.sleep(3600)
-
-    def news_dispatcher_loop(self):
-        while True:
-            try:
-                domain_base = self.scraper.domain.split('.')[0].lower()
-                source_name = getattr(self.scraper, 'source_name', '').lower()
-                with db_lock:
-                    cursor = self.scraper.db_conn.cursor()
-                    cursor.execute("SELECT url_pattern FROM sync_tasks ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END")
-                    cursor.execute("SELECT url_pattern FROM sync_tasks WHERE LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ? ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END", (f"%{domain_base}%", f"%{source_name}%"))
-                    tasks = cursor.fetchall()
-                
-                if self.news_queue.empty():
-                    for task in tasks:
-                        self.news_queue.put(task[0])
-            except Exception as e:
-                custom_log("System", f"❌ Lỗi dispatcher video mới: {e}")
-                
-            time.sleep(300)
-
-    def news_scan_worker(self, thread_num):
-        global global_last_request_time
-        source_name = getattr(self.scraper, 'source_name', 'System')
-        while True:
-            try:
-                url_pattern = self.news_queue.get(timeout=5)
-            except queue.Empty:
-                continue
-                
-            page = 1
-            while True:
-                if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
-                    time.sleep(2)
-                    continue
-                    
-                try:
-                    custom_log(source_name, f"⏳[News Thread {thread_num}] {url_pattern} page {page}...")
-                    new_inserted, found, _ = self.scraper.sync_list_page(url_pattern, page)
-                    if found == -1:
-                        time.sleep(5)
-                        break
-                    custom_log(source_name, f"✔️[News Thread {thread_num}] {url_pattern} page {page} - {new_inserted} new, {found} found")
-                    if new_inserted > 0 and found > 0:
-                        page += 1
-                        time.sleep(1)
-                    else:
-                        custom_log(source_name, f"⏳[News Thread {thread_num}] Done Đang chuyển giao cho tác vụ khác...")
-                        break
-                except Exception as e:
-                    custom_log("System", f"❌ Lỗi kiểm tra video mới: {e}")
-                    break
-            self.news_queue.task_done()
-            
-    def details_scan_worker(self, thread_num):
-        global global_last_request_time
-        source_name = getattr(self.scraper, 'source_name', 'System')
-        while True:
-            time.sleep(0.5)
-            try:
-                if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
-                    continue
-                    
-                with db_lock:
-                    cursor = self.scraper.db_conn.cursor()
-                    cursor.execute(f"SELECT id FROM {VIDEOS_TABLE} WHERE details_fetched = 0 ORDER BY added_at ASC LIMIT 1")
-                    row = cursor.fetchone()
-                    if row:
-                        vid_id = row[0]
-                        cursor.execute(f"UPDATE {VIDEOS_TABLE} SET details_fetched = -2 WHERE id = ?", (vid_id,))
-                        self.scraper.db_conn.commit()
-                    
-                if not row:
-                    time.sleep(300)
-                    continue
-                    
-                custom_log(source_name, f"⏳[Detail Thread {thread_num}] {vid_id}")
-                success = self.scraper.sync_video_details(vid_id)
-                custom_log(source_name, f"✔️[Detail Thread {thread_num}] {vid_id} - {'Success' if success else 'Failed'}")
-            except Exception as e:
-                custom_log("System", f"❌ Lỗi quét chi tiết: {e}")
-                time.sleep(5)
-
-    def backlog_scan_worker(self, thread_num):
-        global global_last_request_time
-        source_name = getattr(self.scraper, 'source_name', 'System')
-        domain_base = self.scraper.domain.split('.')[0].lower()
-        src_lower = source_name.lower()
-        while True:
-            time.sleep(1)
-            try:
-                if time.time() - global_last_request_time < CLIENT_IDLE_TIMEOUT:
-                    continue
-                    
-                task_to_run = None
-                with db_lock:
-                    cursor = self.scraper.db_conn.cursor()
-                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END LIMIT 1")
-                    cursor.execute("SELECT url_pattern, current_page, total_pages FROM sync_tasks WHERE is_completed = 0 AND (LOWER(url_pattern) LIKE ? OR LOWER(url_pattern) LIKE ?) ORDER BY CASE WHEN url_pattern LIKE '%chinese-av%' THEN 0 ELSE 1 END LIMIT 1", (f"%{domain_base}%", f"%{src_lower}%"))
-                    row = cursor.fetchone()
-                    if row:
-                        url_pattern, current_page, total_pages = row
-                        if current_page > total_pages or current_page > 2000:
-                            cursor.execute("UPDATE sync_tasks SET is_completed = 1 WHERE url_pattern = ?", (url_pattern,))
-                            self.scraper.db_conn.commit()
-                        else:
-                            cursor.execute("UPDATE sync_tasks SET current_page = current_page + 1 WHERE url_pattern = ?", (url_pattern,))
-                            self.scraper.db_conn.commit()
-                            task_to_run = (url_pattern, current_page, total_pages)
-                    
-                if not task_to_run:
-                    time.sleep(60)
-                    continue
-                    
-                url_pattern, current_page, total_pages = task_to_run
-                
-                custom_log(source_name, f"⏳[Videos Thread {thread_num}] {url_pattern} page {current_page}/{total_pages}")
-                new_inserted, found, extracted_total = self.scraper.sync_list_page(url_pattern, current_page)
-                
-                if found == -1:
-                    with db_lock:
-                        cursor = self.scraper.db_conn.cursor()
-                        cursor.execute("UPDATE sync_tasks SET current_page = current_page - 1 WHERE url_pattern = ? AND current_page > 1", (url_pattern,))
-                        self.scraper.db_conn.commit()
-                    time.sleep(5)
-                    continue
-                    
-                custom_log(source_name, f"✔️[Videos Thread {thread_num}] {url_pattern} page {current_page}/{total_pages} - {new_inserted} new, {found} found")
-
-                with db_lock:
-                    cursor = self.scraper.db_conn.cursor()
-                    new_total = extracted_total if extracted_total > 0 else total_pages
-                    if found == 0 or current_page >= new_total or current_page >= 2000:
-                        cursor.execute("UPDATE sync_tasks SET is_completed = 1, total_pages = ?, last_fetched = ? WHERE url_pattern = ?", 
-                                       (new_total, int(time.time()), url_pattern))
-                    else:
-                        cursor.execute("UPDATE sync_tasks SET total_pages = ?, last_fetched = ? WHERE url_pattern = ?", 
-                                       (new_total, int(time.time()), url_pattern))
-                    self.scraper.db_conn.commit()
-                
-            except Exception as e:
-                custom_log("System", f"❌ Lỗi backlog scanner: {e}")
-                time.sleep(5)
-
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 import logging
@@ -641,6 +464,14 @@ def get_identifier():
             if row:
                 username = row[0]
     return username if username else session_id
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    return jsonify({
+        "source": getattr(app_args, 'source', ''),
+        "domain": getattr(app_args, 'domain', None),
+        "sqlite3": getattr(app_args, 'sqlite3', '')
+    })
 
 @app.route('/api/identity/me', methods=['GET'])
 def identity_me():
@@ -1888,22 +1719,18 @@ def system_monitor_worker():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-chunk_size', type=str, default='128KB', help="Kích thước chunk proxy (e.g. 128KB)")
-    parser.add_argument('-detail-threads', type=int, default=0, help="Số luồng lấy chi tiết video (mặc định 0)")
     parser.add_argument('-domain', type=str, default=None, help="Tên miền (domain) cho scraper")
     parser.add_argument('-email', type=str, default="infor.dkeeps@gmail.com", help="Email to send OTP from")
     parser.add_argument('-emailPass', type=str, default="szywozapustydcuw", help="App password for email")
     parser.add_argument('-limit-bufer', '-limit-buffer', type=str, default='200M', dest='limit_buffer', help="Limit memory buffer size to avoid Termux killing the process")
     parser.add_argument('-max_connections', type=int, default=30, help="Số luồng connections tối đa")
     parser.add_argument('-max_keepalive', type=int, default=10, help="Số khối buffer keepalive tối đa trong RAM")
-    parser.add_argument('-news-threads', type=int, default=0, help="Số luồng quét video mới (mặc định 0)")
     parser.add_argument('-old-sqlite3', type=str, default="", help="Path to an old SQLite3 database to migrate data from")
     parser.add_argument('-port', type=int, default=5004, help="Port to run the HTTP server on")
     parser.add_argument('-proxy-threads', type=int, default=8, help="Số luồng tải file (Proxy đa luồng)")
     parser.add_argument('-source', type=str, default='javtiful', help="Nguồn crawl dữ liệu (ví dụ: javtiful, missav)")
     parser.add_argument('-sqlite3', type=str, default=None, help="Path to the SQLite3 database file")
     parser.add_argument('-timeout', type=str, default="connect=3.0,read=None", help="Cấu hình timeout proxy")
-    parser.add_argument('-upgrade-all', action='store_true', help="Start scanning from page 1 instead of backlog")
-    parser.add_argument('-videos-threads', type=int, default=0, help="Số luồng quét video backlog (mặc định 0)")
     
     args = parser.parse_args()
     
@@ -1963,14 +1790,6 @@ def main():
     
     scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE, domain=args.domain)
     threading.Thread(target=background_db_worker, args=(db_conn_instance,), daemon=True).start()
-    scanner = BackgroundScanner(
-        scraper_instance, 
-        upgrade_all=args.upgrade_all,
-        news_threads=args.news_threads,
-        detail_threads=args.detail_threads,
-        videos_threads=args.videos_threads
-    )
-    scanner.start()
     custom_log("System", f"✔️ {args.source.capitalize()} Player worker started at http://localhost:{args.port}")
         
     def graceful_exit(sig, frame):
