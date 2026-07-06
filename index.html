@@ -348,15 +348,24 @@
 
         @media (orientation: landscape) {
             #bottom-navigation {
-                top: 0; left: 15px; bottom: auto;
-                width: 56px; height: 100%;
+                top: 0; left: 0; bottom: auto;
+                width: 80px; height: 100%;
                 flex-direction: column;
                 justify-content: center;
+                align-items: center;
                 gap: 16px;
                 border-top: none;
                 border-right: none;
                 background: transparent;
                 pointer-events: none;
+                z-index: 20;
+                transition: background-color 0.3s ease, border-color 0.3s ease;
+            }
+            #app:has(.page-view.active) #bottom-navigation {
+                background: #121212;
+                z-index: 50;
+                pointer-events: auto;
+                border-right: 1px solid rgba(255, 255, 255, 0.12);
             }
             .bottom-nav-item {
                 flex: none;
@@ -380,6 +389,20 @@
                 color: #90caf9;
                 border-color: rgba(144, 202, 249, 0.5);
                 background: rgba(0,0,0,0.5);
+            }
+            #app:has(.page-view.active) #bottom-navigation .bottom-nav-item {
+                background: transparent;
+                border-color: transparent;
+                box-shadow: none;
+                backdrop-filter: none;
+            }
+            #app:has(.page-view.active) #bottom-navigation .bottom-nav-item:active {
+                background: rgba(255, 255, 255, 0.08);
+            }
+            #app:has(.page-view.active) #bottom-navigation .bottom-nav-item.active {
+                color: #90caf9;
+                background: transparent;
+                border-color: transparent;
             }
             .bottom-nav-item span:last-child {
                 display: none;
