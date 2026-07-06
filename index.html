@@ -546,6 +546,7 @@
             <div id="gallery-tabs" style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none;">
                 <button id="tabAll" class="mui-tab active">Tất cả <span class="tab-badge" id="badge-all">0</span></button>
                 <button id="tabGlobalFrequent" class="mui-tab">Top thế giới <span class="tab-badge" id="badge-global_frequent">0</span></button>
+                <button id="tabRelated" class="mui-tab">Tương tự <span class="tab-badge" id="badge-related">0</span></button>
                 <div style="width: 1px; background: rgba(255,255,255,0.12); margin: 10px 4px;"></div>
                 <a id="linkJavtiful" class="mui-tab" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> Javtiful</a>
                 <a id="linkMissav" class="mui-tab" target="_blank" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> MissAV</a>
@@ -2061,6 +2062,7 @@
         const tabMapping = {
             'all': 'tabAll',
             'global_frequent': 'tabGlobalFrequent',
+            'related': 'tabRelated',
             'favorites': 'tabProfileFav',
             'recent': 'tabProfileRecent',
             'frequent': 'tabProfileFrequent',
@@ -2078,7 +2080,14 @@
             p.set('tab', tabKey);
             p.delete('watch');
             p.delete('video');
-            p.delete('id');
+            if (tabKey !== 'related') {
+                p.delete('id');
+            } else {
+                const currentId = new URLSearchParams(window.location.search).get('id') || (currentPlayingVideo ? currentPlayingVideo.id : '');
+                if (currentId) {
+                    p.set('id', currentId);
+                }
+            }
             let hash = '';
             if (['favorites', 'recent', 'frequent'].includes(tabKey)) {
                 hash = '#profile';
@@ -2121,9 +2130,10 @@
 
         async function fetchTabCounts() {
             try {
-                const res = await apiFetch(`/api/counts?search_key=${encodeURIComponent(searchKey || '')}`);
+                const relatedVidId = new URLSearchParams(window.location.search).get('id') || (currentPlayingVideo ? currentPlayingVideo.id : '');
+                const res = await apiFetch(`/api/counts?search_key=${encodeURIComponent(searchKey || '')}&video_id=${encodeURIComponent(relatedVidId)}`);
                 if (res) {
-                    const keys = ['all', 'favorites', 'recent', 'frequent', 'global_frequent'];
+                    const keys = ['all', 'favorites', 'recent', 'frequent', 'global_frequent', 'related'];
                     keys.forEach(key => {
                         const badge = document.getElementById(`badge-${key}`);
                         if (badge) {
@@ -2149,7 +2159,23 @@
             const fetchId = currentFetchId;
 
             try {
+                let relatedVidId = '';
+                if (currentTab === 'related') {
+                    relatedVidId = new URLSearchParams(window.location.search).get('id') || (currentPlayingVideo ? currentPlayingVideo.id : '');
+                    if (!relatedVidId) {
+                        isLoading = false;
+                        loadMoreEl.style.display = 'none';
+                        targetGrid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: #888; padding: 20px;">Vui lòng chọn hoặc xem một video trước để hiển thị các video tương tự.</div>';
+                        const relatedBadge = document.getElementById('badge-related');
+                        if (relatedBadge) relatedBadge.innerText = '0';
+                        return;
+                    }
+                }
+
                 let url = `${API_URL}?page=${currentPage}&search_key=${encodeURIComponent(searchKey || '')}&tab=${currentTab || 'all'}`;
+                if (currentTab === 'related') {
+                    url += `&video_id=${encodeURIComponent(relatedVidId)}`;
+                }
                 const data = await apiFetch(url);
                 
                 if (fetchId !== currentFetchId) return;
@@ -3011,7 +3037,7 @@
 
         let galleryStartX = 0;
         let galleryStartY = 0;
-        const galleryTabsOrder = ['all', 'global_frequent'];
+        const galleryTabsOrder = ['all', 'global_frequent', 'related'];
         galleryPage.addEventListener('touchstart', e => {
             galleryStartX = e.changedTouches[0].clientX;
             galleryStartY = e.changedTouches[0].clientY;

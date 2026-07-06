@@ -173,6 +173,35 @@ def extract_clean_keywords_bulletproof(text):
     words = [w for w in words if w not in basic_stopwords and not w.isdigit() and len(w) > 2]
     return list(dict.fromkeys(words))
 
+def extract_clean_keywords_viet_eng(text):
+    if not text:
+        return []
+    text = re.sub(r'[^\w\s]', ' ', text.lower())
+    words = text.split()
+    
+    stop_words = {'the', 'is', 'are', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'this', 'that'}
+    vi_stopwords = {'và', 'của', 'các', 'có', 'được', 'cho', 'trong', 'đã', 'một', 'với', 'những', 'là', 'như', 'hay', 'đang', 'nhưng', 'tại', 'để', 'từ', 'khi', 'làm', 'đến', 'sự', 'này', 'ra', 'phải', 'người', 'về', 'sau', 'rằng', 'chỉ', 'cũng', 'nhiều', 'việc', 'hơn', 'mới', 'vì', 'nếu', 'lại', 'rất', 'còn', 'bởi', 'thì', 'lên', 'đi', 'nào', 'sẽ', 'đó', 'thể', 'theo', 'mình', 'qua', 'phim', 'sex', 'jav', 'vietsub', 'không', 'che', 'hd', 'vlxx', 'full', 'bản', 'đẹp', 'nhất'}
+    stop_words.update(vi_stopwords)
+    
+    if nltk:
+        try:
+            try:
+                nltk.data.find('corpora/stopwords')
+            except LookupError:
+                nltk.download('stopwords', quiet=True)
+            from nltk.corpus import stopwords
+            stop_words.update(stopwords.words('english'))
+            try:
+                stop_words.update(stopwords.words('vietnamese'))
+            except Exception:
+                pass
+        except Exception:
+            pass
+            
+    words = [w for w in words if w not in stop_words and not w.isdigit() and len(w) > 2]
+    return list(dict.fromkeys(words))
+
+
 VIDEOS_TABLE = "javtiful_videos"
 
 @contextlib.contextmanager
@@ -729,6 +758,7 @@ def identity_me():
 def get_counts():
     search_key = request.args.get('search_key', '').strip()
     identifier = get_identifier()
+    related_vid_id = request.args.get('video_id', '').strip()
     
     try:
         with db_lock:
@@ -773,6 +803,31 @@ def get_counts():
                 where_glob = ("WHERE " + search_where_v) if search_where_v else ""
                 cursor.execute(f"SELECT COUNT(DISTINCT h.video_id) FROM {from_main} JOIN history h ON h.video_id = v.id {where_glob}", search_params)
                 count_global = cursor.fetchone()[0]
+                
+                count_related = 0
+                if related_vid_id:
+                    cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE} WHERE id = ?", (related_vid_id,))
+                    related_row = cursor.fetchone()
+                    if related_row:
+                        r_title, r_actress, r_genre, r_maker = related_row
+                        r_keywords = extract_clean_keywords_viet_eng(r_title) if r_title else []
+                        r_query_parts = []
+                        if r_actress:
+                            r_actresses = [a.strip() for a in r_actress.split(',')]
+                            r_query_parts.append(' OR '.join([f'actress : "{a}"' for a in r_actresses if a]))
+                        if r_genre:
+                            r_genres = [g.strip() for g in r_genre.split(',')]
+                            r_query_parts.append(' OR '.join([f'genre : "{g}"' for g in r_genres if g]))
+                        if r_maker:
+                            r_query_parts.append(f'maker : "{r_maker}"')
+                        if r_keywords:
+                            r_kw_str = ' OR '.join([f'"{k}"*' for k in r_keywords[:5]])
+                            r_query_parts.append(f'title : ({r_kw_str})')
+                        
+                        r_fts_query = ' OR '.join([p for p in r_query_parts if p])
+                        if r_fts_query:
+                            cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE}_fts JOIN {VIDEOS_TABLE} v ON v.rowid = {VIDEOS_TABLE}_fts.rowid WHERE {VIDEOS_TABLE}_fts MATCH ? AND v.id != ?", (r_fts_query, related_vid_id))
+                            count_related = cursor.fetchone()[0]
         
         return jsonify({
             "all": count_all,
@@ -780,14 +835,16 @@ def get_counts():
             "recent": count_recent,
             "frequent": count_recent,
             "global_frequent": count_global,
+            "related": count_related,
             "trending_day": 0,
             "trending_month": 0
         })
     except sqlite3.OperationalError as e:
         if 'interrupted' in str(e).lower():
             custom_log("API", "⚠️ Query timeout trong /api/counts (>2s). Bỏ qua.")
-            return jsonify({"all": 0, "favorites": 0, "recent": 0, "frequent": 0, "global_frequent": 0, "trending_day": 0, "trending_month": 0})
+            return jsonify({"all": 0, "favorites": 0, "recent": 0, "frequent": 0, "global_frequent": 0, "related": 0, "trending_day": 0, "trending_month": 0})
         raise
+
 
 @app.route('/api/videos', methods=['GET'])
 def get_videos():
@@ -830,6 +887,48 @@ def get_videos():
                     from_clause = f"{VIDEOS_TABLE} v JOIN (SELECT video_id, COUNT(*) as c FROM history_logs WHERE watched_at > ? GROUP BY video_id) h ON v.id = h.video_id"
                     params.append(month_ago)
         
+                fts_terms = []
+                
+                if tab == 'related':
+                    related_vid_id = request.args.get('video_id', '').strip()
+                    if not related_vid_id and identifier:
+                        cursor.execute("SELECT video_id FROM history WHERE username = ? ORDER BY last_watched DESC LIMIT 1", (identifier,))
+                        row = cursor.fetchone()
+                        if row:
+                            related_vid_id = row[0]
+                    
+                    if not related_vid_id:
+                        return jsonify({"items": [], "total": 0, "page": page})
+                        
+                    cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE} WHERE id = ?", (related_vid_id,))
+                    row = cursor.fetchone()
+                    if not row:
+                        return jsonify({"items": [], "total": 0, "page": page})
+                        
+                    title, actress, genre, maker = row
+                    
+                    keywords = extract_clean_keywords_viet_eng(title) if title else []
+                    query_parts = []
+                    if actress:
+                        actresses = [a.strip() for a in actress.split(',')]
+                        query_parts.append(' OR '.join([f'actress : "{a}"' for a in actresses if a]))
+                    if genre:
+                        genres = [g.strip() for g in genre.split(',')]
+                        query_parts.append(' OR '.join([f'genre : "{g}"' for g in genres if g]))
+                    if maker:
+                        query_parts.append(f'maker : "{maker}"')
+                    if keywords:
+                        kw_str = ' OR '.join([f'"{k}"*' for k in keywords[:5]])
+                        query_parts.append(f'title : ({kw_str})')
+                        
+                    fts_query = ' OR '.join([p for p in query_parts if p])
+                    if not fts_query:
+                        return jsonify({"items": [], "total": 0, "page": page})
+                    
+                    fts_terms.append(f"({fts_query})")
+                    where_clauses.append("v.id != ?")
+                    params.append(related_vid_id)
+        
                 safe_key = ""
                 if search_key:
                     match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
@@ -838,17 +937,18 @@ def get_videos():
                         val = match_field.group(2).strip()
                         safe_val = ' '.join([f'"{w}"*' for w in val.replace('"', '').split()])
                         if safe_val:
-                            from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
-                            where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
+                            fts_terms.append(f"({field} : ({safe_val}))")
                             safe_key = f"{field} : ({safe_val})"
-                            params.append(safe_key)
                     else:
                         safe_key_fmt = ' '.join([f'"{w}"*' for w in search_key.replace('"', '').split()])
                         if safe_key_fmt:
-                            from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
-                            where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
+                            fts_terms.append(f"({safe_key_fmt})")
                             safe_key = safe_key_fmt
-                            params.append(safe_key)
+                            
+                if fts_terms:
+                    from_clause += f" JOIN {VIDEOS_TABLE}_fts ON v.rowid = {VIDEOS_TABLE}_fts.rowid"
+                    where_clauses.append(f"{VIDEOS_TABLE}_fts MATCH ?")
+                    params.append(" AND ".join(fts_terms))
                         
                 where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
                 
@@ -869,6 +969,8 @@ def get_videos():
                     order_clause = "ORDER BY h.total_watches DESC, v.release_date DESC"
                 elif tab in ['trending_day', 'trending_month']:
                     order_clause = "ORDER BY h.c DESC, v.release_date DESC"
+                elif tab == 'related':
+                    order_clause = f"ORDER BY bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.release_date DESC, v.added_at DESC"
                 elif safe_key:
                     order_clause = f"ORDER BY v.release_date DESC, bm25({VIDEOS_TABLE}_fts, 5.0, 10.0, 2.0, 1.0, 0.5) ASC, v.added_at DESC"
                 else:
@@ -876,6 +978,7 @@ def get_videos():
                     
                 query = f"SELECT v.id, v.title, v.cover, v.url, v.release_date, v.actress, v.genre, v.maker, v.details, v.dvd FROM {from_clause} {where_sql} {order_clause} LIMIT ? OFFSET ?"
                 cursor.execute(query, params + [per_page, offset])
+
                 rows = cursor.fetchall()
                 
         videos = []
