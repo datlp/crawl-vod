@@ -345,6 +345,67 @@
             font-size: 12px; color: #fff; z-index: 10; font-weight: 500;
         }
         .item-view-count .material-symbols-outlined { font-size: 14px; }
+
+        @media (orientation: landscape) {
+            #bottom-navigation {
+                top: 0; left: 15px; bottom: auto;
+                width: 56px; height: 100%;
+                flex-direction: column;
+                justify-content: center;
+                gap: 16px;
+                border-top: none;
+                border-right: none;
+                background: transparent;
+                pointer-events: none;
+            }
+            .bottom-nav-item {
+                flex: none;
+                pointer-events: auto;
+                width: 48px; height: 48px;
+                border-radius: 50%;
+                background: rgba(0,0,0,0.3);
+                border: 1px solid rgba(255,255,255,0.2);
+                color: #fff;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                backdrop-filter: blur(4px);
+                box-shadow: 0px 4px 6px rgba(0,0,0,0.15);
+                transition: background 0.2s, color 0.2s, transform 0.2s;
+            }
+            .bottom-nav-item:active {
+                background: rgba(255,255,255,0.3);
+            }
+            .bottom-nav-item.active {
+                color: #90caf9;
+                border-color: rgba(144, 202, 249, 0.5);
+                background: rgba(0,0,0,0.5);
+            }
+            .bottom-nav-item span:last-child {
+                display: none;
+            }
+            .page-view {
+                left: 80px;
+                width: calc(100% - 80px);
+                height: 100%;
+            }
+            #search-suggestions {
+                left: 80px;
+            }
+            #bottom-bar {
+                bottom: 0;
+                left: 0;
+                width: 100%;
+            }
+            #action-icons {
+                bottom: 84px;
+            }
+            #overlay {
+                left: 0;
+                width: 100%;
+                height: calc(100% - 70px);
+            }
+        }
     </style>
 </head>
 <body>
