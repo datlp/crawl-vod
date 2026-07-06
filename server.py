@@ -532,7 +532,7 @@ class BackgroundScanner(threading.Thread):
             except Exception as e:
                 custom_log("System", f"❌ Lỗi dispatcher video mới: {e}")
                 
-            time.sleep(300)
+            time.sleep(3600)
 
     def news_scan_worker(self, thread_num):
         global global_last_request_time
