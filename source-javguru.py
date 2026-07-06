@@ -160,6 +160,9 @@ class Scraper:
             driver.get(target_url)
             time.sleep(5) 
             
+            if hasattr(self, 'update_domain'):
+                self.update_domain(driver.current_url)
+                
             cookies = driver.get_cookies()
             cookie_pairs = []
             for c in cookies:

@@ -44,6 +44,65 @@ except ImportError as e:
     custom_log("System", "⚠️ Vui lòng cài đặt bằng lệnh: pip install curl_cffi beautifulsoup4 flask psutil")
     sys.exit(1)
 #  
+# Monkey patch curl_cffi.requests Session to monitor domain changes
+original_Session = curl_requests.Session
+
+def check_domain_change_callback(request_url, response):
+    global scraper_instance
+    if 'scraper_instance' not in globals() or scraper_instance is None:
+        return
+    if not request_url or not response or not hasattr(response, 'url') or not response.url:
+        return
+    try:
+        req_parsed = urlparse(request_url)
+        req_host = req_parsed.netloc or req_parsed.hostname
+        if not req_host:
+            return
+        
+        req_host = req_host.lower()
+        if req_host.startswith("www."):
+            req_host = req_host[4:]
+            
+        scraper_domain = getattr(scraper_instance, 'domain', '')
+        if not scraper_domain:
+            return
+        scraper_domain = scraper_domain.lower()
+        if scraper_domain.startswith("www."):
+            scraper_domain = scraper_domain[4:]
+            
+        if req_host == scraper_domain:
+            res_parsed = urlparse(response.url)
+            res_host = res_parsed.netloc or res_parsed.hostname
+            if res_host:
+                res_host = res_host.lower()
+                if res_host.startswith("www."):
+                    res_host = res_host[4:]
+                    
+                if res_host and res_host != scraper_domain:
+                    if hasattr(scraper_instance, 'update_domain'):
+                        scraper_instance.update_domain(res_host)
+    except Exception as e:
+        custom_log("System", f"⚠️ Lỗi check domain change callback: {e}")
+
+class PatchedSession(original_Session):
+    def get(self, url, *args, **kwargs):
+        res = super().get(url, *args, **kwargs)
+        check_domain_change_callback(url, res)
+        return res
+
+    def post(self, url, *args, **kwargs):
+        res = super().post(url, *args, **kwargs)
+        check_domain_change_callback(url, res)
+        return res
+
+    def request(self, method, url, *args, **kwargs):
+        res = super().request(method, url, *args, **kwargs)
+        check_domain_change_callback(url, res)
+        return res
+
+curl_requests.Session = PatchedSession
+
+#  
 try:
     import spacy
 except ImportError:
@@ -274,6 +333,12 @@ def get_db_connection(db_path, limit_buffer='200M', source_module=None):
                 SELECT rowid, title, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE}
             ''')
 
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS configs (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
     conn.execute('''
         CREATE TABLE IF NOT EXISTS media (
             id TEXT PRIMARY KEY,
@@ -1961,7 +2026,79 @@ def main():
         
     rebuild_tags_fts(db_conn_instance)
     
-    scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE, domain=args.domain)
+    # Resolved domain logic:
+    # 1. Check configs table in DB
+    # 2. Fallback to args.domain
+    # 3. Fallback to scraper's default
+    resolved_domain = None
+    with db_lock:
+        try:
+            cursor = db_conn_instance.cursor()
+            cursor.execute("SELECT value FROM configs WHERE key = 'domain'")
+            row = cursor.fetchone()
+            if row and row[0]:
+                resolved_domain = row[0]
+                custom_log("System", f"ℹ️ Lấy domain từ database: {resolved_domain}")
+        except Exception as e:
+            custom_log("System", f"⚠️ Lỗi đọc domain từ DB: {e}")
+            
+    if not resolved_domain:
+        if args.domain:
+            resolved_domain = args.domain
+            custom_log("System", f"ℹ️ Lấy domain từ command line parameter: {resolved_domain}")
+        else:
+            try:
+                # Instantiate a temporary scraper to get its default domain
+                temp_scraper = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE, domain=None)
+                resolved_domain = temp_scraper.domain
+            except Exception:
+                resolved_domain = None
+            custom_log("System", f"ℹ️ Lấy domain mặc định của source: {resolved_domain}")
+            
+        if resolved_domain:
+            with db_lock:
+                try:
+                    cursor = db_conn_instance.cursor()
+                    cursor.execute("INSERT OR REPLACE INTO configs (key, value) VALUES ('domain', ?)", (resolved_domain,))
+                    db_conn_instance.commit()
+                    custom_log("System", f"✔️ Đã lưu domain {resolved_domain} vào database.")
+                except Exception as e:
+                    custom_log("System", f"⚠️ Lỗi lưu domain vào DB: {e}")
+                    
+    scraper_instance = source_module.Scraper(db_conn_instance, db_lock, memory_lock, db_buffer, VIDEOS_TABLE, domain=resolved_domain)
+    
+    # Define update_domain method on scraper_instance dynamically
+    def update_domain_func(new_domain):
+        if not new_domain:
+            return
+        new_domain = new_domain.lower()
+        if new_domain.startswith("www."):
+            new_domain = new_domain[4:]
+            
+        old_domain = scraper_instance.domain
+        if old_domain.startswith("www."):
+            old_domain = old_domain[4:]
+            
+        if new_domain and new_domain != old_domain:
+            custom_log("System", f"🔄 Phát hiện thay đổi domain cho {args.source.capitalize()}: {old_domain} -> {new_domain}")
+            scraper_instance.domain = new_domain
+            scraper_instance.referer = f"https://{new_domain}/"
+            
+            with db_lock:
+                try:
+                    cursor = db_conn_instance.cursor()
+                    cursor.execute("INSERT OR REPLACE INTO configs (key, value) VALUES ('domain', ?)", (new_domain,))
+                    
+                    # Update sync_tasks table
+                    cursor.execute("UPDATE sync_tasks SET url_pattern = replace(url_pattern, ?, ?)", (old_domain, new_domain))
+                    cursor.execute("UPDATE sync_tasks SET url_pattern = replace(url_pattern, ?, ?)", (f"www.{old_domain}", new_domain))
+                    
+                    db_conn_instance.commit()
+                    custom_log("System", f"💾 Đã cập nhật domain mới và cập nhật sync_tasks trong database: {new_domain}")
+                except Exception as e:
+                    custom_log("System", f"❌ Lỗi cập nhật domain mới vào DB: {e}")
+                    
+    scraper_instance.update_domain = update_domain_func
     threading.Thread(target=background_db_worker, args=(db_conn_instance,), daemon=True).start()
     scanner = BackgroundScanner(
         scraper_instance, 
