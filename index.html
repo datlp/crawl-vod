@@ -2406,13 +2406,31 @@
         });
 
         document.getElementById('btn-fullscreen').addEventListener('click', () => {
-            if (!document.fullscreenElement) {
+            if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
+                let promise;
                 if (document.documentElement.requestFullscreen) {
-                    document.documentElement.requestFullscreen();
+                    promise = document.documentElement.requestFullscreen();
                 } else if (document.documentElement.webkitRequestFullscreen) { /* Safari */
-                    document.documentElement.webkitRequestFullscreen();
+                    promise = document.documentElement.webkitRequestFullscreen();
                 } else if (document.documentElement.msRequestFullscreen) { /* IE11 */
-                    document.documentElement.msRequestFullscreen();
+                    promise = document.documentElement.msRequestFullscreen();
+                }
+                
+                const lockLandscape = () => {
+                    const isPortrait = window.innerHeight > window.innerWidth;
+                    if (isPortrait && screen.orientation && typeof screen.orientation.lock === 'function') {
+                        screen.orientation.lock('landscape').catch(err => {
+                            console.warn("Orientation lock failed: ", err);
+                        });
+                    }
+                };
+
+                if (promise && typeof promise.then === 'function') {
+                    promise.then(lockLandscape).catch(err => {
+                        console.warn("Fullscreen request failed: ", err);
+                    });
+                } else {
+                    setTimeout(lockLandscape, 200);
                 }
             } else {
                 if (document.exitFullscreen) {
@@ -2424,6 +2442,22 @@
                 }
             }
         });
+
+        // Tự động unlock khi thoát chế độ fullscreen bằng bất kỳ cách nào (phím ESC, cử chỉ vuốt...)
+        const handleFullscreenChange = () => {
+            if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
+                if (screen.orientation && typeof screen.orientation.unlock === 'function') {
+                    try {
+                        screen.orientation.unlock();
+                    } catch(err) {
+                        console.warn("Orientation unlock failed on exit: ", err);
+                    }
+                }
+            }
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('msfullscreenchange', handleFullscreenChange);
 
         document.getElementById('btn-sync').addEventListener('click', () => {
             apiFetch('/api/sync').then(data => {
