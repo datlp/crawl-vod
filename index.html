@@ -2535,9 +2535,16 @@
                     }
                 };
 
+                try {
+                    history.pushState({ fullscreen: true }, '');
+                } catch(e) {}
+
                 if (promise && typeof promise.then === 'function') {
                     promise.then(lockLandscape).catch(err => {
                         console.warn("Fullscreen request failed: ", err);
+                        if (history.state && history.state.fullscreen) {
+                            history.back();
+                        }
                     });
                 } else {
                     setTimeout(lockLandscape, 200);
@@ -2563,11 +2570,28 @@
                         console.warn("Orientation unlock failed on exit: ", err);
                     }
                 }
+                if (history.state && history.state.fullscreen) {
+                    history.back();
+                }
             }
         };
         document.addEventListener('fullscreenchange', handleFullscreenChange);
         document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
         document.addEventListener('msfullscreenchange', handleFullscreenChange);
+
+        window.addEventListener('popstate', (e) => {
+            if (!history.state || !history.state.fullscreen) {
+                if (document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement) {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    } else if (document.msExitFullscreen) {
+                        document.msExitFullscreen();
+                    }
+                }
+            }
+        });
 
         document.getElementById('btn-sync').addEventListener('click', () => {
             apiFetch('/api/sync').then(data => {
