@@ -180,7 +180,7 @@ class Scraper:
         try:
             res = self.session.get(url, timeout=15)
             mp4_url = None
-            match = re.search(r'id="frontWatchConfig"\s+type="application/json">\s*(.*?)\s*</script>', res.text, re.DOTALL)
+            match = re.search(r'<script[^>]*id=["\']frontWatchConfig["\'][^>]*>\s*(.*?)\s*</script>', res.text, re.DOTALL)
             if match:
                 config = json.loads(match.group(1))
                 sources = config.get('playerSources', [])
