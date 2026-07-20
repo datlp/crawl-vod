@@ -1958,8 +1958,7 @@ def serve_html(path):
             content = f.read()
 
         if app_args and hasattr(app_args, 'source'):
-            source_name = app_args.source.capitalize()
-            new_title = f"{source_name} Player"
+            new_title = "VOD - Video On Demand"
             content = re.sub(b'<title>.*?</title>', f'<title>{new_title}</title>'.encode('utf-8'), content, count=1, flags=re.IGNORECASE)
 
         return Response(content, mimetype='text/html; charset=utf-8')
