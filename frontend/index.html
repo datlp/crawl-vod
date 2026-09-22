@@ -298,6 +298,18 @@
                                         <span>Vuốt Xuống ở nửa dưới để quay về video vừa xem</span>
                                     </div>
                                 </div>
+
+                                <!-- Double Tap -> Upload Queue (Center) / Seek (Sides) -->
+                                <div class="guide-card-v2">
+                                    <div class="guide-card-visual">
+                                        <span class="material-symbols-outlined" style="font-size: 34px; color: #c084fc;">cloud_upload</span>
+                                        <div class="swipe-pill-btn" style="background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);">DOUBLE TAP</div>
+                                    </div>
+                                    <div class="guide-card-text">
+                                        <strong>Double Tap Giữa ➔ Thêm Queue</strong>
+                                        <span>Chạm 2 lần giữa màn hình để thêm video vào hàng đợi tải Google Drive</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -358,9 +370,9 @@
                         <button id="btn-speed" class="progress-ctrl-btn progress-speed-btn" title="Tốc độ phát (1x -> 2x -> 4x -> 1x)">
                             <span id="speed-label" class="speed-text">1x</span>
                         </button>
-                        <button id="btn-like" class="progress-ctrl-btn gdrive-related-elem" title="Đang trong hàng đợi tải (Bấm để xóa khỏi :5052/codes ⏳ Chưa Upload)">
-                            <span class="material-symbols-outlined">cloud_upload</span>
-                            <span id="like-count" class="progress-ctrl-badge" style="display:none;"></span>
+                        <button id="btn-like" class="progress-ctrl-btn progress-queue-btn gdrive-related-elem" title="Thêm vào hàng đợi upload">
+                            <span class="material-symbols-outlined queue-icon">cloud_upload</span>
+                            <span id="like-count" class="queue-text">Queue</span>
                         </button>
                         <button id="btn-dislike" class="progress-ctrl-btn progress-dislike-btn" title="Không thích (Ẩn video này khỏi gợi ý & Chuyển video kế tiếp)">
                             <span class="material-symbols-outlined">thumb_down</span>

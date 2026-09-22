@@ -1219,27 +1219,76 @@ video.fit-cover {
     background: rgba(239, 68, 68, 0.2);
 }
 
-/* Upload Queue Button States */
+/* Upload Queue Button States (Pill button with icon and label) */
+.progress-queue-btn {
+    border-radius: 12px;
+    width: auto;
+    min-width: 68px;
+    padding: 0 7px;
+    font-size: 10.5px;
+    font-weight: 700;
+    gap: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(168, 85, 247, 0.65);
+    color: #c084fc;
+    box-shadow: 0 2px 8px rgba(168, 85, 247, 0.25);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-queue-btn:hover {
+    background: #8b5cf6;
+    color: #ffffff;
+    border-color: #a855f7;
+    box-shadow: 0 0 14px rgba(139, 92, 246, 0.6);
+    transform: scale(1.05);
+}
+
+.progress-queue-btn .queue-icon {
+    font-size: 15px;
+}
+
+.progress-queue-btn .queue-text {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+}
+
 .progress-ctrl-btn.in-queue,
 .action-btn.in-queue {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.75) 0%, rgba(168, 85, 247, 0.75) 100%);
-    border-color: #818cf8;
-    box-shadow: 0 0 16px rgba(99, 102, 241, 0.6);
-    color: #ffffff;
+    background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%) !important;
+    border-color: rgba(251, 191, 36, 0.8) !important;
+    box-shadow: 0 0 14px rgba(245, 158, 11, 0.5) !important;
+    color: #ffffff !important;
 }
 
 .progress-ctrl-btn.in-queue:hover,
 .action-btn.in-queue:hover {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.9) 0%, rgba(168, 85, 247, 0.9) 100%);
-    border-color: #a5b4fc;
+    background: linear-gradient(135deg, #b45309 0%, #d97706 100%) !important;
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.75) !important;
+}
+
+.progress-ctrl-btn.in-queue .queue-icon {
+    animation: queueHourglassSpin 3s infinite ease-in-out;
 }
 
 .progress-ctrl-btn.has-gdrive,
 .action-btn.has-gdrive {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.75) 0%, rgba(5, 150, 105, 0.75) 100%);
-    border-color: #34d399;
-    box-shadow: 0 0 16px rgba(16, 185, 129, 0.6);
-    color: #ffffff;
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+    border-color: rgba(52, 211, 153, 0.8) !important;
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.5) !important;
+    color: #ffffff !important;
+}
+
+.progress-ctrl-btn.has-gdrive:hover,
+.action-btn.has-gdrive:hover {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%) !important;
+    border-color: #34d399 !important;
+    box-shadow: 0 0 16px rgba(16, 185, 129, 0.75) !important;
 }
 
 /* Stream Source Variants Styling */

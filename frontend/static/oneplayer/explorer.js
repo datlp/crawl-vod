@@ -4902,12 +4902,12 @@ class VODExplorer {
                         buttonEl.className = 'badge-gdrive-status in-queue btn-queue-action in-queue';
                         buttonEl.setAttribute('data-action', 'remove-queue');
                         buttonEl.setAttribute('title', 'Đang trong hàng đợi tải (Bấm để hủy)');
-                        buttonEl.innerHTML = `<span class="material-symbols-outlined">hourglass_top</span> Đang đợi tải`;
+                        buttonEl.innerHTML = `<span class="material-symbols-outlined" style="font-size:11px;">hourglass_top</span> Đang đợi`;
                     } else {
                         buttonEl.className = 'badge-gdrive-status btn-add-queue btn-queue-action';
                         buttonEl.setAttribute('data-action', 'add-queue');
-                        buttonEl.setAttribute('title', 'Chưa có trên Google Drive - Bấm để thêm vào Hàng đợi Tải');
-                        buttonEl.innerHTML = `<span class="material-symbols-outlined">add_to_photos</span> + Tải GDrive`;
+                        buttonEl.setAttribute('title', 'Bấm để thêm vào Hàng đợi tải Google Drive');
+                        buttonEl.innerHTML = `<span class="material-symbols-outlined" style="font-size:11px;">add_to_photos</span> + Drive`;
                     }
                 }
                 if (window.playerInstance && (window.playerInstance.currentVideoName || window.playerInstance.currentVideoPath || '').toUpperCase() === codeClean) {

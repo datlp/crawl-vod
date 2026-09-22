@@ -160,6 +160,12 @@ class VODPlayer {
         this.isLandscapeRotated = false;
         this.isVideoLandscape = false;
 
+        // Double Tap Ripple Seek Overlays
+        this.tapRippleLeft = document.getElementById('tap-ripple-left');
+        this.tapRippleRight = document.getElementById('tap-ripple-right');
+        this.tapTextLeft = document.getElementById('tap-text-left');
+        this.tapTextRight = document.getElementById('tap-text-right');
+
         // Pinch-to-zoom (2 ngón tay) State
         this.zoomScale = 1;
         this.zoomTranslateX = 0;
@@ -1283,18 +1289,18 @@ class VODPlayer {
 
         if (this.hasGDrive) {
             this.btnLike.classList.add('has-gdrive');
-            this.btnLike.setAttribute('title', 'Đã có trên Google Drive (Xem :5052/codes)');
+            this.btnLike.setAttribute('title', 'Đã có trên Google Drive (Bấm để xem chi tiết / xóa)');
             if (iconSpan) iconSpan.innerText = 'cloud_done';
-            if (this.likeCountText) this.likeCountText.innerText = 'GDrive';
+            if (this.likeCountText) this.likeCountText.innerText = 'Drive';
         } else if (this.isInQueue) {
             this.btnLike.classList.add('in-queue');
-            this.btnLike.setAttribute('title', 'Đang trong hàng đợi tải (Bấm để xóa khỏi :5052/codes ⏳ Chưa Upload)');
+            this.btnLike.setAttribute('title', 'Đang trong hàng đợi tải (Bấm để hủy khỏi queue)');
             if (iconSpan) iconSpan.innerText = 'hourglass_top';
             if (this.likeCountText) this.likeCountText.innerText = 'Đang đợi';
         } else {
-            this.btnLike.setAttribute('title', 'Thêm vào Hàng đợi Tải (:5052/codes ⏳ Chưa Upload GDrive)');
+            this.btnLike.setAttribute('title', 'Thêm vào Hàng đợi Tải Google Drive (Double tap để thêm)');
             if (iconSpan) iconSpan.innerText = 'cloud_upload';
-            if (this.likeCountText) this.likeCountText.innerText = 'Queue';
+            if (this.likeCountText) this.likeCountText.innerText = '+ Drive';
         }
     }
 
@@ -1530,6 +1536,43 @@ class VODPlayer {
         const posX = x - rect.left;
         const posY = y - rect.top;
 
+        let code = (this.currentVideoName || this.currentVideoPath || '').trim().toUpperCase();
+        if (!code && this.streamUrl) {
+            const m = this.streamUrl.match(/\/hls\/([^\/]+)\//i);
+            if (m) code = m[1].toUpperCase();
+        }
+
+        // Nếu đã có trên Google Drive -> Hiển thị icon GDrive và mở thông tin
+        if (this.hasGDrive) {
+            const iconEl = document.createElement('div');
+            iconEl.className = 'floating-info-icon';
+            iconEl.innerHTML = '<span class="material-symbols-outlined">cloud_done</span>';
+            iconEl.style.left = `${posX}px`;
+            iconEl.style.top = `${posY}px`;
+            this.heartContainer.appendChild(iconEl);
+            setTimeout(() => iconEl.remove(), 900);
+            if (window.showToast) {
+                window.showToast(`Phim [${code || 'này'}] đã có sẵn trên Google Drive!`, 'info');
+            }
+            return;
+        }
+
+        // Nếu đã trong hàng đợi tải -> Thông báo rõ
+        if (this.isInQueue) {
+            const iconEl = document.createElement('div');
+            iconEl.className = 'floating-info-icon';
+            iconEl.innerHTML = '<span class="material-symbols-outlined">hourglass_top</span>';
+            iconEl.style.left = `${posX}px`;
+            iconEl.style.top = `${posY}px`;
+            this.heartContainer.appendChild(iconEl);
+            setTimeout(() => iconEl.remove(), 900);
+            if (window.showToast) {
+                window.showToast(`Phim [${code || 'này'}] đã nằm trong hàng đợi tải upload!`, 'info');
+            }
+            return;
+        }
+
+        // Chưa có -> Tạo hạt particle mây tải bay lên và thêm vào hàng đợi
         const iconEl = document.createElement('div');
         iconEl.className = 'floating-upload-icon';
         iconEl.innerHTML = '<span class="material-symbols-outlined">cloud_upload</span>';
@@ -1677,6 +1720,25 @@ class VODPlayer {
                 this.video.style.transform = '';
             }
         }
+    }
+
+    triggerTapRipple(side = 'right', seconds = 30) {
+        const rippleEl = side === 'left' ? this.tapRippleLeft : this.tapRippleRight;
+        const textEl = side === 'left' ? this.tapTextLeft : this.tapTextRight;
+        if (!rippleEl) return;
+
+        if (textEl) {
+            textEl.innerText = `${Math.abs(seconds)}s`;
+        }
+
+        rippleEl.classList.remove('active');
+        void rippleEl.offsetWidth; // trigger reflow to restart css animation
+        rippleEl.classList.add('active');
+
+        clearTimeout(rippleEl._rippleTimer);
+        rippleEl._rippleTimer = setTimeout(() => {
+            rippleEl.classList.remove('active');
+        }, 550);
     }
 
     resetZoom(smooth = true) {
@@ -1974,20 +2036,29 @@ class VODPlayer {
 
                 if (this.gestureSettings.doubleTapSeek) {
                     const rect = this.container.getBoundingClientRect();
+                    const containerWidth = rect.width || 1;
                     const clickX = e.clientX - rect.left;
-                    const isRightHalf = clickX >= (rect.width / 2);
+                    const ratio = clickX / containerWidth;
 
                     const isCDNOnly = !!(window.__IS_GDRIVE_ONLY__ === false && document.body.classList.contains('mode-cdn-only'));
-                    if (isCDNOnly) {
-                        // Trên :3000 (Thuần CDN): Double tap nửa phải = tua tới, nửa trái = tua lùi (không liên quan GDrive)
-                        const seekDelta = (this.doubleTapSeekSeconds || 30);
-                        this.seekRelative(isRightHalf ? seekDelta : -seekDelta);
+                    const seekDelta = (this.doubleTapSeekSeconds || 30);
+
+                    if (ratio < 0.30) {
+                        // 1. Double tap 30% CẠNH TRÁI: Tua lùi 30s + Hiện hiệu ứng Ripple Tua
+                        this.seekRelative(-seekDelta);
+                        this.triggerTapRipple('left', seekDelta);
+                    } else if (ratio > 0.70) {
+                        // 2. Double tap 30% CẠNH PHẢI: Tua tới 30s + Hiện hiệu ứng Ripple Tua
+                        this.seekRelative(seekDelta);
+                        this.triggerTapRipple('right', seekDelta);
                     } else {
-                        // Trên :3001 (GDrive): Quản lý hàng đợi tải / xóa file GDrive
-                        if (isRightHalf) {
+                        // 3. Double tap 40% Ở GIỮA (Center Zone): Thêm vào hàng đợi Upload Queue
+                        if (!isCDNOnly) {
                             this.spawnUploadParticle(e.clientX, e.clientY);
                         } else {
-                            this.spawnRemoveParticle(e.clientX, e.clientY);
+                            // Chế độ mode-cdn-only thuần
+                            this.seekRelative(seekDelta);
+                            this.triggerTapRipple('right', seekDelta);
                         }
                     }
                 }
