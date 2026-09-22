@@ -12,6 +12,9 @@ def parse_release_date(date_str):
     date_str = date_str.strip().lower()
     now = datetime.datetime.now()
     
+    if date_str == 'just now' or date_str == 'vừa xong':
+        return now.strftime('%Y-%m-%d %H:%M:%S')
+
     if re.match(r'^\d{1,2}:\d{2}:\d{2}$', date_str) or re.match(r'^\d{1,2}:\d{2}$', date_str):
         return ""
 
@@ -63,6 +66,7 @@ class Scraper:
         self.sync_lock = threading.Lock()
         self.referer = f"https://{self.domain}/"
         self.source_name = "Javtiful"
+        self.url_cache = {}  # {vid_id: (url, expiry_ts)}
 
     def update_sync_tasks_from_menu(self):
         custom_log(self.source_name, f"Khởi tạo sync_tasks cho {self.source_name}...")
@@ -162,18 +166,11 @@ class Scraper:
             return 0, -1, 0
 
     def get_video_url(self, vid_id, force_refresh=False):
+        now_ts = time.time()
         if not force_refresh:
-            with self.memory_lock:
-                url_in_buffer = self.db_buffer['video_urls'].get(vid_id)
-            if url_in_buffer:
-                return url_in_buffer
-                    
-            with self.db_lock:
-                cursor = self.db_conn.cursor()
-                cursor.execute(f"SELECT url FROM {self.table_name} WHERE id = ? AND url IS NOT NULL", (vid_id,))
-                row = cursor.fetchone()
-                if row and row[0]:
-                    return row[0]
+            cached = self.url_cache.get(vid_id)
+            if cached and cached[1] > now_ts:
+                return cached[0]
             
         url = f"https://{self.domain}/video/{vid_id}"
         custom_log(self.source_name, f"⏳ Fetching video URL for {vid_id}")
@@ -190,8 +187,8 @@ class Scraper:
                 source = soup.select_one('video source')
                 if source and source.get('src'): mp4_url = source.get('src')
             if mp4_url:
-                with self.memory_lock:
-                    self.db_buffer['video_urls'][vid_id] = mp4_url
+                # Fast-stream URL Javtiful có token hết hạn, lưu RAM cache 3 giờ
+                self.url_cache[vid_id] = (mp4_url, now_ts + 10800)
                 return mp4_url
             return None
         except Exception as e:

@@ -20,6 +20,11 @@ import unicodedata
 import contextlib
 from urllib.parse import urlparse, parse_qs, quote
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
 
 
 def custom_log(category, message):
@@ -400,6 +405,101 @@ def get_db_connection(db_path, limit_buffer='200M', source_module=None):
     conn.commit()
     return conn
 
+NEXTDJAV_DB_PATH = None
+
+def get_nextdjav_conn():
+    """Lấy kết nối tới nextdjav.db để kiểm tra video trên GDrive và quản lý queue tải lên."""
+    global NEXTDJAV_DB_PATH
+    if not NEXTDJAV_DB_PATH:
+        candidates = [
+            getattr(app_args, 'nextdjav_db', None) if app_args else None,
+            "D:\\Dat\\Database\\nextdjav.db",
+            "D:\\Database\\nextdjav.db",
+            "/sdcard/Database/nextdjav.db",
+            "/sdcard/Projects/Database/nextdjav.db",
+            os.path.expanduser("~/Database/nextdjav.db")
+        ]
+        for c in candidates:
+            if c and os.path.exists(c):
+                NEXTDJAV_DB_PATH = c
+                break
+        if not NEXTDJAV_DB_PATH:
+            NEXTDJAV_DB_PATH = "D:\\Dat\\Database\\nextdjav.db" if os.name == 'nt' else "/sdcard/Database/nextdjav.db"
+
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(NEXTDJAV_DB_PATH)) or '.', exist_ok=True)
+        c = sqlite3.connect(NEXTDJAV_DB_PATH, check_same_thread=False, timeout=5.0)
+        c.execute('PRAGMA journal_mode=WAL;')
+        c.execute('PRAGMA busy_timeout=5000;')
+        # Tự động đảm bảo bảng media_upload_queue tồn tại
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS media_upload_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                media_id TEXT UNIQUE NOT NULL,
+                thread_id TEXT,
+                source TEXT NOT NULL,
+                title TEXT,
+                file_name TEXT NOT NULL,
+                original_url TEXT NOT NULL,
+                poster_url TEXT,
+                target_folder TEXT DEFAULT '/NextDJAV/Videos',
+                status TEXT DEFAULT 'pending',
+                retry_count INTEGER DEFAULT 0,
+                claimed_by TEXT,
+                claimed_at DATETIME,
+                error_message TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_media_upload_queue_status ON media_upload_queue(status, created_at)')
+        c.commit()
+        return c
+    except Exception as e:
+        custom_log("System", f"⚠️ Không thể kết nối nextdjav.db ({NEXTDJAV_DB_PATH}): {e}")
+        return None
+
+def get_nextdjav_status_maps(codes):
+    """Truy vấn nhanh tập hợp codes để xác định hasGDrive và inDownloadQueue."""
+    has_gdrive_set = set()
+    in_queue_set = set()
+    if not codes:
+        return has_gdrive_set, in_queue_set
+
+    clean_codes = [c.strip().upper() for c in codes if c and c.strip()]
+    if not clean_codes:
+        return has_gdrive_set, in_queue_set
+
+    conn = get_nextdjav_conn()
+    if not conn:
+        return has_gdrive_set, in_queue_set
+
+    try:
+        placeholders = ','.join('?' for _ in clean_codes)
+        cur = conn.cursor()
+        
+        # 1. Kiểm tra video đã có trên GDrive
+        try:
+            cur.execute(f"SELECT upper(code) FROM drive_videos WHERE upper(code) IN ({placeholders})", clean_codes)
+            for r in cur.fetchall():
+                if r[0]: has_gdrive_set.add(r[0].strip().upper())
+        except Exception:
+            pass
+
+        # 2. Kiểm tra video đang trong hàng đợi tải (pending / claimed / uploading)
+        try:
+            cur.execute(f"SELECT upper(media_id) FROM media_upload_queue WHERE status IN ('pending', 'claimed', 'uploading') AND upper(media_id) IN ({placeholders})", clean_codes)
+            for r in cur.fetchall():
+                if r[0]: in_queue_set.add(r[0].strip().upper())
+        except Exception:
+            pass
+
+        conn.close()
+    except Exception as e:
+        custom_log("System", f"⚠️ Lỗi tra cứu status nextdjav: {e}")
+
+    return has_gdrive_set, in_queue_set
+
 def remove_accents(input_str):
     s1 = unicodedata.normalize('NFD', input_str)
     return re.sub(r'[\u0300-\u036f]', '', s1).lower()
@@ -647,7 +747,11 @@ class BackgroundScanner(threading.Thread):
                 custom_log("System", f"❌ Lỗi backlog scanner: {e}")
                 time.sleep(5)
 
-app = Flask(__name__)
+_base_dir = os.path.dirname(os.path.abspath(__file__))
+_frontend_dir = os.path.abspath(os.path.join(_base_dir, '..', 'frontend'))
+_static_dir = os.path.join(_frontend_dir, 'static')
+
+app = Flask(__name__, static_folder=_static_dir, static_url_path='/static')
 app.config['JSON_AS_ASCII'] = False
 import logging
 log = logging.getLogger('werkzeug')
@@ -979,23 +1083,65 @@ def get_videos():
 
                 rows = cursor.fetchall()
                 
-        videos = []
+        # Thu thập toàn bộ codes / dvds để tra cứu trạng thái GDrive và Upload Queue
+        query_codes = []
         for row in rows:
-            videos.append({
+            code_candidate = (row[9] or '').strip().upper()
+            if not code_candidate:
+                # Thử trích xuất code từ title nếu chưa có dvd
+                m_c = re.search(r'([A-Za-z0-9]+-[0-9]+)', row[1] or '')
+                code_candidate = m_c.group(1).upper() if m_c else (row[0] or '').strip().upper()
+            query_codes.append(code_candidate)
+
+        has_gdrive_set, in_queue_set = get_nextdjav_status_maps(query_codes)
+
+        videos = []
+        for idx, row in enumerate(rows):
+            code_val = query_codes[idx]
+            has_gd = code_val in has_gdrive_set
+            in_q = code_val in in_queue_set
+
+            vid_item = {
                 "id": row[0],
+                "code": code_val,
+                "name": code_val,
                 "title": row[1],
                 "cover": f"/api/media?id={row[0]}",
+                "cover_url": f"/api/media?id={row[0]}",
+                "coverUrl": f"/api/media?id={row[0]}",
+                "poster_url": f"/api/media?id={row[0]}",
                 "url": row[3],
+                "stream_url": row[3] or f"/api/video_url?id={row[0]}",
                 "release_date": row[4] if len(row) > 4 else '',
+                "releaseDate": row[4] if len(row) > 4 else '',
                 "actress": row[5] if len(row) > 5 else '',
+                "actresses": [a.strip() for a in row[5].split(',') if a.strip()] if (len(row) > 5 and row[5]) else [],
                 "genre": row[6] if len(row) > 6 else '',
+                "genres": [g.strip() for g in row[6].split(',') if g.strip()] if (len(row) > 6 and row[6]) else [],
                 "maker": row[7] if len(row) > 7 else '',
+                "studio": row[7] if len(row) > 7 else '',
                 "details": row[8] if len(row) > 8 else '',
                 "dvd": row[9] if len(row) > 9 else '',
                 "source": getattr(scraper_instance, 'source_name', app_args.source),
-                "domain": getattr(scraper_instance, 'domain', '')
-            })
-        return jsonify({"items": videos, "total": total, "page": page})
+                "domain": getattr(scraper_instance, 'domain', ''),
+                "hasGDrive": has_gd,
+                "has_gdrive": has_gd,
+                "inDownloadQueue": in_q,
+                "in_download_queue": in_q,
+                "in_queue": in_q
+            }
+            videos.append(vid_item)
+
+        total_pages = (total + per_page - 1) // max(1, per_page) if total > 0 else 1
+        return jsonify({
+            "success": True,
+            "items": videos,
+            "videos": videos,
+            "entries": videos,
+            "total": total,
+            "totalPages": total_pages,
+            "page": page
+        })
     except sqlite3.OperationalError as e:
         if 'interrupted' in str(e).lower():
             custom_log("API", "⚠️ Query timeout trong /api/videos (>2s). Bỏ qua.")
@@ -1377,24 +1523,116 @@ def video_details_api():
         row = cursor.fetchone()
         
     if row:
+        code_val = (row[9] or '').strip().upper()
+        if not code_val:
+            m_c = re.search(r'([A-Za-z0-9]+-[0-9]+)', row[1] or '')
+            code_val = m_c.group(1).upper() if m_c else (row[0] or '').strip().upper()
+
+        has_gdrive_set, in_queue_set = get_nextdjav_status_maps([code_val])
+        has_gd = code_val in has_gdrive_set
+        in_q = code_val in in_queue_set
+
+        vid_data = {
+            "id": row[0],
+            "code": code_val,
+            "name": code_val,
+            "title": row[1],
+            "cover": f"/api/media?id={row[0]}",
+            "cover_url": f"/api/media?id={row[0]}",
+            "coverUrl": f"/api/media?id={row[0]}",
+            "poster_url": f"/api/media?id={row[0]}",
+            "url": row[3],
+            "stream_url": row[3] or f"/api/video_url?id={row[0]}",
+            "release_date": row[4] if row[4] else '',
+            "releaseDate": row[4] if row[4] else '',
+            "actress": row[5] if row[5] else '',
+            "actresses": [a.strip() for a in row[5].split(',') if a.strip()] if row[5] else [],
+            "genre": row[6] if row[6] else '',
+            "genres": [g.strip() for g in row[6].split(',') if g.strip()] if row[6] else [],
+            "maker": row[7] if row[7] else '',
+            "studio": row[7] if row[7] else '',
+            "details": row[8] if row[8] else '',
+            "dvd": row[9] if row[9] else '',
+            "source": getattr(scraper_instance, 'source_name', app_args.source),
+            "domain": getattr(scraper_instance, 'domain', ''),
+            "hasGDrive": has_gd,
+            "has_gdrive": has_gd,
+            "inDownloadQueue": in_q,
+            "in_download_queue": in_q,
+            "in_queue": in_q
+        }
         return jsonify({
             "success": True,
-            "data": {
-                "id": row[0],
-                "title": row[1],
-                "cover": f"/api/media?id={row[0]}",
-                "url": row[3],
-                "release_date": row[4] if row[4] else '',
-                "actress": row[5] if row[5] else '',
-                "genre": row[6] if row[6] else '',
-                "maker": row[7] if row[7] else '',
-                "details": row[8] if row[8] else '',
-                "dvd": row[9] if row[9] else '',
-                "source": getattr(scraper_instance, 'source_name', app_args.source),
-                "domain": getattr(scraper_instance, 'domain', '')
-            }
+            "data": vid_data,
+            "video": vid_data,
+            "sources": [{"id": "crawl", "name": getattr(scraper_instance, 'source_name', app_args.source).capitalize(), "stream_url": vid_data["stream_url"], "default": True}]
         })
     return jsonify({"success": False, "error": "Not found"})
+
+@app.route('/api/video/<path:code>', methods=['GET'])
+def api_oneplayer_video_detail(code):
+    """Tương thích OnePlayer Drawer/Detail request /api/video/:code."""
+    code_clean = code.strip().upper()
+    for ext in (".TS", ".MP4", ".MKV", ".DATTS", ".M3U8", ".JSON"):
+        if code_clean.endswith(ext):
+            code_clean = code_clean[:-len(ext)]
+            break
+
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute(f"SELECT id, title, cover, url, release_date, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE} WHERE upper(dvd) = ? OR upper(id) = ? OR upper(title) LIKE ? LIMIT 1", (code_clean, code_clean.lower(), f"%{code_clean}%"))
+        row = cursor.fetchone()
+
+    if not row:
+        return jsonify({"success": False, "error": "Video not found"}), 404
+
+    code_val = (row[9] or '').strip().upper() or code_clean
+    has_gdrive_set, in_queue_set = get_nextdjav_status_maps([code_val])
+    has_gd = code_val in has_gdrive_set
+    in_q = code_val in in_queue_set
+
+    # Tự động nạp stream URL nếu chưa có sẵn
+    stream_url = row[3]
+    if not stream_url:
+        try:
+            stream_url = scraper_instance.get_video_url(row[0])
+        except Exception:
+            pass
+
+    vid_data = {
+        "id": row[0],
+        "code": code_val,
+        "name": code_val,
+        "title": row[1] or code_val,
+        "cover": f"/api/media?id={row[0]}",
+        "cover_url": f"/api/media?id={row[0]}",
+        "coverUrl": f"/api/media?id={row[0]}",
+        "poster_url": f"/api/media?id={row[0]}",
+        "url": stream_url or "",
+        "stream_url": stream_url or f"/api/video_url?id={row[0]}",
+        "release_date": row[4] if row[4] else '',
+        "releaseDate": row[4] if row[4] else '',
+        "actress": row[5] if row[5] else '',
+        "actresses": [a.strip() for a in row[5].split(',') if a.strip()] if row[5] else [],
+        "genre": row[6] if row[6] else '',
+        "genres": [g.strip() for g in row[6].split(',') if g.strip()] if row[6] else [],
+        "maker": row[7] if row[7] else '',
+        "studio": row[7] if row[7] else '',
+        "details": row[8] if row[8] else '',
+        "dvd": row[9] if row[9] else '',
+        "hasGDrive": has_gd,
+        "has_gdrive": has_gd,
+        "inDownloadQueue": in_q,
+        "in_download_queue": in_q,
+        "in_queue": in_q,
+        "source": getattr(scraper_instance, 'source_name', app_args.source),
+        "domain": getattr(scraper_instance, 'domain', '')
+    }
+    return jsonify({
+        "success": True,
+        "video": vid_data,
+        "sources": [{"id": "crawl", "name": getattr(scraper_instance, 'source_name', app_args.source).capitalize(), "stream_url": vid_data["stream_url"], "default": True}]
+    })
 
 @app.route('/api/search_suggestions', methods=['GET'])
 def search_suggestions():
@@ -1651,6 +1889,267 @@ def search_suggestions():
             custom_log("API", "⚠️ Query timeout trong /api/search_suggestions (>2s). Bỏ qua.")
             return jsonify({"success": True, "suggestions": []})
         raise
+
+# =====================================================================
+# ONEPLAYER COMPATIBILITY & GDRIVE QUEUE ENDPOINTS
+# =====================================================================
+
+@app.route('/api/queue', methods=['GET', 'POST', 'DELETE'])
+def api_oneplayer_queue():
+    """Quản lý hàng đợi tải lên Google Drive (Add Queue / Remove Queue / List Queue)."""
+    conn = get_nextdjav_conn()
+    if not conn:
+        return jsonify({"success": False, "error": "Không thể kết nối cơ sở dữ liệu nextdjav.db"}), 500
+
+    try:
+        cur = conn.cursor()
+        if request.method == 'GET':
+            cur.execute("""
+                SELECT media_id, title, source, status, file_name, created_at, error_message 
+                FROM media_upload_queue 
+                ORDER BY id DESC LIMIT 100
+            """)
+            items = []
+            for r in cur.fetchall():
+                items.append({
+                    "media_id": r[0],
+                    "title": r[1],
+                    "source": r[2],
+                    "status": r[3],
+                    "file_name": r[4],
+                    "created_at": r[5],
+                    "error_message": r[6]
+                })
+            conn.close()
+            return jsonify({"success": True, "items": items, "total": len(items)})
+
+        payload = request.get_json(silent=True) or {}
+        code = (payload.get('code') or payload.get('media_id') or request.args.get('code') or '').strip().upper()
+        if not code:
+            conn.close()
+            return jsonify({"success": False, "error": "Thiếu mã code video"}), 400
+
+        # Chuẩn hóa mã code bỏ phần mở rộng nếu có
+        for ext in (".TS", ".MP4", ".MKV", ".DATTS", ".M3U8"):
+            if code.endswith(ext):
+                code = code[:-len(ext)]
+                break
+
+        if request.method == 'DELETE':
+            cur.execute("DELETE FROM media_upload_queue WHERE upper(media_id) = ?", (code,))
+            conn.commit()
+            conn.close()
+            custom_log("Queue", f"🗑️ Đã xóa {code} khỏi media_upload_queue")
+            return jsonify({"success": True, "message": f"Đã xóa {code} khỏi hàng đợi tải"})
+
+        if request.method == 'POST':
+            # Tìm thông tin video trong DB hiện tại của crawl-vod
+            vrow = None
+            if db_conn_instance:
+                with db_lock:
+                    c_vod = db_conn_instance.cursor()
+                    c_vod.execute(f"SELECT id, title, cover, url, release_date, dvd FROM {VIDEOS_TABLE} WHERE upper(dvd) = ? OR upper(id) = ? OR upper(title) LIKE ? LIMIT 1", (code, code.lower(), f"%{code}%"))
+                    vrow = c_vod.fetchone()
+
+            vid_id = vrow[0] if vrow else code.lower()
+            title = vrow[1] if vrow else code
+            cover = vrow[2] if vrow else ""
+            stream_url = vrow[3] if vrow else ""
+
+            # Nếu chưa có stream url, thử lấy thông qua scraper
+            if not stream_url and scraper_instance:
+                try:
+                    stream_url = scraper_instance.get_video_url(vid_id)
+                except Exception:
+                    pass
+
+            if not stream_url:
+                stream_url = f"https://{getattr(scraper_instance, 'domain', 'example.com')}/video/{vid_id}"
+
+            file_name = f"{code}.mp4"
+            source_name = getattr(scraper_instance, 'source_name', None) or (getattr(app_args, 'source', None) if app_args else 'javtiful')
+
+            cur.execute("""
+                INSERT INTO media_upload_queue 
+                (media_id, source, title, file_name, original_url, poster_url, status, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
+                ON CONFLICT(media_id) DO UPDATE SET
+                    source = excluded.source,
+                    title = excluded.title,
+                    file_name = excluded.file_name,
+                    original_url = excluded.original_url,
+                    poster_url = excluded.poster_url,
+                    status = 'pending',
+                    retry_count = 0,
+                    error_message = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (code, source_name, title, file_name, stream_url, cover))
+            conn.commit()
+            conn.close()
+            custom_log("Queue", f"📥 Đã thêm {code} vào media_upload_queue ({file_name})")
+            return jsonify({"success": True, "message": f"Đã thêm {code} vào hàng đợi tải lên Google Drive", "code": code})
+
+    except Exception as e:
+        custom_log("Queue", f"❌ Lỗi xử lý /api/queue: {e}")
+        try: conn.close()
+        except Exception: pass
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/boxes', methods=['GET'])
+def api_oneplayer_boxes():
+    """Tương thích OnePlayer Boxes/chuyên mục."""
+    source_label = getattr(scraper_instance, 'source_name', app_args.source).capitalize()
+    return jsonify({
+        "success": True,
+        "boxes": [
+            {"id": "all", "name": f"Tất cả ({source_label})", "thread_count": 1, "video_thread_count": 1},
+            {"id": "gdrive", "name": "Đã trên Google Drive", "thread_count": 1, "video_thread_count": 1},
+            {"id": "queue", "name": "Đang đợi tải (Queue)", "thread_count": 1, "video_thread_count": 1}
+        ]
+    })
+
+@app.route('/api/categories/stats', methods=['GET'])
+def api_oneplayer_categories_stats():
+    """Thống kê chuyên mục cho Drawer OnePlayer."""
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        cursor.execute(f"SELECT COUNT(*) FROM {VIDEOS_TABLE}")
+        total = cursor.fetchone()[0]
+
+    # Đếm số lượng video gdrive & queue từ nextdjav.db
+    gdrive_cnt = 0
+    queue_cnt = 0
+    conn = get_nextdjav_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT count(*) FROM drive_videos")
+            gdrive_cnt = cur.fetchone()[0]
+            cur.execute("SELECT count(*) FROM media_upload_queue WHERE status IN ('pending', 'claimed', 'uploading')")
+            queue_cnt = cur.fetchone()[0]
+            conn.close()
+        except Exception:
+            pass
+
+    return jsonify({
+        "success": True,
+        "counts": {
+            "all": total,
+            "gdrive": gdrive_cnt,
+            "queue": queue_cnt,
+            "actresses": 0,
+            "genres": 0,
+            "studios": 0
+        }
+    })
+
+@app.route('/api/adjacent_video', methods=['GET'])
+def api_oneplayer_adjacent_video():
+    """Lấy video kế tiếp hoặc trước đó cho vuốt chuyển video trên OnePlayer."""
+    code = request.args.get("code", "").strip().upper()
+    direction = request.args.get("direction", "next").strip().lower()
+    for ext in (".TS", ".MP4", ".MKV", ".DATTS", ".M3U8", ".JSON"):
+        if code.endswith(ext):
+            code = code[:-len(ext)]
+            break
+
+    sort_asc = request.args.get("sort_asc", "false").lower() == "true"
+
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        # Tìm rowid và release_date hiện tại
+        cursor.execute(f"SELECT rowid, id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE upper(dvd) = ? OR upper(id) = ? OR upper(title) LIKE ? LIMIT 1", (code, code.lower(), f"%{code}%"))
+        cur_row = cursor.fetchone()
+
+        adj = None
+        if cur_row:
+            cur_rowid = cur_row[0]
+            cur_rel = cur_row[6] or ""
+            # Khớp theo thứ tự sắp xếp của Explorer (mặc định release_date DESC, rowid DESC)
+            if direction == "next":
+                if sort_asc:
+                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE (release_date > ? OR (release_date = ? AND rowid > ?)) ORDER BY release_date ASC, rowid ASC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
+                else:
+                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE (release_date < ? OR (release_date = ? AND rowid < ?)) ORDER BY release_date DESC, rowid DESC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
+                adj = cursor.fetchone()
+            else:
+                if sort_asc:
+                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE (release_date < ? OR (release_date = ? AND rowid < ?)) ORDER BY release_date DESC, rowid DESC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
+                else:
+                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE (release_date > ? OR (release_date = ? AND rowid > ?)) ORDER BY release_date ASC, rowid ASC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
+                adj = cursor.fetchone()
+
+        if not adj:
+            order_clause = "ORDER BY release_date DESC, rowid DESC" if not sort_asc else "ORDER BY release_date ASC, rowid ASC"
+            cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} {order_clause} LIMIT 1")
+            adj = cursor.fetchone()
+
+    if not adj:
+        return jsonify({"success": False, "has_adjacent": False})
+
+    adj_code = (adj[1] or '').strip().upper() or adj[0]
+    stream_url = adj[4] or f"/api/video_url?id={adj[0]}"
+    poster_url = f"/api/media?id={adj[0]}"
+
+    has_gdrive_set, in_queue_set = get_nextdjav_status_maps([adj_code])
+
+    vid_obj = {
+        "id": adj[0],
+        "code": adj_code,
+        "name": adj_code,
+        "title": adj[2] or adj_code,
+        "release_date": adj[5] or "",
+        "stream_url": stream_url,
+        "poster_url": poster_url,
+        "cover_url": poster_url,
+        "coverUrl": poster_url,
+        "hasGDrive": adj_code in has_gdrive_set,
+        "inDownloadQueue": adj_code in in_queue_set
+    }
+
+    return jsonify({
+        "success": True,
+        "has_adjacent": True,
+        "adjacent_code": adj_code,
+        "video": vid_obj
+    })
+
+@app.route('/api/gdrive/<path:code>', methods=['GET'])
+def api_oneplayer_gdrive_info(code):
+    """Thông tin video trên Google Drive cho Drawer chi tiết GDrive."""
+    code_clean = code.strip().upper()
+    for ext in (".TS", ".MP4", ".MKV", ".DATTS", ".M3U8"):
+        if code_clean.endswith(ext):
+            code_clean = code_clean[:-len(ext)]
+            break
+
+    conn = get_nextdjav_conn()
+    if not conn:
+        return jsonify({"success": False, "error": "Cannot connect to nextdjav.db"}), 500
+
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT code, title, file_id, drive, filename, file_size FROM drive_videos WHERE upper(code) = ?", (code_clean,))
+        r = cur.fetchone()
+        conn.close()
+        if r:
+            return jsonify({
+                "success": True,
+                "source": {
+                    "code": r[0],
+                    "title": r[1],
+                    "gdriveFileId": r[2],
+                    "drive": r[3],
+                    "driveName": r[3],
+                    "filename": r[4],
+                    "fileSize": r[5]
+                }
+            })
+        return jsonify({"success": False, "message": "Chưa có trên Google Drive"}), 404
+    except Exception as e:
+        try: conn.close()
+        except Exception: pass
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/search_history', methods=['POST', 'DELETE'])
 def manage_search_history():
@@ -1958,6 +2457,20 @@ def history_record():
         db_conn_instance.commit()
         return jsonify({"success": True})
 
+@app.route('/api/video/<path:code>/mark_error', methods=['POST'])
+def api_mark_error(code):
+    data = request.get_json(silent=True) or {}
+    custom_log("OnePlayer", f"⚠️ Client báo lỗi video [{code}]: {data.get('reason', '')}")
+    return jsonify({"success": True})
+
+@app.route('/api/history/view', methods=['POST'])
+def api_history_view():
+    return jsonify({"success": True})
+
+@app.route('/api/user/interaction', methods=['POST'])
+def api_user_interaction():
+    return jsonify({"success": True})
+
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_html(path):
@@ -2090,6 +2603,7 @@ def main():
     parser.add_argument('-proxy-threads', type=int, default=8, help="Số luồng tải file (Proxy đa luồng)")
     parser.add_argument('-max_keepalive', type=int, default=10, help="Số khối buffer keepalive tối đa trong RAM")
     parser.add_argument('-timeout', type=str, default="connect=3.0,read=None", help="Cấu hình timeout proxy")
+    parser.add_argument('-nextdjav-db', type=str, default=None, help="Đường dẫn đến file nextdjav.db (để quản lý upload queue và cờ GDrive)")
     
     args = parser.parse_args()
     
@@ -2110,7 +2624,7 @@ def main():
     else:
         args.chunk_size_bytes = int(chunk_str)
 
-    connect_timeout = 3.0
+    connect_timeout = 8.0
     read_timeout = None
     if args.timeout:
         parts = args.timeout.split(',')
@@ -2121,7 +2635,11 @@ def main():
             elif p.startswith('read='):
                 val = p.split('=')[1]
                 read_timeout = float(val) if val.lower() != 'none' else None
-    args.parsed_timeout = connect_timeout if read_timeout is None else (connect_timeout, read_timeout)
+    if not read_timeout:
+        read_timeout = 60.0
+    if connect_timeout and connect_timeout < 5.0:
+        connect_timeout = 8.0
+    args.parsed_timeout = (connect_timeout, read_timeout)
     
     global db_conn_instance, scraper_instance, app_args, VIDEOS_TABLE
     app_args = args

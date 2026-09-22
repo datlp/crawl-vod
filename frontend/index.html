@@ -1,280 +1,1244 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VOD - Video On Demand</title>
-    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
+    <title>NextDJAV - Cinema & VOD Explorer</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <!-- Material Symbols Outlined (MUI Icons) -->
     <link rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
-    <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
-    <link rel="stylesheet" href="css/base.css" />
-    <link rel="stylesheet" href="css/components.css" />
-    <link rel="stylesheet" href="css/pages.css" />
-    <link rel="stylesheet" href="css/player.css" />
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <link rel="stylesheet" href="/static/oneplayer/style.css?v=16">
 </head>
 
-<body>
-    <div id="app">
-        <div id="loading" class="loading" style="display: none;">Đang tải...</div>
-        <div id="media-container"></div>
-        <div class="action-btn" id="nav-search" title="Tìm kiếm"><span class="material-symbols-outlined">search</span>
-        </div>
-        <div id="overlay"></div>
-
-        <div id="bottom-bar">
-            <div id="title-container">
-                <div id="title"></div>
-            </div>
-            <div id="progress-container">
-                <input type="range" id="seek-bar" value="0" min="0" max="100" step="0.1" />
-                <div id="time-display">00:00 / 00:00</div>
+<body class="mode-cdn-only">
+    <div id="oneplayer-app" class="mode-cdn-only">
+        <!-- Live Preview Backdrop for Continuous Swipe Feed -->
+        <div id="video-feed-preview" class="video-feed-preview hidden">
+            <img id="feed-preview-cover-bg" class="feed-preview-cover-bg" alt="" />
+            <img id="feed-preview-cover" class="feed-preview-cover" alt="" />
+            <div class="feed-preview-backdrop-gradient"></div>
+            <div class="feed-preview-content">
+                <div id="feed-preview-title" class="feed-preview-title"></div>
+                <div id="feed-preview-code" class="feed-preview-code"></div>
             </div>
         </div>
 
-        <div id="toastContainer"
-            style="position: fixed; bottom: 76px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 200; pointer-events: none;">
-        </div>
+        <!-- Main OnePlayer Video Card -->
+        <div id="video-container" class="oneplayer-card">
+            <!-- Stage Layer: Chỉ cuộn trượt Video và Cover Loading khi vuốt Next/Prev (Overlay Control cố định trên màn hình) -->
+            <div id="video-stage-layer" class="video-stage-layer">
+                <!-- Video Player -->
+                <video id="player" playsinline preload="auto" loop></video>
 
-        <div id="heart-animation" style="position: absolute; display: none; pointer-events: none; z-index: 100;">
-            <span class="material-symbols-outlined"
-                style="font-size: 80px; color: #ff4081; font-variation-settings: 'FILL' 1;">favorite</span>
-        </div>
-
-        <div id="profile-page" class="page-view">
-            <div class="page-header" style="flex-shrink: 0;">
-                <span id="close-profile-page" class="close-page material-symbols-outlined">arrow_back</span>
-                <h3 style="margin:0; font-size:16px;">Cá nhân</h3>
-            </div>
-            <div id="profile-tabs"
-                style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none; background: #121212; border-bottom: 1px solid rgba(255,255,255,0.12);">
-                <button id="tabProfileYou" class="mui-tab active">Tài khoản</button>
-                <button id="tabProfileRecent" class="mui-tab">Gần đây <span class="tab-badge"
-                        id="badge-recent">0</span></button>
-                <button id="tabProfileFav" class="mui-tab">Đã thích <span class="tab-badge"
-                        id="badge-favorites">0</span></button>
-                <button id="tabProfileFrequent" class="mui-tab">Xem nhiều <span class="tab-badge"
-                        id="badge-frequent">0</span></button>
-            </div>
-            <div id="profile-content-you" style="padding: 15px; overflow-y: auto; flex-grow: 1;">
-                <div id="sessionDisplay"
-                    style="margin-bottom: 10px; font-size: 14px; color: #aaa; word-break: break-all;"></div>
-                <button id="logoutBtn" class="mui-btn mui-btn-contained"
-                    style="display:none; width: 100%; margin-bottom: 16px;">Thoát</button>
-                <button id="identifyBtn" class="mui-btn mui-btn-error" style="width: 100%; margin-bottom: 16px;">Định
-                    danh</button>
-
-                <div id="identifyForm" class="mui-paper"
-                    style="display:none; flex-direction: column; gap: 16px; padding: 16px; margin-bottom: 16px;">
-                    <input type="text" id="identifyUsername" class="mui-input" placeholder="Username"
-                        autocomplete="off">
-                    <div id="usernameStatus"
-                        style="font-size: 0.75rem; color: rgba(255,255,255,0.6); display: none; margin-top: -12px; margin-left: 14px;">
-                    </div>
-                    <input type="password" id="identifyPassword" class="mui-input" placeholder="Password"
-                        style="display:none;" autocomplete="new-password">
-                    <input type="password" id="identifyRetypePassword" class="mui-input" placeholder="Nhập lại Password"
-                        style="display:none;" autocomplete="new-password">
-
-                    <div id="otpGroup" style="display:none; gap: 10px; align-items: stretch;">
-                        <input type="text" id="identifyOtp" class="mui-input" placeholder="Mã OTP" style="flex: 1;">
-                        <button id="sendOtpBtn" class="mui-btn mui-btn-contained" style="white-space: nowrap;">Gửi
-                            OTP</button>
-                    </div>
-
-                    <button id="submitIdentityBtn" class="mui-btn mui-btn-error" style="display:none; width: 100%;">Tiếp
-                        tục</button>
-
-                    <div style="display: flex; justify-content: space-between;">
-                        <button id="toggleOtpLoginBtn" class="mui-btn mui-btn-text"
-                            style="display:none; padding: 4px 8px; font-size: 0.75rem;">Đăng nhập bằng OTP?</button>
-                        <button id="forgotPasswordBtn" class="mui-btn mui-btn-text"
-                            style="display:none; padding: 4px 8px; font-size: 0.75rem;">Quên mật khẩu?</button>
-                    </div>
-                </div>
-
-                <div id="profileSection"
-                    style="display:none; flex-direction: column; gap: 16px; margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 16px;">
-                    <h4 style="margin: 0; font-weight: 500; font-size: 1.25rem;">Quản lý Tài Khoản</h4>
-
-                    <div class="mui-paper" style="display: flex; flex-direction: column; gap: 16px; padding: 16px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label style="font-size: 0.875rem; color: rgba(255,255,255,0.6);">Email</label>
-                            <span id="emailVerifiedBadge"
-                                style="display:none; background: #4caf50; color: rgba(0,0,0,0.87); padding: 4px 8px; border-radius: 16px; font-size: 0.75rem; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;"><span
-                                    class="material-symbols-outlined" style="font-size: 16px;">check_circle</span>Đã xác
-                                thực</span>
-                            <span id="emailUnverifiedBadge"
-                                style="display:none; background: #f44336; color: white; padding: 4px 8px; border-radius: 16px; font-size: 0.75rem; font-weight: 500;">Chưa
-                                xác thực</span>
-                        </div>
-                        <div style="display: flex; gap: 10px; align-items: stretch;">
-                            <input type="email" id="profileEmail" class="mui-input" placeholder="Nhập email của bạn"
-                                style="flex: 1;">
-                            <button id="btnSaveEmail" class="mui-btn mui-btn-primary"
-                                style="white-space: nowrap;">Lưu</button>
-                        </div>
-                        <div id="emailCallToAction" style="font-size: 0.75rem; color: #ffb300; display:none;">* Vui lòng
-                            thêm và xác thực email để có thể đổi/khôi phục mật khẩu.</div>
-
-                        <div id="verifyEmailGroup" style="display:none; flex-direction: column; gap: 16px;">
-                            <div style="display: flex; gap: 10px; align-items: stretch;">
-                                <input type="text" id="verifyOtpInput" class="mui-input" placeholder="Mã OTP"
-                                    style="flex: 1;">
-                                <button id="btnSendVerifyOtp" class="mui-btn mui-btn-contained"
-                                    style="white-space: nowrap;">Gửi OTP</button>
+                <!-- Video Player Loading Overlay (Cover Image + Center Play Button / Spinner) -->
+                <div id="video-loading-overlay" class="video-loading-overlay hidden">
+                    <img id="video-loading-cover-bg" class="video-loading-cover-bg" alt="" />
+                    <img id="video-loading-cover" class="video-loading-cover" alt="" />
+                    <div class="video-loading-backdrop-gradient"></div>
+                    <div class="video-loading-content">
+                        <!-- Center Play Button (Shown in Preview Mode) -->
+                        <div id="video-countdown-wrapper" class="video-countdown-wrapper hidden" title="Chạm để phát ngay">
+                            <div class="video-countdown-center-btn">
+                                <span class="material-symbols-outlined play-icon">play_arrow</span>
                             </div>
-                            <button id="btnSubmitVerifyOtp" class="mui-btn mui-btn-error"
-                                style="display:none; width: 100%;">Xác thực</button>
+                        </div>
+
+                        <!-- Spinner Wrapper (Shown when connecting stream) -->
+                        <div id="video-loading-spinner-box" class="video-loading-spinner-wrapper">
+                            <span class="material-symbols-outlined spin video-loading-icon">sync</span>
+                        </div>
+
+                        <div id="video-loading-title" class="video-loading-title">Đang tải video...</div>
+                        <div id="video-loading-status" class="video-loading-status">Đang kết nối stream...</div>
+                        <div id="video-countdown-hint" class="video-countdown-hint hidden">Chạm để phát ngay • Vuốt để chuyển video</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- YouTube Style Seeking / Buffering Spinner Overlay -->
+            <div id="yt-seeking-spinner" class="yt-seeking-spinner hidden">
+                <div class="yt-spinner-ring">
+                    <svg viewBox="0 0 50 50" class="yt-spinner-svg">
+                        <circle class="yt-spinner-path" cx="25" cy="25" r="20" fill="none" stroke-width="4"></circle>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Double Tap Heart Particles Container -->
+            <div id="heart-particle-container"></div>
+
+            <!-- Swipe HUD -->
+            <div id="seek-hud"></div>
+
+            <!-- Left / Right Tap Feedback Ripples -->
+            <div id="tap-ripple-left" class="tap-ripple left">
+                <div class="tap-ripple-content">
+                    <span class="material-symbols-outlined tap-icon">fast_rewind</span>
+                    <span class="tap-text" id="tap-text-left">30s</span>
+                </div>
+            </div>
+            <div id="tap-ripple-right" class="tap-ripple right">
+                <div class="tap-ripple-content">
+                    <span class="material-symbols-outlined tap-icon">fast_forward</span>
+                    <span class="tap-text" id="tap-text-right">30s</span>
+                </div>
+            </div>
+
+            <!-- Top Right Floating Actions (Rotate Landscape & Search) -->
+            <div id="top-right-actions" class="oneplayer-top-right-bar">
+                <button id="btn-rotate-landscape" class="action-btn nav-btn hidden" title="Xoay ngang màn hình (TikTok Style)">
+                    <span class="material-symbols-outlined">screen_rotation</span>
+                </button>
+                <button id="btn-bottom-search" class="action-btn nav-btn" title="Tìm kiếm (Search)">
+                    <span class="material-symbols-outlined">search</span>
+                </button>
+            </div>
+
+            <!-- Floating Right Action Bar (MUI Icons Only) -->
+            <div id="right-bottom-icons" class="oneplayer-right-bar">
+                <!-- Bottom App Drawer Action Items (Library, Genres/Boxes, TikTok UI, Profiles) -->
+                <div class="action-item">
+                    <button id="btn-explorer" class="action-btn nav-btn" title="Thư viện phim (Library)">
+                        <span class="material-symbols-outlined">video_library</span>
+                    </button>
+                    <span class="action-label" style="font-size: 10px;">Library</span>
+                </div>
+
+
+
+                <div class="action-item gdrive-related-elem">
+                    <a href="/sources" class="action-btn nav-btn" title="Nguồn lưu trữ Google Drive (Sources)" style="display: flex; align-items: center; justify-content: center; text-decoration: none; color: inherit;">
+                        <span class="material-symbols-outlined">cloud_sync</span>
+                    </a>
+                    <span class="action-label" style="font-size: 10px;">Sources</span>
+                </div>
+
+                <div class="action-item" style="display: none;">
+                    <button id="btn-actresses" class="action-btn nav-btn" title="Diễn viên">
+                        <span class="material-symbols-outlined">person_search</span>
+                    </button>
+                    <span class="action-label" style="font-size: 10px;">Diễn viên</span>
+                </div>
+
+                <div class="action-item" style="display: none;">
+                    <button id="btn-studios" class="action-btn nav-btn" title="Studios / Hãng phim">
+                        <span class="material-symbols-outlined">video_camera_front</span>
+                    </button>
+                    <span class="action-label" style="font-size: 10px;">Studios</span>
+                </div>
+
+                <div class="action-item" style="display: none;">
+                    <button id="btn-sources" class="action-btn nav-btn" title="Quản lý Nguồn & Google Drive (Admin Sources)">
+                        <span class="material-symbols-outlined">database</span>
+                    </button>
+                    <span class="action-label" style="font-size: 10px;">Sources</span>
+                </div>
+
+                <div class="action-item">
+                    <button id="btn-user" class="action-btn nav-btn" title="Profiles">
+                        <span class="material-symbols-outlined">person</span>
+                    </button>
+                    <span class="action-label" style="font-size: 10px;">Profiles</span>
+                </div>
+            </div>
+
+            <!-- Quality Selection Menu Modal -->
+            <div id="quality-menu-modal" class="quality-menu-overlay hidden">
+                <div class="quality-menu-card">
+                    <div class="quality-menu-header">
+                        <div class="quality-menu-title">
+                            <span class="material-symbols-outlined">high_quality</span>
+                            <span>Chất lượng phát video</span>
+                        </div>
+                        <button id="btn-close-quality-menu" class="icon-btn-close" title="Đóng">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    <div id="quality-menu-list" class="quality-menu-list">
+                        <!-- Rendered quality levels -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gesture Guide Overlay Modal -->
+            <div id="gesture-guide-modal" class="gesture-guide-overlay hidden">
+                <div class="gesture-guide-card">
+                    <div class="gesture-guide-header">
+                        <div class="gesture-guide-title">
+                            <span class="material-symbols-outlined guide-icon">touch_app</span>
+                            <span>Hướng dẫn cử chỉ vuốt</span>
+                        </div>
+                        <button id="btn-close-gesture-guide" class="icon-btn-close" title="Đóng">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+                    <div class="gesture-guide-body">
+                        <!-- Zone 1: Nửa Màn Hình Trên -->
+                        <div class="guide-zone">
+                            <div class="guide-zone-header top-zone">
+                                <span class="material-symbols-outlined">vertical_align_top</span>
+                                <span>1/2 MÀN HÌNH TRÊN</span>
+                            </div>
+                            <div class="guide-grid-v2">
+                                <!-- Swipe Left -> Explorer -->
+                                <div class="guide-card-v2">
+                                    <div class="guide-card-visual">
+                                        <svg class="chevron-stack left" viewBox="0 0 54 40">
+                                            <polyline points="20,6 8,20 20,34" fill="none" stroke="#80d8ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="34,6 22,20 34,34" fill="none" stroke="#00b0ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="48,6 36,20 48,34" fill="none" stroke="#0070f3" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                        <div class="swipe-pill-btn">SWIPE LEFT</div>
+                                    </div>
+                                    <div class="guide-card-text">
+                                        <strong>Mở Explorer</strong>
+                                        <span>Vuốt Phải ➔ Trái để duyệt danh sách video</span>
+                                    </div>
+                                </div>
+
+                                <!-- Swipe Up -> Fullscreen -->
+                                <div class="guide-card-v2">
+                                    <div class="guide-card-visual vertical">
+                                        <svg class="chevron-stack up" viewBox="0 0 40 54">
+                                            <polyline points="6,20 20,8 34,20" fill="none" stroke="#80d8ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="6,34 20,22 34,34" fill="none" stroke="#00b0ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="6,48 20,36 34,48" fill="none" stroke="#0070f3" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                        <div class="swipe-pill-btn">SWIPE UP</div>
+                                    </div>
+                                    <div class="guide-card-text">
+                                        <strong>Toàn Màn Hình</strong>
+                                        <span>Vuốt Lên để mở toàn màn hình (giữ nguyên hướng dọc/ngang)</span>
+                                    </div>
+                                </div>
+
+                                <!-- Pinch To Zoom -> 2 ngón tay -->
+                                <div class="guide-card-v2">
+                                    <div class="guide-card-visual">
+                                        <span class="material-symbols-outlined" style="font-size: 34px; color: #80d8ff;">pinch</span>
+                                        <div class="swipe-pill-btn">2 NGÓN TAY</div>
+                                    </div>
+                                    <div class="guide-card-text">
+                                        <strong>Phóng To / Thu Nhỏ</strong>
+                                        <span>Dùng 2 ngón tay chụm / tách để zoom video (1x - 3.5x)</span>
+                                    </div>
+                                </div>
+
+                                <!-- Swipe Down -> Exit Fullscreen -->
+                                <div class="guide-card-v2">
+                                    <div class="guide-card-visual vertical">
+                                        <div class="swipe-pill-btn">SWIPE DOWN</div>
+                                        <svg class="chevron-stack down" viewBox="0 0 40 54">
+                                            <polyline points="6,6 20,18 34,6" fill="none" stroke="#0070f3" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="6,20 20,32 34,20" fill="none" stroke="#00b0ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="6,34 20,46 34,34" fill="none" stroke="#80d8ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </div>
+                                    <div class="guide-card-text">
+                                        <strong>Thoát Toàn Màn Hình</strong>
+                                        <span>Vuốt Xuống để quay lại giao diện dọc</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Zone 2: Nửa Màn Hình Dưới -->
+                        <div class="guide-zone">
+                            <div class="guide-zone-header bottom-zone">
+                                <span class="material-symbols-outlined">vertical_align_bottom</span>
+                                <span>1/2 MÀN HÌNH DƯỚI</span>
+                            </div>
+                            <div class="guide-grid-v2">
+                                <!-- Horizontal Seek -->
+                                <div class="guide-card-v2">
+                                    <div class="guide-card-visual">
+                                        <svg class="chevron-stack horizontal" viewBox="0 0 60 40">
+                                            <polyline points="18,6 6,20 18,34" fill="none" stroke="#ff85a2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="42,6 54,20 42,34" fill="none" stroke="#ff85a2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                        <div class="swipe-pill-btn pink-gradient">FAST SEEK</div>
+                                    </div>
+                                    <div class="guide-card-text">
+                                        <strong>Tua Video Siêu Nhanh</strong>
+                                        <span>Vuốt sang Trái / Phải để tua tiến hoặc lùi</span>
+                                    </div>
+                                </div>
+
+                                <!-- Swipe Up -> Next Video -->
+                                <div class="guide-card-v2">
+                                    <div class="guide-card-visual vertical">
+                                        <svg class="chevron-stack up-pink" viewBox="0 0 40 54">
+                                            <polyline points="6,20 20,8 34,20" fill="none" stroke="#ff85a2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="6,34 20,22 34,34" fill="none" stroke="#ff406c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="6,48 20,36 34,48" fill="none" stroke="#fe2c55" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                        <div class="swipe-pill-btn pink-gradient">SWIPE UP</div>
+                                    </div>
+                                    <div class="guide-card-text">
+                                        <strong>Video Kế Tiếp</strong>
+                                        <span>Vuốt Lên ở nửa dưới để chuyển video mới</span>
+                                    </div>
+                                </div>
+
+                                <!-- Swipe Down -> Previous Video -->
+                                <div class="guide-card-v2">
+                                    <div class="guide-card-visual vertical">
+                                        <div class="swipe-pill-btn pink-gradient">SWIPE DOWN</div>
+                                        <svg class="chevron-stack down-pink" viewBox="0 0 40 54">
+                                            <polyline points="6,6 20,18 34,6" fill="none" stroke="#fe2c55" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="6,20 20,32 34,20" fill="none" stroke="#ff406c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <polyline points="6,34 20,46 34,34" fill="none" stroke="#ff85a2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </div>
+                                    <div class="guide-card-text">
+                                        <strong>Video Trước Đó</strong>
+                                        <span>Vuốt Xuống ở nửa dưới để quay về video vừa xem</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Left Info Area (Chứa tên video, context chips, ngày release, studio & metadata diễn viên / thể loại) -->
+            <div class="oneplayer-bottom-info">
+                <!-- Context Chips Bar (Scrollable & Deletable Filter Pills) -->
+                <div id="video-context-chips" class="video-context-chips"></div>
+
+                <!-- Scrollable Video Carousel (Persistent Bar) -->
+                <div id="video-carousel-container" class="video-carousel-container hidden">
+                    <div id="video-carousel-track" class="video-carousel-track"></div>
+                </div>
+
+                <div id="video-title" class="video-caption">
+                    VOD Video Stream
+                </div>
+                <div class="oneplayer-bottom-meta-row">
+                    <div id="video-release-date" class="video-release-date"></div>
+                    <div id="video-studio-container" class="video-studio-container"></div>
+                    <div id="video-actress-container" class="video-actress-container"></div>
+                </div>
+                <div id="video-bottom-tags" class="video-bottom-tags"></div>
+            </div>
+
+            <!-- OnePlayer Bottom Progress Bar & Bottom Controls -->
+            <div class="oneplayer-progress-wrapper">
+                <div class="seekbar-container" id="seekbar">
+                    <div class="seekbar-buffer" id="seek-buffer"></div>
+                    <div class="seekbar-fill" id="seek-fill"></div>
+                    <div class="seek-preview-bubble hidden" id="seek-preview-bubble">
+                        <div class="seek-preview-time" id="seek-preview-time">00:00</div>
+                    </div>
+                </div>
+                <div class="progress-controls-row">
+                    <div class="progress-controls-left">
+                        <button id="btn-play-toggle" class="progress-ctrl-btn" title="Phát / Tạm dừng">
+                            <span class="material-symbols-outlined">play_arrow</span>
+                        </button>
+                        <button id="btn-prev" class="progress-ctrl-btn" title="Video trước đó (hoặc Tua lùi 10s)">
+                            <span class="material-symbols-outlined">skip_previous</span>
+                        </button>
+                        <button id="btn-next" class="progress-ctrl-btn" title="Video kế tiếp (hoặc Tua tới 10s)">
+                            <span class="material-symbols-outlined">skip_next</span>
+                        </button>
+                        <div class="time-readout">
+                            <span id="curr-time">00:00</span> / <span id="dur-time">00:00</span>
+                        </div>
+                    </div>
+                    <div class="progress-controls-right">
+                        <button id="btn-stream-source" class="progress-ctrl-btn progress-source-btn dual-mode-only" title="Chuyển đổi nguồn phát (GDrive / Surrit)">
+                            <span class="material-symbols-outlined source-icon" id="source-icon">bolt</span>
+                            <span id="source-label" class="source-text">Surrit</span>
+                            <span class="material-symbols-outlined source-badge-icon" id="source-swap-badge" style="display: none; font-size: 11px; margin-left: -1px; opacity: 0.85;">swap_horiz</span>
+                        </button>
+                        <button id="btn-speed" class="progress-ctrl-btn progress-speed-btn" title="Tốc độ phát (1x -> 2x -> 4x -> 1x)">
+                            <span id="speed-label" class="speed-text">1x</span>
+                        </button>
+                        <button id="btn-like" class="progress-ctrl-btn gdrive-related-elem" title="Đang trong hàng đợi tải (Bấm để xóa khỏi :5052/codes ⏳ Chưa Upload)">
+                            <span class="material-symbols-outlined">cloud_upload</span>
+                            <span id="like-count" class="progress-ctrl-badge" style="display:none;"></span>
+                        </button>
+                        <button id="btn-dislike" class="progress-ctrl-btn progress-dislike-btn" title="Không thích (Ẩn video này khỏi gợi ý & Chuyển video kế tiếp)">
+                            <span class="material-symbols-outlined">thumb_down</span>
+                        </button>
+                        <button id="btn-report-error" class="progress-ctrl-btn progress-report-btn" title="Báo link video bị lỗi để crawler cào lại link mới">
+                            <span class="material-symbols-outlined">report_problem</span>
+                        </button>
+                        <button id="btn-fullscreen" class="progress-ctrl-btn" title="Toàn màn hình">
+                            <span class="material-symbols-outlined">fullscreen</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Explorer Drawer Modal -->
+            <div id="explorer-modal" class="explorer-overlay hidden">
+                <div class="explorer-drawer">
+                    <!-- Drawer Header -->
+                    <div class="explorer-header">
+                        <div class="explorer-title-area">
+                            <button id="btn-explorer-back" class="icon-btn-action hidden" title="Quay lại cấp trước" style="margin-right: 6px; padding: 4px; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: rgba(255,255,255,0.08); border: none; color: #fff; cursor: pointer;">
+                                <span class="material-symbols-outlined" style="font-size: 20px;">arrow_back</span>
+                            </button>
+                            <span class="material-symbols-outlined header-icon" id="explorer-header-icon">video_library</span>
+                            <div class="explorer-header-text-group" style="display: flex; flex-direction: column; min-width: 0;">
+                                <span class="explorer-title" id="explorer-header-title">Library</span>
+                                <div id="explorer-breadcrumb" class="explorer-breadcrumb" style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    <span class="breadcrumb-item" data-level="boxes" style="cursor: pointer; color: #38bdf8;">Boxes</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="header-actions">
+                            <button id="btn-toggle-search" class="icon-btn-action" title="Tìm kiếm">
+                                <span class="material-symbols-outlined">search</span>
+                            </button>
+                            <button id="btn-close-explorer" class="icon-btn-close" title="Đóng">
+                                <span class="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <!-- Search Wrapper (Animated Slide-down inside Header) -->
+                        <div id="search-wrapper" class="search-wrapper">
+                            <span class="material-symbols-outlined search-inner-icon">search</span>
+                            <input type="text" id="input-search-video" placeholder="Tìm kiếm tên, code, diễn viên..." />
+                            <button id="btn-clear-search" class="search-clear-btn hidden" title="Xóa nội dung nhập">
+                                <span class="material-symbols-outlined search-inner-icon">cancel</span>
+                            </button>
                         </div>
                     </div>
 
-                    <div class="mui-paper" style="display: flex; flex-direction: column; gap: 16px; padding: 16px;">
-                        <label style="font-size: 0.875rem; color: rgba(255,255,255,0.6);">Đổi mật khẩu</label>
-                        <input type="password" id="editPassword" class="mui-input" placeholder="Mật khẩu mới"
-                            autocomplete="new-password">
-                        <button id="btnUpdatePassword" class="mui-btn mui-btn-contained" disabled>Cập nhật mật
-                            khẩu</button>
-                    </div>
-                </div>
-            </div>
-            <div id="profile-gallery-grid" class="gallery-grid" style="display: none;"></div>
-            <div id="profile-load-more"
-                style="text-align: center; padding: 15px; color: #aaa; font-size: 14px; display: none;">Đang tải thêm...
-            </div>
-        </div>
-
-        <div id="gallery-page" class="page-view">
-            <div id="search-container" style="flex-shrink: 0;">
-                <span id="gallery-nav-home" class="search-icon-btn material-symbols-outlined"
-                    title="Trang chủ">home</span>
-                <div id="search-input-wrapper" style="display: none;">
-                    <div id="search-chip-display"
-                        style="position: absolute; left: 14px; right: 70px; top: 0; bottom: 0; display: none; align-items: center; gap: 4px; overflow: hidden; pointer-events: none; z-index: 2; white-space: nowrap;">
-                    </div>
-                    <input type="text" id="video-search" class="mui-input" placeholder="Tìm kiếm videos..."
-                        autocomplete="off">
-                    <span id="clear-search" class="material-symbols-outlined">close</span>
-                    <span id="submit-search" class="material-symbols-outlined">search</span>
-                    <div id="search-suggestions" style="display: none;">
-                        <div id="suggestion-tabs"
-                            style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none; border-bottom: 1px solid rgba(255,255,255,0.12);">
-                            <button id="sugTabAll" class="mui-tab active">Tất cả</button>
-                            <button id="sugTabActress" class="mui-tab">Diễn viên</button>
-                            <button id="sugTabGenre" class="mui-tab">Thể loại</button>
-                            <button id="sugTabMaker" class="mui-tab">Nhà SX</button>
-                        </div>
-                        <div id="suggestion-content" style="flex-grow: 1; overflow-y: auto; padding-bottom: 20px;">
+                    <!-- Scrollable Library Tabs -->
+                    <div class="explorer-tabs-wrapper" id="library-tabs-wrapper">
+                        <div class="explorer-scrollable-tabs" id="library-scrollable-tabs">
+                            <button class="explorer-tab-btn active" data-library-tab="all" title="Mới phát hành">Mới phát hành</button>
+                            <button class="explorer-tab-btn" data-library-tab="global_frequent" title="Phổ biến nhất">Phổ biến</button>
                         </div>
                     </div>
-                </div>
-                <div id="search-spacer" style="flex-grow: 1;"></div>
-                <span id="gallery-nav-search" class="search-icon-btn material-symbols-outlined"
-                    title="Tìm kiếm">search</span>
-                <span id="gallery-nav-profile" class="search-icon-btn material-symbols-outlined"
-                    title="Tài khoản">person</span>
-            </div>
-            <div id="gallery-tabs"
-                style="display: flex; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; -ms-overflow-style: none; scrollbar-width: none;">
-                <button id="tabAll" class="mui-tab active">Tất cả <span class="tab-badge"
-                        id="badge-all">0</span></button>
-                <button id="tabGlobalFrequent" class="mui-tab">Top thế giới <span class="tab-badge"
-                        id="badge-global_frequent">0</span></button>
-                <button id="tabUnwatched" class="mui-tab">Chưa xem <span class="tab-badge"
-                        id="badge-unwatched">0</span></button>
-                <button id="tabRelated" class="mui-tab">Tương tự <span class="tab-badge"
-                        id="badge-related">0</span></button>
-                <div style="width: 1px; background: rgba(255,255,255,0.12); margin: 10px 4px;"></div>
-                <a id="linkJavtiful" class="mui-tab" target="_blank"
-                    style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span
-                        class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> Javtiful</a>
-                <a id="linkMissav" class="mui-tab" target="_blank"
-                    style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span
-                        class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> MissAV</a>
-                <a id="linkVlxx" class="mui-tab" target="_blank"
-                    style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span
-                        class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> VLXX</a>
-                <a id="linkSextop1" class="mui-tab" target="_blank"
-                    style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px;"><span
-                        class="material-symbols-outlined" style="font-size: 16px;">open_in_new</span> Sextop1</a>
-            </div>
-            <div id="gallery-grid" class="gallery-grid"></div>
-            <div id="load-more" style="text-align: center; padding: 15px; color: #aaa; font-size: 14px; display: none;">
-                Đang tải thêm...</div>
-        </div>
 
-        <div id="details-page" class="page-view">
-            <div class="page-header">
-                <span id="close-details-page" class="close-page material-symbols-outlined">arrow_back</span>
-                <h3 style="margin:0; font-size:16px;">Chi tiết Video</h3>
-            </div>
-            <div id="details-content" style="padding: 15px; overflow-y: auto; flex-grow: 1;">
-                <div style="text-align: center; margin-bottom: 15px;">
-                    <img id="details-cover" src=""
-                        style="max-width: 100%; border-radius: 8px; max-height: 200px; object-fit: contain; background: #222; cursor: pointer;">
-                </div>
-                <h3 id="details-title"
-                    style="margin-top: 0; margin-bottom: 5px; font-size: 1.125rem; font-weight: 500; color: #90caf9; text-align: center;">
-                </h3>
-                <div style="text-align: center; margin-bottom: 15px; font-size: 14px; color: #aaa;" id="details-date">
-                </div>
-                <div id="details-chips" class="chips-container"></div>
-                <div id="details-desc-wrapper"
-                    style="margin-bottom: 15px; font-size: 14px; line-height: 1.5; display: none;"><strong>Mô
-                        tả:</strong>
-                    <div id="details-desc" style="margin-top: 5px; color: #aaa;"></div>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 20px;">
-                    <button id="btn-watch-now" class="mui-btn mui-btn-success" style="width: 100%;"><span
-                            class="material-symbols-outlined">play_circle</span> Xem ngay</button>
-                    <button id="btn-open-javtiful" class="mui-btn mui-btn-error" style="width: 100%;"><span
-                            class="material-symbols-outlined">language</span> Trang gốc</button>
-                    <button id="btn-search-list" class="mui-btn mui-btn-primary" style="width: 100%;"><span
-                            class="material-symbols-outlined">list</span> Xem trong danh sách</button>
+                    <!-- Explorer Items List (Video Cards) -->
+                    <div id="explorer-list" class="explorer-list-container">
+                        <!-- Rendered list items -->
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <div id="image-viewer"
-            style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:150; justify-content:center; align-items:center; touch-action: none;">
-            <img id="fullscreen-image" src=""
-                style="max-width:100%; max-height:100%; object-fit:contain; transition: transform 0.1s ease-out; transform-origin: center;">
-            <div id="close-image-viewer"
-                style="position:absolute; top:20px; right:20px; color:#fff; cursor:pointer; z-index:151; width:40px; height:40px; display:flex; justify-content:center; align-items:center; background:rgba(0,0,0,0.5); border-radius:50%;">
-                <span class="material-symbols-outlined" style="font-size: 24px;">close</span>
+            <!-- Categories Drawer Modal (Entities: Diễn viên, Thể loại, Studios) -->
+            <div id="categories-drawer-modal" class="explorer-overlay hidden">
+                <div class="explorer-drawer">
+                    <!-- Drawer Header -->
+                    <div class="explorer-header">
+                        <div class="explorer-title-area">
+                            <span class="material-symbols-outlined header-icon" id="categories-header-icon">category</span>
+                            <span class="explorer-title" id="categories-header-title">Chuyên mục (Boxes)</span>
+                        </div>
+                        <div class="header-actions">
+                            <div class="select-columns-btn" title="Chọn số cột hiển thị (Grid Columns)">
+                                <span class="material-symbols-outlined" style="font-size: 15px; color: #94a3b8;">view_column</span>
+                                <select id="select-categories-cols">
+                                    <option value="1">1 cột</option>
+                                    <option value="2" selected>2 cột</option>
+                                    <option value="3">3 cột</option>
+                                    <option value="4">4 cột</option>
+                                    <option value="5">5 cột</option>
+                                    <option value="6">6 cột</option>
+                                </select>
+                            </div>
+                            <button id="btn-toggle-categories-fullscreen" class="icon-btn-action" title="Chuyển đổi Toàn màn hình / Thu nhỏ">
+                                <span id="icon-categories-fullscreen" class="material-symbols-outlined">fullscreen</span>
+                            </button>
+                            <button id="btn-toggle-categories-search" class="icon-btn-action" title="Tìm kiếm">
+                                <span class="material-symbols-outlined">search</span>
+                            </button>
+                            <button id="btn-close-categories" class="icon-btn-close" title="Đóng">
+                                <span class="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <!-- Search Wrapper (Animated Slide-down inside Header) -->
+                        <div id="categories-search-wrapper" class="search-wrapper">
+                            <span class="material-symbols-outlined search-inner-icon">search</span>
+                            <input type="text" id="input-search-categories" placeholder="Tìm kiếm chuyên mục (box)..." />
+                            <button id="btn-clear-categories-search" class="search-clear-btn hidden" title="Xóa nội dung nhập">
+                                <span class="material-symbols-outlined search-inner-icon">cancel</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Scrollable Category Tabs inside Categories Drawer -->
+                    <div class="explorer-tabs-wrapper">
+                        <div class="explorer-scrollable-tabs">
+                            <button id="category-tab-genres" class="explorer-tab-btn active" data-tab="genres" title="Duyệt danh sách Chuyên mục (Boxes)">
+                                <span class="material-symbols-outlined">category</span>
+                                <span>Chuyên mục</span>
+                                <span class="explorer-tab-badge" id="category-badge-genres">...</span>
+                            </button>
+                            <button id="category-tab-actresses" class="explorer-tab-btn" data-tab="actresses" title="Diễn viên" style="display: none;">
+                                <span class="material-symbols-outlined">person_search</span>
+                                <span>Diễn viên</span>
+                                <span class="explorer-tab-badge" id="category-badge-actresses">0</span>
+                            </button>
+                            <button id="category-tab-studios" class="explorer-tab-btn" data-tab="studios" title="Studios" style="display: none;">
+                                <span class="material-symbols-outlined">video_camera_front</span>
+                                <span>Studios</span>
+                                <span class="explorer-tab-badge" id="category-badge-studios">0</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Sorting Toolbar cho Categories Drawer -->
+                    <div id="categories-sort-bar" class="explorer-sort-bar">
+                        <div class="sort-group">
+                            <button id="categories-sort-by-release" class="sort-btn">
+                                <span>Mới nhất</span>
+                                <span id="categories-sort-release-icon" class="material-symbols-outlined sort-icon">swap_vert</span>
+                            </button>
+                            <button id="categories-sort-by-name" class="sort-btn">
+                                <span>Tên</span>
+                                <span id="categories-sort-name-icon" class="material-symbols-outlined sort-icon">swap_vert</span>
+                            </button>
+                            <button id="categories-sort-by-views" class="sort-btn active">
+                                <span>Số lượng</span>
+                                <span id="categories-sort-views-icon" class="material-symbols-outlined sort-icon">arrow_downward</span>
+                            </button>
+                            <button id="categories-filter-no-cover" class="sort-btn filter-btn" style="display:none;" title="Lọc video chưa có ảnh Cover">
+                                <span class="material-symbols-outlined sort-icon">image_not_supported</span>
+                                <span>Thiếu Cover</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Categories Items List Container -->
+                    <div id="categories-list" class="explorer-list-container">
+                        <!-- Rendered entity groups / detail cards -->
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div id="action-icons">
-            <div class="action-btn" id="btn-play-pause" title="Play/Pause"><span class="material-symbols-outlined"
-                    id="play-pause-icon">play_arrow</span></div>
-            <div class="action-btn" id="btn-fullscreen" title="Toàn màn hình"><span
-                    class="material-symbols-outlined">fullscreen</span></div>
-            <div class="action-btn" id="nav-list" title="Trang chủ"><span class="material-symbols-outlined">home</span>
+            <!-- Source Drawer Modal -->
+            <div id="source-drawer-modal" class="explorer-overlay hidden">
+                <div class="explorer-drawer">
+                    <!-- Source Drawer Header -->
+                    <div class="explorer-header">
+                        <div class="explorer-title-area">
+                            <span class="material-symbols-outlined header-icon">database</span>
+                            <span class="explorer-title">Nguồn dữ liệu</span>
+                        </div>
+                        <button id="btn-close-source-drawer" class="icon-btn-close" title="Đóng">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+
+                    <!-- Sources Management Panel -->
+                    <div id="sources-panel" class="sources-panel-container">
+                        <div class="sources-input-box">
+                            <input type="text" id="input-source-path" placeholder="Nhập đường dẫn (ví dụ: E:\Backups)"
+                                value="E:\Backups" />
+                            <button id="btn-add-source" class="btn-primary-action" title="Thêm nguồn và quét đệ quy">
+                                <span class="material-symbols-outlined">add</span>
+                            </button>
+                            <button id="btn-add-rclone-source" class="btn-primary-action" title="Thêm nguồn Google Drive (Rclone)" style="background: var(--gradient-secondary);">
+                                <span class="material-symbols-outlined">cloud_download</span>
+                            </button>
+                            <input type="file" id="input-rclone-conf" accept=".ini,.conf,application/octet-stream" style="display: none;" />
+                            <button id="btn-sources-tools-menu" class="btn-icon-secondary" title="Tùy chọn quản lý Nguồn (Export/Import JSON)">
+                                <span class="material-symbols-outlined">more_vert</span>
+                            </button>
+                        </div>
+                        <div id="rclone-selector-box" class="sources-input-box hidden" style="margin-top: 10px; flex-direction: column; gap: 8px;">
+                            <select id="select-rclone-remote" class="styled-select" style="width: 100%;">
+                                <option value="">Chọn Google Drive Remote...</option>
+                            </select>
+                            <div style="display: flex; gap: 8px; width: 100%;">
+                                <select id="select-rclone-folder" class="styled-select" style="flex: 1;">
+                                    <option value="">Chọn Thư mục...</option>
+                                </select>
+                                <button id="btn-confirm-rclone" class="btn-primary-action" title="Xác nhận thêm Rclone" style="width: 44px; flex-shrink: 0;">
+                                    <span class="material-symbols-outlined">check</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="sources-list" class="sources-list-container">
+                            <!-- Rendered sources cards -->
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="action-btn" id="nav-profile" title="Tài khoản"><span
-                    class="material-symbols-outlined">person</span></div>
-            <div class="action-btn" id="btn-favorite" title="Yêu thích"><span class="material-symbols-outlined"
-                    id="fav-icon">favorite_border</span></div>
-            <div class="action-btn" id="btn-sync" title="Đồng bộ"><span class="material-symbols-outlined">sync</span>
+
+            <!-- Search Drawer Modal (Right Side Half Drawer) -->
+            <div id="search-drawer-modal" class="search-drawer-overlay explorer-overlay hidden">
+                <div class="search-drawer">
+                    <!-- Drawer Header với Ô Tìm kiếm trực tiếp (Focus ngay) -->
+                    <div class="search-header">
+                        <div class="search-input-box">
+                            <span class="material-symbols-outlined search-input-icon">search</span>
+                            <input type="text" id="input-search-drawer" placeholder="Nhập tên video, code, diễn viên, thể loại..." />
+                            <button id="btn-clear-search-drawer" class="search-clear-btn hidden" title="Xóa nội dung nhập">
+                                <span class="material-symbols-outlined">cancel</span>
+                            </button>
+                        </div>
+                        <button id="btn-close-search-drawer" class="icon-btn-close" title="Đóng">
+                            <span class="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
+
+                    <!-- Search Drawer Body -->
+                    <div class="search-drawer-body">
+
+                        <!-- 2. Lịch sử tìm kiếm -->
+                        <div id="search-history-section" class="search-section">
+                            <div class="search-section-header">
+                                <div class="section-title-box">
+                                    <span class="material-symbols-outlined section-icon">history</span>
+                                    <span>Lịch sử tìm kiếm</span>
+                                </div>
+                                <button id="btn-clear-search-words" class="btn-text-action danger-text">
+                                    <span class="material-symbols-outlined">delete_sweep</span>
+                                    <span>Xoá lịch sử</span>
+                                </button>
+                            </div>
+                            <div id="search-words-list" class="words-list-items">
+                                <!-- Dynamic Search Words Chips -->
+                            </div>
+                        </div>
+
+                        <!-- 3. Dynamic Live Search Results (Hiển thị khi gõ tìm kiếm) -->
+                        <div id="search-results-section" class="search-section hidden">
+                            <div class="search-section-header">
+                                <div class="section-title-box">
+                                    <span class="material-symbols-outlined section-icon">movie</span>
+                                    <span>Kết quả tìm kiếm</span>
+                                </div>
+                            </div>
+                            <div id="search-results-list" class="history-list-items">
+                                <!-- Dynamic Search Results -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div id="fast-seek-indicator"
-            style="display: none; position: absolute; top: 15%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 20px; font-size: 16px; font-weight: bold; color: #fff; z-index: 50; pointer-events: none; backdrop-filter: blur(4px);">
-        </div>
-    </div>
+            <!-- User Profile & History Drawer Modal -->
+            <div id="user-drawer-modal" class="explorer-overlay hidden">
+                <div class="explorer-drawer">
+                    <!-- Drawer Header -->
+                    <div class="explorer-header">
+                        <div class="explorer-title-area">
+                            <span class="material-symbols-outlined header-icon">history</span>
+                            <span class="explorer-title">Tài khoản & Lịch sử</span>
+                        </div>
+                        <div class="header-actions">
+                            <button id="btn-player-settings" class="icon-btn-secondary" title="Cài đặt">
+                                <span class="material-symbols-outlined">settings</span>
+                            </button>
+                            <button id="btn-toggle-user-account" class="icon-btn-secondary" title="Đăng nhập / Tài khoản">
+                                <span class="material-symbols-outlined">account_circle</span>
+                            </button>
+                            <button id="btn-close-user-drawer" class="icon-btn-close" title="Đóng">
+                                <span class="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                    </div>
 
-    <script src="js/config.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/player.js"></script>
-    <script src="js/gallery.js"></script>
-    <script src="js/search.js"></script>
-    <script src="js/profile.js"></script>
-    <script src="js/details.js"></script>
-    <script src="js/main.js"></script>
+                    <!-- User Account Management Section (Hidden by default, toggled via LoginIcon) -->
+                    <div id="user-account-section" class="user-account-section hidden">
+                        <!-- Unauthenticated State (Form Register / Login via OTP or Password) -->
+                        <div id="auth-forms-container" class="auth-forms-container">
+                            <div class="auth-tabs">
+                                <button id="auth-tab-otp" class="auth-tab-btn active">
+                                    <span class="material-symbols-outlined" style="font-size: 15px; vertical-align: -2px;">mark_email_read</span>
+                                    <span>Mã OTP Email</span>
+                                </button>
+                                <button id="auth-tab-password" class="auth-tab-btn">
+                                    <span class="material-symbols-outlined" style="font-size: 15px; vertical-align: -2px;">password</span>
+                                    <span>Mật khẩu</span>
+                                </button>
+                            </div>
+
+                            <!-- 1. Mode Email OTP View -->
+                            <div id="auth-view-otp" class="auth-view-mode">
+                                <!-- Step 1: Input Email -->
+                                <div id="otp-step-email" class="auth-form-body">
+                                    <div class="form-group">
+                                        <span class="material-symbols-outlined form-icon">mail</span>
+                                        <input type="email" id="auth-otp-email" placeholder="Nhập địa chỉ Email (nhận OTP)..." autocomplete="email" required />
+                                    </div>
+                                    <button type="button" id="btn-auth-send-otp" class="btn-primary-action full-width">
+                                        <span class="material-symbols-outlined">send</span>
+                                        <span>Gửi mã xác thực OTP</span>
+                                    </button>
+                                </div>
+
+                                <!-- Step 2: Verify 6-digit OTP -->
+                                <div id="otp-step-verify" class="auth-form-body hidden">
+                                    <div class="otp-notice-box">
+                                        <span>Đã gửi mã OTP đến:</span>
+                                        <b id="auth-otp-target-email" style="color: #fe2c55;"></b>
+                                    </div>
+                                    <div class="form-group">
+                                        <span class="material-symbols-outlined form-icon">pin</span>
+                                        <input type="text" id="auth-otp-code" placeholder="Nhập mã 6 chữ số..." maxlength="6" inputmode="numeric" style="letter-spacing: 4px; font-weight: bold; font-size: 16px; text-align: center;" />
+                                    </div>
+                                    <div class="form-group">
+                                        <span class="material-symbols-outlined form-icon">lock</span>
+                                        <input type="password" id="auth-otp-new-password" placeholder="Đặt mật khẩu (tùy chọn để login nhanh sau)..." autocomplete="new-password" />
+                                    </div>
+                                    <button type="button" id="btn-auth-verify-otp" class="btn-primary-action full-width">
+                                        <span class="material-symbols-outlined">verified_user</span>
+                                        <span>Xác thực & Đăng nhập</span>
+                                    </button>
+                                    <div class="auth-helper-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                                        <button type="button" id="btn-auth-reenter-email" class="btn-text-action" style="font-size: 11px;">
+                                            <span class="material-symbols-outlined" style="font-size: 13px;">arrow_back</span> Đổi email
+                                        </button>
+                                        <button type="button" id="btn-auth-resend-otp" class="btn-text-action" style="font-size: 11px;">
+                                            <span class="material-symbols-outlined" style="font-size: 13px;">refresh</span> Gửi lại mã
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 2. Mode Email + Password View -->
+                            <div id="auth-view-password" class="auth-view-mode hidden">
+                                <form class="auth-form-body" onsubmit="return false;">
+                                    <div class="form-group">
+                                        <span class="material-symbols-outlined form-icon">mail</span>
+                                        <input type="email" id="auth-pass-email" placeholder="Nhập địa chỉ Email..." autocomplete="email" required />
+                                    </div>
+                                    <div class="form-group">
+                                        <span class="material-symbols-outlined form-icon">lock</span>
+                                        <input type="password" id="auth-pass-value" placeholder="Nhập mật khẩu..." autocomplete="current-password" required />
+                                    </div>
+                                    <button type="submit" id="btn-auth-pass-submit" class="btn-primary-action full-width">
+                                        <span class="material-symbols-outlined">login</span>
+                                        <span>Đăng nhập mật khẩu</span>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Authenticated State (Profile & Logout) -->
+                        <div id="auth-profile-container" class="auth-profile-container hidden">
+                            <div class="user-info-box">
+                                <span class="material-symbols-outlined user-avatar-icon">account_circle</span>
+                                <div class="user-details">
+                                    <span class="user-label">Đang đăng nhập:</span>
+                                    <span id="user-email-display" class="user-email">email@gmail.com</span>
+                                </div>
+                            </div>
+                            <button id="btn-auth-logout" class="btn-danger-action">
+                                <span class="material-symbols-outlined">logout</span>
+                                <span>Đăng xuất</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- History and Favorites Tabs Header -->
+                    <div class="user-history-tabs">
+                        <button id="tab-history-view" class="history-tab-btn active">
+                            <span class="material-symbols-outlined">history</span>
+                            <span>Xem gần đây</span>
+                        </button>
+                        <button id="tab-history-search" class="history-tab-btn">
+                            <span class="material-symbols-outlined">search</span>
+                            <span>Tìm kiếm</span>
+                        </button>
+                        <button id="tab-history-favorite" class="history-tab-btn">
+                            <span class="material-symbols-outlined">favorite</span>
+                            <span>Yêu thích</span>
+                        </button>
+                    </div>
+
+                    <!-- History and Favorites Panels -->
+                    <div class="history-panels-container">
+                        <!-- 1. View History Panel -->
+                        <div id="panel-history-view" class="history-panel">
+                            <div class="panel-header-action">
+                                <span>Danh sách đã xem</span>
+                                <button id="btn-clear-view-history" class="btn-text-action danger-text">
+                                    <span class="material-symbols-outlined">delete_sweep</span>
+                                    <span>Xoá sạch</span>
+                                </button>
+                            </div>
+                            <div id="history-view-list" class="history-list-items">
+                                <!-- Dynamic List Items -->
+                            </div>
+                        </div>
+
+                        <!-- 2. Search History Panel -->
+                        <div id="panel-history-search" class="history-panel hidden">
+                            <div class="panel-header-action">
+                                <span>Từ khóa tìm kiếm</span>
+                                <button id="btn-clear-search-history" class="btn-text-action danger-text">
+                                    <span class="material-symbols-outlined">delete_sweep</span>
+                                    <span>Xoá sạch</span>
+                                </button>
+                            </div>
+                            <div id="history-search-list" class="history-list-items">
+                                <!-- Dynamic List Items -->
+                            </div>
+                        </div>
+
+                        <!-- 3. Favorites Panel -->
+                        <div id="panel-history-favorite" class="history-panel hidden">
+                            <div class="panel-header-action">
+                                <span>Video đã yêu thích</span>
+                            </div>
+                            <div id="history-favorite-list" class="history-list-items">
+                                <!-- Dynamic List Items -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+                <!-- Bottom Drawer Menu cho Source Item -->
+                <div id="source-menu-modal" class="source-menu-overlay hidden">
+                    <div class="source-menu-drawer">
+                        <div class="source-menu-header">
+                            <div class="source-menu-title-group">
+                                <span class="material-symbols-outlined source-menu-icon">folder_special</span>
+                                <span id="source-menu-title" class="source-menu-title">Nguồn dữ liệu</span>
+                            </div>
+                            <button id="btn-close-source-menu" class="icon-btn-close" title="Đóng">
+                                <span class="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <div class="source-menu-options">
+                            <button id="source-action-explore" class="source-menu-item">
+                                <span class="material-symbols-outlined">folder_open</span>
+                                <span>Xem danh sách file trong thư mục</span>
+                            </button>
+                            <button id="source-action-update" class="source-menu-item">
+                                <span class="material-symbols-outlined">update</span>
+                                <span>Quét cập nhật thay đổi (mtime, thêm mới/xóa)</span>
+                            </button>
+                            <button id="source-action-rescan" class="source-menu-item">
+                                <span class="material-symbols-outlined">sync</span>
+                                <span>Quét lại tất cả (video, metadata & .idx)</span>
+                            </button>
+                            <button id="source-action-delete" class="source-menu-item danger">
+                                <span class="material-symbols-outlined">delete</span>
+                                <span>Xóa nguồn dữ liệu này khỏi DB</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Drawer Menu cho Quản lý Nguồn (Import / Export JSON) -->
+                <div id="sources-tools-modal" class="source-menu-overlay hidden">
+                    <div class="source-menu-drawer">
+                        <div class="source-menu-header">
+                            <div class="source-menu-title-group">
+                                <span class="material-symbols-outlined source-menu-icon">tune</span>
+                                <span class="source-menu-title">Tùy chọn Nguồn dữ liệu</span>
+                            </div>
+                            <button id="btn-close-sources-tools-menu" class="icon-btn-close" title="Đóng">
+                                <span class="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <div class="source-menu-options">
+                            <button id="btn-rescan-all-update" class="source-menu-item">
+                                <span class="material-symbols-outlined">update</span>
+                                <span>Quét cập nhật thay đổi tất cả nguồn</span>
+                            </button>
+                            <button id="btn-rescan-all-sources" class="source-menu-item">
+                                <span class="material-symbols-outlined">sync</span>
+                                <span>Quét lại tất cả nguồn (Toàn bộ .idx, metadata, video)</span>
+                            </button>
+                            <button id="btn-export-sources" class="source-menu-item">
+                                <span class="material-symbols-outlined">download</span>
+                                <span>Export JSON (Xuất danh sách nguồn)</span>
+                            </button>
+                            <label for="input-import-sources" class="source-menu-item">
+                                <span class="material-symbols-outlined">upload</span>
+                                <span>Import JSON (Nhập danh sách nguồn)</span>
+                                <input type="file" id="input-import-sources" accept=".json" style="display: none;" />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Drawer Menu cho Lựa Chọn Nguồn Phát Video (Stream Source Selection Drawer) -->
+                <div id="stream-source-drawer-modal" class="source-menu-overlay hidden">
+                    <div class="source-menu-drawer stream-source-drawer">
+                        <div class="source-menu-header">
+                            <div class="source-menu-title-group">
+                                <span class="material-symbols-outlined source-menu-icon" style="color: #38bdf8;">video_settings</span>
+                                <div class="stream-source-drawer-title-wrap">
+                                    <span class="source-menu-title">Chọn Nguồn Phát Trực Tuyến</span>
+                                    <span class="stream-source-drawer-subtitle" id="stream-source-drawer-sub">Chuyển luồng phát & Đặt làm ưu tiên</span>
+                                </div>
+                            </div>
+                            <button id="btn-close-stream-source-drawer" class="icon-btn-close" title="Đóng">
+                                <span class="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <div id="stream-source-drawer-options" class="source-menu-options stream-source-options-list">
+                            <!-- Danh sách các nguồn phát sẽ được render tự động qua OnePlayer -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Drawer Modal -->
+                <div id="settings-drawer-modal" class="explorer-overlay hidden">
+                    <div class="explorer-drawer settings-drawer">
+                        <!-- Drawer Header -->
+                        <div class="explorer-header">
+                            <div class="explorer-title-area">
+                                <span class="material-symbols-outlined header-icon">settings</span>
+                                <span class="explorer-title">Cài đặt</span>
+                            </div>
+                            <div class="header-actions">
+                                <button id="btn-close-settings-drawer" class="icon-btn-close" title="Đóng">
+                                    <span class="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Settings Drawer Body -->
+                        <div class="settings-drawer-body">
+                            <!-- Group 1: Appearance / Theme -->
+                            <div class="settings-section-title">Giao diện & Hiển thị</div>
+                            <div class="settings-group">
+                                <div class="setting-item">
+                                    <div class="setting-item-left">
+                                        <div class="setting-item-icon">
+                                            <span class="material-symbols-outlined">dark_mode</span>
+                                        </div>
+                                        <div class="setting-item-content">
+                                            <div class="setting-item-title">Chế độ Nền Đen Tuyền (Black Mode)</div>
+                                            <div class="setting-item-desc">Tối ưu nền đen tuyệt đối cho màn hình OLED / AMOLED</div>
+                                        </div>
+                                    </div>
+                                    <div class="setting-item-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="setting-toggle-blackmode">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="setting-item">
+                                    <div class="setting-item-left">
+                                        <div class="setting-item-icon blue">
+                                            <span class="material-symbols-outlined">aspect_ratio</span>
+                                        </div>
+                                        <div class="setting-item-content">
+                                            <div class="setting-item-title">Phóng to tràn viền (Fill Screen)</div>
+                                            <div class="setting-item-desc">Tự động phóng to video lấp đầy toàn bộ khung hình, loại bỏ viền đen</div>
+                                        </div>
+                                    </div>
+                                    <div class="setting-item-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="setting-toggle-fitmode">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Group 2: Player Overlay & Gestures -->
+                            <div class="settings-section-title">Cài đặt cử chỉ Player (Player Overlay Settings)</div>
+                            <div class="settings-group">
+                                <!-- Single tap -->
+                                <div class="setting-item">
+                                    <div class="setting-item-left">
+                                        <div class="setting-item-icon pink">
+                                            <span class="material-symbols-outlined">touch_app</span>
+                                        </div>
+                                        <div class="setting-item-content">
+                                            <div class="setting-item-title">Chạm 1 lần (Single Tap)</div>
+                                            <div class="setting-item-desc">Bật / Ẩn thanh điều khiển Player</div>
+                                        </div>
+                                    </div>
+                                    <div class="setting-item-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="setting-toggle-singletap" checked>
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Double tap -->
+                                <div class="setting-item">
+                                    <div class="setting-item-left">
+                                        <div class="setting-item-icon pink">
+                                            <span class="material-symbols-outlined">cloud_upload</span>
+                                        </div>
+                                        <div class="setting-item-content">
+                                            <div class="setting-item-title">Chạm đúp (Double Tap)</div>
+                                            <div id="setting-desc-doubletap" class="setting-item-desc">Thêm video hiện tại vào hàng đợi tải (:5052/codes ⏳ Chưa Upload GDrive)</div>
+                                        </div>
+                                    </div>
+                                    <div class="setting-item-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="setting-toggle-doubletap" checked>
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Press & Hold -->
+                                <div class="setting-item">
+                                    <div class="setting-item-left">
+                                        <div class="setting-item-icon pink">
+                                            <span class="material-symbols-outlined">bolt</span>
+                                        </div>
+                                        <div class="setting-item-content">
+                                            <div class="setting-item-title">Chạm & Giữ (Press & Hold)</div>
+                                            <div class="setting-item-desc">Tua lùi x2 (Giữ bên trái) / Tăng tốc 2x (Giữ bên phải)</div>
+                                        </div>
+                                    </div>
+                                    <div class="setting-item-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="setting-toggle-presshold" checked>
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Upper swipe R-L -->
+                                <div class="setting-item">
+                                    <div class="setting-item-left">
+                                        <div class="setting-item-icon blue">
+                                            <span class="material-symbols-outlined">west</span>
+                                        </div>
+                                        <div class="setting-item-content">
+                                            <div class="setting-item-title">Vuốt Nửa Trên (Ngang)</div>
+                                            <div class="setting-item-desc">Mở Explorer duyệt danh sách video</div>
+                                        </div>
+                                    </div>
+                                    <div class="setting-item-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="setting-toggle-upperswipe-explorer" checked>
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Upper swipe Up/Down -->
+                                <div class="setting-item">
+                                    <div class="setting-item-left">
+                                        <div class="setting-item-icon blue">
+                                            <span class="material-symbols-outlined">swap_vert</span>
+                                        </div>
+                                        <div class="setting-item-content">
+                                            <div class="setting-item-title">Vuốt Nửa Trên (Dọc)</div>
+                                            <div class="setting-item-desc">Bật / Thoát chế độ Toàn màn hình</div>
+                                        </div>
+                                    </div>
+                                    <div class="setting-item-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="setting-toggle-upperswipe-fullscreen" checked>
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Lower swipe Horizontal -->
+                                <div class="setting-item">
+                                    <div class="setting-item-left">
+                                        <div class="setting-item-icon pink">
+                                            <span class="material-symbols-outlined">swipe_left</span>
+                                        </div>
+                                        <div class="setting-item-content">
+                                            <div class="setting-item-title">Vuốt Nửa Dưới (Ngang)</div>
+                                            <div class="setting-item-desc">Tua video siêu nhanh (Fast Seek)</div>
+                                        </div>
+                                    </div>
+                                    <div class="setting-item-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="setting-toggle-lowerswipe-seek" checked>
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Lower swipe Vertical -->
+                                <div class="setting-item">
+                                    <div class="setting-item-left">
+                                        <div class="setting-item-icon pink">
+                                            <span class="material-symbols-outlined">unfold_more</span>
+                                        </div>
+                                        <div class="setting-item-content">
+                                            <div class="setting-item-title">Vuốt Nửa Dưới (Dọc)</div>
+                                            <div class="setting-item-desc">Chuyển sang Video Tiếp theo / Trước đó</div>
+                                        </div>
+                                    </div>
+                                    <div class="setting-item-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="setting-toggle-lowerswipe-nextprev" checked>
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Google Drive Management / Delete Confirmation Right Drawer -->
+                <div id="gdrive-drawer-modal" class="explorer-overlay hidden">
+                    <div class="explorer-drawer gdrive-drawer">
+                        <!-- Drawer Header -->
+                        <div class="explorer-header">
+                            <div class="explorer-title-area">
+                                <span class="material-symbols-outlined header-icon" style="color: #38bdf8;">cloud_done</span>
+                                <span class="explorer-title">Quản lý Google Drive</span>
+                            </div>
+                            <div class="header-actions">
+                                <button id="btn-close-gdrive-drawer" class="icon-btn-close" title="Đóng">
+                                    <span class="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Drawer Body -->
+                        <div class="gdrive-drawer-body">
+                            <!-- Warning Banner -->
+                            <div class="gdrive-warning-banner">
+                                <div class="gdrive-warning-icon">
+                                    <span class="material-symbols-outlined">warning</span>
+                                </div>
+                                <div class="gdrive-warning-text">
+                                    <div class="gdrive-warning-title">Xác nhận xóa khỏi Google Drive</div>
+                                    <div class="gdrive-warning-desc">Xóa file video vĩnh viễn trên tài khoản Google Drive và cập nhật trạng thái cơ sở dữ liệu.</div>
+                                </div>
+                            </div>
+
+                            <!-- Video & Account Details Card -->
+                            <div class="gdrive-info-card">
+                                <div class="gdrive-info-row">
+                                    <span class="gdrive-info-label">Mã video:</span>
+                                    <span id="gdrive-drawer-code" class="gdrive-info-val code-badge">---</span>
+                                </div>
+                                <div class="gdrive-info-row">
+                                    <span class="gdrive-info-label">Tên phim:</span>
+                                    <span id="gdrive-drawer-title" class="gdrive-info-val">---</span>
+                                </div>
+                                <div class="gdrive-info-row highlight-row">
+                                    <span class="gdrive-info-label">Tài khoản Drive:</span>
+                                    <span id="gdrive-drawer-account" class="gdrive-info-val account-badge">
+                                        <span class="material-symbols-outlined" style="font-size: 16px;">account_circle</span>
+                                        <span id="gdrive-drawer-account-name">Đang tải...</span>
+                                    </span>
+                                </div>
+                                <div class="gdrive-info-row">
+                                    <span class="gdrive-info-label">Dung lượng:</span>
+                                    <span id="gdrive-drawer-size" class="gdrive-info-val">---</span>
+                                </div>
+                                <div class="gdrive-info-row">
+                                    <span class="gdrive-info-label">File ID:</span>
+                                    <span id="gdrive-drawer-fileid" class="gdrive-info-val mono-text">---</span>
+                                </div>
+                                <div class="gdrive-info-row">
+                                    <span class="gdrive-info-label">Đường dẫn:</span>
+                                    <span id="gdrive-drawer-path" class="gdrive-info-val path-text">---</span>
+                                </div>
+                            </div>
+
+                            <!-- Confirmation Prompt Box -->
+                            <div class="gdrive-prompt-box">
+                                <span class="material-symbols-outlined prompt-icon">delete_forever</span>
+                                <div class="gdrive-prompt-content">
+                                    <p id="gdrive-prompt-text">
+                                        Bạn có chắc chắn muốn xóa video <strong id="gdrive-prompt-code" style="color: #f43f5e;"></strong> khỏi Google Drive?<br>
+                                        Hiện tại video đang ở tài khoản: <strong id="gdrive-prompt-account" style="color: #38bdf8;">Đang kiểm tra...</strong>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons Footer -->
+                            <div class="gdrive-drawer-actions">
+                                <button id="btn-confirm-delete-gdrive" class="btn-gdrive-danger" title="Xác nhận xóa vĩnh viễn khỏi Google Drive">
+                                    <span class="material-symbols-outlined">delete_forever</span>
+                                    <span id="gdrive-delete-btn-text">Xóa khỏi Google Drive</span>
+                                </button>
+                                <button id="btn-cancel-gdrive-drawer" class="btn-gdrive-secondary" title="Hủy bỏ">
+                                    <span class="material-symbols-outlined">close</span>
+                                    <span>Hủy</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Page Jump Right Drawer Modal (GridView) -->
+                <div id="page-jump-drawer-modal" class="explorer-overlay hidden">
+                    <div class="explorer-drawer page-jump-drawer">
+                        <!-- Drawer Header -->
+                        <div class="explorer-header">
+                            <div class="explorer-title-area">
+                                <span class="material-symbols-outlined header-icon" style="color: #6366f1;">auto_stories</span>
+                                <span class="explorer-title">Chọn Trang Nhảy Đến</span>
+                            </div>
+                            <div class="header-actions">
+                                <button id="btn-close-page-jump-drawer" class="icon-btn-close" title="Đóng (ESC)">
+                                    <span class="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Drawer Body -->
+                        <div class="page-jump-drawer-body">
+                            <!-- Summary Info -->
+                            <div class="page-jump-summary-card">
+                                <div class="page-jump-summary-info">
+                                    <span class="page-jump-stat-label">Trang hiện tại:</span>
+                                    <span id="page-jump-current-badge" class="page-jump-current-badge">Trang 1 / 1</span>
+                                </div>
+                                <div id="page-jump-total-text" class="page-jump-total-text">Tổng 0 video</div>
+                            </div>
+
+                            <!-- Quick Jump Input & Shortcuts Bar -->
+                            <div class="page-jump-quick-bar">
+                                <div class="page-jump-input-group">
+                                    <input type="number" id="page-jump-input" class="page-jump-input" placeholder="Nhập số trang..." min="1" step="1">
+                                    <button id="btn-page-jump-go" class="page-jump-go-btn" title="Đi đến trang đã nhập">
+                                        <span class="material-symbols-outlined">send</span>
+                                        <span>Đi</span>
+                                    </button>
+                                </div>
+                                <!-- Step Jump Shortcuts -->
+                                <div class="page-jump-shortcuts">
+                                    <button class="page-jump-step-btn" data-step="first" title="Trang đầu tiên (1)">
+                                        <span class="material-symbols-outlined">first_page</span>
+                                        <span>Đầu</span>
+                                    </button>
+                                    <button class="page-jump-step-btn" data-step="-10" title="Lùi 10 trang">-10</button>
+                                    <button class="page-jump-step-btn" data-step="-5" title="Lùi 5 trang">-5</button>
+                                    <button class="page-jump-step-btn" data-step="-3" title="Lùi 3 trang">-3</button>
+                                    <button class="page-jump-step-btn" data-step="+3" title="Tiến 3 trang">+3</button>
+                                    <button class="page-jump-step-btn" data-step="+5" title="Tiến 5 trang">+5</button>
+                                    <button class="page-jump-step-btn" data-step="+10" title="Tiến 10 trang">+10</button>
+                                    <button class="page-jump-step-btn" data-step="last" title="Trang cuối cùng">
+                                        <span>Cuối</span>
+                                        <span class="material-symbols-outlined">last_page</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Page Grid View -->
+                            <div class="page-jump-grid-wrapper">
+                                <div class="page-jump-grid-title">Danh Sách Trang (Bấm để nhảy ngay)</div>
+                                <div id="page-jump-grid" class="page-jump-grid">
+                                    <!-- Dynamic page items injected by JS -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                    window.__IS_GDRIVE_ONLY__ = false;
+                    window.__INITIAL_MEDIA_ID__ = "";
+                </script>
+                <script src="/static/oneplayer/config.js?v=16"></script>
+                <script src="/static/oneplayer/player.js?v=16"></script>
+                <script src="/static/oneplayer/explorer.js?v=16"></script>
+                <script src="/static/oneplayer/app.js?v=16"></script>
 </body>
 
 </html>
