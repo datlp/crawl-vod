@@ -130,15 +130,23 @@ class Scraper:
                     
             with self.db_lock:
                 cursor = self.db_conn.cursor()
-                cursor.execute(f"SELECT url FROM {self.table_name} WHERE id = ? AND url IS NOT NULL", (vid_id,))
+                cursor.execute(f"SELECT url, surrit_id FROM {self.table_name} WHERE (id = ? OR upper(dvd) = ?) AND (url IS NOT NULL OR surrit_id IS NOT NULL)", (vid_id, vid_id.upper()))
                 row = cursor.fetchone()
+                if not row:
+                    try:
+                        cursor.execute("SELECT playlist_url, surrit_id FROM streams WHERE lower(missav_id) = ? OR upper(code) = ? LIMIT 1", (vid_id.lower(), vid_id.upper()))
+                        row = cursor.fetchone()
+                    except Exception:
+                        pass
             
-            if row and row[0]:
-                url_str = row[0].replace('1080p/video.m3u8', 'playlist.m3u8')
-                parsed_domain = urlparse(url_str).netloc
-                # Phát hiện và bỏ qua tên miền lỗi do thuật toán cũ
-                if not re.match(r'^[a-f0-9]{8}\.com$', parsed_domain):
-                    return url_str
+            if row:
+                url_str = row[0] or (f"https://surrit.com/{row[1]}/playlist.m3u8" if row[1] else "")
+                if url_str:
+                    url_str = url_str.replace('1080p/video.m3u8', 'playlist.m3u8')
+                    parsed_domain = urlparse(url_str).netloc
+                    # Phát hiện và bỏ qua tên miền lỗi do thuật toán cũ
+                    if not re.match(r'^[a-f0-9]{8}\.com$', parsed_domain):
+                        return url_str
             
         url = f"https://{self.domain}/en/{vid_id}"
         custom_log(self.source_name, f"⏳ Fetching video URL for {vid_id}")
