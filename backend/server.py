@@ -940,11 +940,22 @@ def get_counts():
 
 @app.route('/api/videos', methods=['GET'])
 def get_videos():
-    page = int(request.args.get('page', 1))
-    search_key = request.args.get('search_key', '').strip()
+    # Nhận diện tham số tương thích cả search_key lẫn q/search từ OnePlayer
+    search_key = (request.args.get('search_key', '') or request.args.get('q', '') or request.args.get('search', '')).strip()
+    
+    actress_param = (request.args.get('actress', '') or request.args.get('actresses', '')).strip()
+    genre_param = (request.args.get('genre', '') or request.args.get('genres', '')).strip()
+    studio_param = (request.args.get('studio', '') or request.args.get('studios', '') or request.args.get('maker', '')).strip()
+
     tab = request.args.get('tab', 'all')
-    per_page = 24
-    offset = (page - 1) * per_page
+    per_page = int(request.args.get('limit', 24) or 24)
+    if 'offset' in request.args and request.args.get('offset'):
+        offset = int(request.args.get('offset', 0))
+        page = (offset // max(1, per_page)) + 1
+    else:
+        page = int(request.args.get('page', 1))
+        offset = (page - 1) * per_page
+        
     identifier = get_identifier()
 
     try:
@@ -1043,10 +1054,47 @@ def get_videos():
                     params.append(related_vid_id)
         
                 safe_key = ""
+                # Xử lý các bộ lọc thực thể độc lập (actress, genre, maker/studio)
+                if actress_param:
+                    act_parts = [p.strip() for p in actress_param.split(',') if p.strip()]
+                    act_terms = []
+                    for part in act_parts:
+                        safe_val = ' '.join([f'"{w}"*' for w in part.replace('"', '').split()])
+                        if safe_val:
+                            act_terms.append(f'actress : ({safe_val})')
+                    if act_terms:
+                        fts_terms.append(f"({' OR '.join(act_terms)})")
+                        safe_key = "actress"
+
+                if genre_param:
+                    gen_parts = [p.strip() for p in genre_param.split(',') if p.strip()]
+                    gen_terms = []
+                    for part in gen_parts:
+                        safe_val = ' '.join([f'"{w}"*' for w in part.replace('"', '').split()])
+                        if safe_val:
+                            gen_terms.append(f'genre : ({safe_val})')
+                    if gen_terms:
+                        fts_terms.append(f"({' OR '.join(gen_terms)})")
+                        safe_key = "genre"
+
+                if studio_param:
+                    st_parts = [p.strip() for p in studio_param.split(',') if p.strip()]
+                    st_terms = []
+                    for part in st_parts:
+                        safe_val = ' '.join([f'"{w}"*' for w in part.replace('"', '').split()])
+                        if safe_val:
+                            st_terms.append(f'maker : ({safe_val})')
+                    if st_terms:
+                        fts_terms.append(f"({' OR '.join(st_terms)})")
+                        safe_key = "maker"
+
+                # Xử lý từ khóa tìm kiếm tự do (search_key hoặc q)
                 if search_key:
-                    match_field = re.match(r'^(actress|genre|maker|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
+                    match_field = re.match(r'^(actress|genre|maker|studio|title|dvd)\s*:\s*(.*)$', search_key, re.IGNORECASE)
                     if match_field:
                         field = match_field.group(1).lower()
+                        if field == 'studio':
+                            field = 'maker'
                         val = match_field.group(2).strip()
                         raw_parts = [p.strip() for p in val.split(',') if p.strip()]
                         field_terms = []
@@ -1059,11 +1107,13 @@ def get_videos():
                             fts_terms.append(f"({fts_or_clause})")
                             safe_key = fts_or_clause
                     else:
+                        # Từ khóa chung: tìm kiếm theo cụm hoặc theo từ
                         raw_parts = [p.strip() for p in search_key.split(',') if p.strip()]
                         key_terms = []
                         for part in raw_parts:
-                            safe_k = ' '.join([f'"{w}"*' for w in part.replace('"', '').split()])
-                            if safe_k:
+                            words = [w for w in part.replace('"', '').split() if w]
+                            if words:
+                                safe_k = ' '.join([f'"{w}"*' for w in words])
                                 key_terms.append(f"({safe_k})")
                         if key_terms:
                             fts_or_clause = ' OR '.join(key_terms)
@@ -2281,15 +2331,28 @@ def api_oneplayer_gdrive_info(code):
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/search_history', methods=['POST', 'DELETE'])
+@app.route('/api/history/search', methods=['GET', 'POST', 'DELETE'])
 def manage_search_history():
-    identifier = get_identifier()
-    if not identifier:
-        return jsonify({"success": False, "error": "Unauthorized"}), 401
-        
-    payload = request.get_json(silent=True) or {}
-    keyword = payload.get('keyword', '').strip()
+    identifier = get_identifier() or "default_user"
     
-    if not keyword:
+    if request.method == 'GET':
+        limit = min(int(request.args.get('limit', 30)), 100)
+        items = []
+        with db_lock:
+            cursor = db_conn_instance.cursor()
+            cursor.execute("SELECT keyword, count(*) FROM search_history WHERE username = ? GROUP BY keyword ORDER BY max(searched_at) DESC LIMIT ?", (identifier, limit))
+            for r in cursor.fetchall():
+                items.append({"query": r[0], "count": r[1]})
+            if not items:
+                cursor.execute("SELECT keyword, 1 FROM search_history ORDER BY searched_at DESC LIMIT ?", (limit,))
+                for r in cursor.fetchall():
+                    items.append({"query": r[0], "count": 1})
+        return jsonify({"success": True, "history": items, "items": items})
+
+    payload = request.get_json(silent=True) or {}
+    keyword = (payload.get('keyword') or payload.get('query') or request.args.get('keyword') or request.args.get('query') or '').strip()
+    
+    if not keyword and request.method == 'POST':
         return jsonify({"success": False, "error": "Missing keyword"}), 400
         
     if request.method == 'POST':
@@ -2297,16 +2360,121 @@ def manage_search_history():
         with db_lock:
             cursor = db_conn_instance.cursor()
             cursor.execute("INSERT OR REPLACE INTO search_history (username, keyword, searched_at) VALUES (?, ?, ?)", (identifier, keyword, now_ts))
-            cursor.execute("DELETE FROM search_history WHERE username = ? AND keyword IN (SELECT keyword FROM search_history WHERE username = ? ORDER BY searched_at DESC LIMIT -1 OFFSET 20)", (identifier, identifier))
+            cursor.execute("DELETE FROM search_history WHERE username = ? AND keyword IN (SELECT keyword FROM search_history WHERE username = ? ORDER BY searched_at DESC LIMIT -1 OFFSET 30)", (identifier, identifier))
             db_conn_instance.commit()
         return jsonify({"success": True})
         
     elif request.method == 'DELETE':
         with db_lock:
             cursor = db_conn_instance.cursor()
-            cursor.execute("DELETE FROM search_history WHERE username = ? AND keyword = ?", (identifier, keyword))
+            if keyword:
+                cursor.execute("DELETE FROM search_history WHERE username = ? AND keyword = ?", (identifier, keyword))
+            else:
+                cursor.execute("DELETE FROM search_history WHERE username = ?", (identifier,))
             db_conn_instance.commit()
         return jsonify({"success": True})
+
+@app.route('/api/history/view', methods=['GET', 'POST'])
+def api_oneplayer_history_view():
+    """Lấy danh sách video đã xem gần nhất để hiển thị gợi ý tìm kiếm."""
+    identifier = get_identifier() or "default_user"
+    limit = min(int(request.args.get('limit', 6)), 50)
+    items = []
+    with db_lock:
+        cursor = db_conn_instance.cursor()
+        try:
+            cursor.execute(f'''
+                SELECT v.id, v.title, v.cover, v.actress, v.genre, v.maker, v.dvd, v.release_date
+                FROM history h
+                JOIN {VIDEOS_TABLE} v ON h.video_id = v.id
+                WHERE h.username = ?
+                ORDER BY h.last_watched DESC
+                LIMIT ?
+            ''', (identifier, limit))
+            for r in cursor.fetchall():
+                code = (r[6] or '').strip().upper() or r[0]
+                items.append({
+                    "id": r[0],
+                    "code": code,
+                    "title": r[1] or code,
+                    "cover_url": f"/api/media?id={r[0]}",
+                    "actress": r[3] or "",
+                    "genres": r[4] or "",
+                    "maker": r[5] or "",
+                    "studio": r[5] or "",
+                    "release_date": r[7] or ""
+                })
+        except Exception as e:
+            custom_log("API", f"⚠️ Error /api/history/view: {e}")
+            
+    # Nếu chưa có lịch sử cá nhân, lấy video ngẫu nhiên/mới nhất để không bị trống gợi ý
+    if not items:
+        with db_lock:
+            cursor = db_conn_instance.cursor()
+            cursor.execute(f"SELECT id, title, cover, actress, genre, maker, dvd, release_date FROM {VIDEOS_TABLE} WHERE (details_fetched = 1 OR cover_fetched = 1) ORDER BY release_date DESC LIMIT ?", (limit,))
+            for r in cursor.fetchall():
+                code = (r[6] or '').strip().upper() or r[0]
+                items.append({
+                    "id": r[0],
+                    "code": code,
+                    "title": r[1] or code,
+                    "cover_url": f"/api/media?id={r[0]}",
+                    "actress": r[3] or "",
+                    "genres": r[4] or "",
+                    "maker": r[5] or "",
+                    "studio": r[5] or "",
+                    "release_date": r[7] or ""
+                })
+                
+    return jsonify({"success": True, "history": items, "items": items})
+
+@app.route('/api/search/suggest_words', methods=['GET'])
+def api_oneplayer_suggest_words():
+    """Gợi ý từ khóa trực tiếp cho Search Drawer (Diễn viên, Thể loại, Studio, Từ khóa)."""
+    q = (request.args.get('q', '') or request.args.get('search_key', '')).strip().lower()
+    limit = min(int(request.args.get('limit', 10)), 30)
+    words = []
+    
+    if not q:
+        return jsonify({"success": True, "words": []})
+        
+    try:
+        q_no_accents = remove_accents(q)
+        with db_lock:
+            cursor = db_conn_instance.cursor()
+            load_tags_cache_if_needed(cursor)
+            
+            # 1. Tìm trong tags_cache hỗ trợ cả có dấu và không dấu
+            seen_words = set()
+            for kw, t, count, low, low_no_accents, sorted_low in tags_cache:
+                if q in low or (q_no_accents and q_no_accents in low_no_accents):
+                    if kw.lower() not in seen_words:
+                        seen_words.add(kw.lower())
+                        words.append({"word": kw, "type": t})
+                        if len(words) >= limit:
+                            break
+                            
+            # 2. Tìm thêm mã phim (dvd / id) hoặc từ khóa từ tiêu đề
+            if len(words) < limit:
+                cursor.execute(f"SELECT dvd, title FROM {VIDEOS_TABLE} WHERE upper(dvd) LIKE ? OR upper(title) LIKE ? LIMIT ?", (f"%{q.upper()}%", f"%{q.upper()}%", (limit - len(words)) * 2))
+                for r in cursor.fetchall():
+                    val = (r[0] or '').strip()
+                    if not val:
+                        m = re.search(r'([A-Za-z0-9]+-[0-9]+)', r[1] or '')
+                        val = m.group(1).upper() if m else ''
+                    if not val and r[1]:
+                        # Nếu không có dvd/code (như VLXX / SexTop1), trích xuất tiêu đề ngắn gọn
+                        val = r[1].strip()[:40]
+                    if val and val.lower() not in seen_words:
+                        seen_words.add(val.lower())
+                        words.append({"word": val, "type": "general"})
+                        if len(words) >= limit:
+                            break
+    except Exception as e:
+        custom_log("API", f"⚠️ Error /api/search/suggest_words: {e}")
+        
+    return jsonify({"success": True, "words": words})
+
 
 @app.route('/api/identity/check', methods=['POST'])
 def identity_check():
