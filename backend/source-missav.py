@@ -234,15 +234,31 @@ class Scraper:
                 
                 desc_meta = soup.find('meta', {'name': 'description'})
                 details = desc_meta.get('content', '') if desc_meta else ""
+
+                # Bóc tách UUID / surrit_id và m3u8 playlist để play mượt trên Termux
+                m3u8_url = None
+                surrit_id = None
+                uuid_match = re.search(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', res.text)
+                if uuid_match:
+                    surrit_id = uuid_match.group(1)
+                    m3u8_url = f"https://surrit.com/{surrit_id}/playlist.m3u8"
                 
                 with self.db_lock:
                     cursor = self.db_conn.cursor()
-                    if release_date:
+                    # Đảm bảo có cột surrit_id
+                    try:
+                        cursor.execute(f"ALTER TABLE {self.table_name} ADD COLUMN surrit_id TEXT")
+                    except sqlite3.OperationalError:
+                        pass
+
+                    if m3u8_url:
+                        cursor.execute(f'''UPDATE {self.table_name} SET actress = ?, genre = ?, maker = ?, details = ?, release_date = ?, url = ?, surrit_id = ?, details_fetched = 1 WHERE id = ?''', (", ".join(set(actress_arr)), ", ".join(set(genre_arr)), maker, details, release_date or "", m3u8_url, surrit_id, vid_id))
+                    elif release_date:
                         cursor.execute(f'''UPDATE {self.table_name} SET actress = ?, genre = ?, maker = ?, details = ?, release_date = ?, details_fetched = 1 WHERE id = ?''', (", ".join(set(actress_arr)), ", ".join(set(genre_arr)), maker, details, release_date, vid_id))
                     else:
                         cursor.execute(f'''UPDATE {self.table_name} SET actress = ?, genre = ?, maker = ?, details = ?, details_fetched = 1 WHERE id = ?''', (", ".join(set(actress_arr)), ", ".join(set(genre_arr)), maker, details, vid_id))
                     self.db_conn.commit()
-                custom_log(self.source_name, f"{self.source_name} {vid_id} {len(actress_arr)} actress{'es' if len(actress_arr) != 1 else ''}, {len(genre_arr)} genre{'s' if len(genre_arr) != 1 else ''}, {maker}")
+                custom_log(self.source_name, f"{self.source_name} {vid_id} [Surrit: {surrit_id or 'None'}] {len(actress_arr)} actress{'es' if len(actress_arr) != 1 else ''}, {len(genre_arr)} genre{'s' if len(genre_arr) != 1 else ''}, {maker}")
                 return True
             except Exception as e:
                 custom_log(self.source_name, f"❌ Lỗi lấy chi tiết video {vid_id}: {e}")
