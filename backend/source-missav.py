@@ -119,10 +119,11 @@ class Scraper:
             return 0, -1, 0
 
     def get_video_url(self, vid_id, force_refresh=False):
+        dummy_uuid = "bc21a4fe-5e9b-4936-a844-b3e5f04c4cdc"
         if not force_refresh:
             with self.memory_lock:
                 url_in_buffer = self.db_buffer['video_urls'].get(vid_id)
-            if url_in_buffer:
+            if url_in_buffer and dummy_uuid not in url_in_buffer:
                 url_str = url_in_buffer
                 parsed_domain = urlparse(url_str).netloc
                 if not re.match(r'^[a-f0-9]{8}\.com$', parsed_domain):
@@ -140,7 +141,10 @@ class Scraper:
                         pass
             
             if row:
-                url_str = row[0] or (f"https://surrit.com/{row[1]}/playlist.m3u8" if row[1] else "")
+                sid = row[1] if (row[1] and row[1] != dummy_uuid and row[1] != 'failed') else None
+                url_str = row[0] if (row[0] and dummy_uuid not in row[0] and 'failed' not in row[0]) else None
+                if not url_str and sid:
+                    url_str = f"https://surrit.com/{sid}/playlist.m3u8"
                 if url_str:
                     url_str = url_str.replace('1080p/video.m3u8', 'playlist.m3u8')
                     parsed_domain = urlparse(url_str).netloc
@@ -148,67 +152,102 @@ class Scraper:
                     if not re.match(r'^[a-f0-9]{8}\.com$', parsed_domain):
                         return url_str
             
-        url = f"https://{self.domain}/en/{vid_id}"
         custom_log(self.source_name, f"⏳ Fetching video URL for {vid_id}")
-        try:
-            res = self.session.get(url, timeout=15)
-            m3u8_url = None
-            eval_match = re.search(r"return p}\('(.*?)',\s*(\d+)\s*,\s*(\d+)\s*,\s*'(.*?)'\.split\('\|'\)", res.text)
-            if eval_match:
-                p_str = eval_match.group(1).replace("\\'", "'")
-                a_radix = int(eval_match.group(2))
-                c_count = int(eval_match.group(3))
-                k_words = eval_match.group(4).split('|')
-                
-                def e_base(num, b):
-                    if num == 0: return "0"
-                    chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                    res_str = ""
-                    while num > 0:
-                        res_str = chars[num % b] + res_str
-                        num //= b
-                    return res_str
-                
-                for i in range(c_count - 1, -1, -1):
-                    if i < len(k_words) and k_words[i]:
-                        word = e_base(i, a_radix)
-                        p_str = re.sub(r'\b' + word + r'\b', k_words[i], p_str)
-                
-                playlist_match = re.search(r'(https://[^/\'"]+/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/playlist\.m3u8)', p_str)
-                if playlist_match:
-                    m3u8_url = playlist_match.group(1)
-                else:
-                    any_m3u8 = re.search(r'(https://[^/\'"]+/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/[^/]+/[^\'"]*\.m3u8)', p_str)
-                    if any_m3u8:
-                        m3u8_url = any_m3u8.group(1)
-                        m3u8_url = re.sub(r'/[^/]+/[^\']*\.m3u8$', '/playlist.m3u8', m3u8_url)
+        
+        # Danh sách domain mirror MissAV ưu tiên thử
+        candidate_domains = [self.domain, "missav99.com", "missav123.com", "missav.ws", "missav.ai"]
+        seen_domains = set()
+        ordered_domains = []
+        for d in candidate_domains:
+            if d and d not in seen_domains:
+                seen_domains.add(d)
+                ordered_domains.append(d)
 
-            if not m3u8_url:
-                uuid_match = re.search(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', res.text)
-                if not uuid_match:
-                    custom_log(self.source_name, f"⚠️ UUID not found for {vid_id}")
-                    return None
-                video_uuid = uuid_match.group(1)
-                
-                domain = "surrit.com"
-                eval_fallback = re.search(r'eval\(function\(p,a,c,k,e,d\).*?\'([^\']+)\'\.split\(\'\|\'\)', res.text)
-                if eval_fallback:
-                    words = eval_fallback.group(1).split('|')
-                    for w in words:
-                        if w in ['surrit', 'nineyu', 'vipanicdn', 'missav']:
-                            domain = f"{w}.com"
-                            break
-                            
-                m3u8_url = f"https://{domain}/{video_uuid}/playlist.m3u8"
-                    
-            if m3u8_url:
-                with self.memory_lock:
-                    self.db_buffer['video_urls'][vid_id] = m3u8_url
-                return m3u8_url
-            return None
-        except Exception as e:
-            custom_log(self.source_name, f"❌ Failed to get video URL for {vid_id}: {e}")
-            return None
+        # Danh sách path thử: vid_id gốc và biến thể uncensored-leak
+        candidate_slugs = [vid_id]
+        if not vid_id.endswith('-uncensored-leak'):
+            candidate_slugs.append(f"{vid_id}-uncensored-leak")
+
+        for d in ordered_domains:
+            for slug in candidate_slugs:
+                url = f"https://{d}/en/{slug}"
+                try:
+                    res = self.session.get(url, timeout=12, headers={"Referer": f"https://{d}/"})
+                    if res.status_code != 200:
+                        continue
+                    html_text = res.text
+
+                    # 1. Kiểm tra mã hóa Hex trong các mirror như missav99 (document.write(unescape(func("hex"))))
+                    idx_hex = html_text.find('("')
+                    if idx_hex != -1:
+                        next_q = html_text.find('"', idx_hex + 2)
+                        if next_q != -1 and (next_q - (idx_hex + 2)) > 1000:
+                            hex_str = html_text[idx_hex + 2:next_q]
+                            try:
+                                decoded_html = bytes.fromhex(hex_str).decode('utf-8', errors='ignore')
+                                if decoded_html:
+                                    html_text = decoded_html
+                            except Exception:
+                                pass
+
+                    # 2. Tìm m3u8 trong window.videoConfig = { ... url: "..." }
+                    cfg_match = re.search(r'window\.videoConfig\s*=\s*\{[^}]*?url:\s*["\'](https?://[^"\']+\.m3u8[^"\']*)["\']', html_text)
+                    if cfg_match:
+                        m3u8_url = cfg_match.group(1).replace('\\/', '/')
+                        with self.memory_lock:
+                            self.db_buffer['video_urls'][vid_id] = m3u8_url
+                        return m3u8_url
+
+                    # 3. Tìm m3u8 qua eval(function(p,a,c,k,e,d)...)
+                    m3u8_url = None
+                    eval_match = re.search(r"return p}\('(.*?)',\s*(\d+)\s*,\s*(\d+)\s*,\s*'(.*?)'\.split\('\|'\)", html_text)
+                    if eval_match:
+                        p_str = eval_match.group(1).replace("\\'", "'")
+                        a_radix = int(eval_match.group(2))
+                        c_count = int(eval_match.group(3))
+                        k_words = eval_match.group(4).split('|')
+                        
+                        def e_base(num, b):
+                            if num == 0: return "0"
+                            chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                            res_str = ""
+                            while num > 0:
+                                res_str = chars[num % b] + res_str
+                                num //= b
+                            return res_str
+                        
+                        for i in range(c_count - 1, -1, -1):
+                            if i < len(k_words) and k_words[i]:
+                                word = e_base(i, a_radix)
+                                p_str = re.sub(r'\b' + word + r'\b', k_words[i], p_str)
+                        
+                        playlist_match = re.search(r'(https://[^/\'"]+/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/playlist\.m3u8)', p_str)
+                        if playlist_match:
+                            m3u8_url = playlist_match.group(1)
+                        else:
+                            any_m3u8 = re.search(r'(https://[^/\'"]+/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/[^/]+/[^\'"]*\.m3u8)', p_str)
+                            if any_m3u8:
+                                m3u8_url = any_m3u8.group(1)
+                                m3u8_url = re.sub(r'/[^/]+/[^\']*\.m3u8$', '/playlist.m3u8', m3u8_url)
+
+                    # 4. Tìm UUID trực tiếp nếu có
+                    if not m3u8_url:
+                        uuids_found = set(re.findall(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', html_text))
+                        uuids_found.discard(dummy_uuid)
+                        if uuids_found:
+                            video_uuid = list(uuids_found)[0]
+                            m3u8_url = f"https://surrit.com/{video_uuid}/playlist.m3u8"
+
+                    if m3u8_url:
+                        with self.memory_lock:
+                            self.db_buffer['video_urls'][vid_id] = m3u8_url
+                        return m3u8_url
+
+                except Exception as e:
+                    custom_log(self.source_name, f"⚠️ Lỗi fetch {url}: {e}")
+
+        custom_log(self.source_name, f"⚠️ Không tìm thấy URL video cho {vid_id}")
+        return None
 
     def sync_video_details(self, vid_id):
         with self.sync_lock:

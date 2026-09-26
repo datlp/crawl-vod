@@ -1110,6 +1110,8 @@ def get_videos():
             has_gd = code_val in has_gdrive_set
             in_q = code_val in in_queue_set
 
+            dummy_uuid = "bc21a4fe-5e9b-4936-a844-b3e5f04c4cdc"
+            stream_val = row[3] if (row[3] and dummy_uuid not in row[3] and 'failed' not in row[3]) else None
             vid_item = {
                 "id": row[0],
                 "code": code_val,
@@ -1119,8 +1121,8 @@ def get_videos():
                 "cover_url": f"/api/media?id={row[0]}",
                 "coverUrl": f"/api/media?id={row[0]}",
                 "poster_url": f"/api/media?id={row[0]}",
-                "url": row[3],
-                "stream_url": row[3] or f"/api/video_url?id={row[0]}",
+                "url": stream_val or "",
+                "stream_url": stream_val or f"/api/video_url?id={row[0]}",
                 "release_date": row[4] if len(row) > 4 else '',
                 "releaseDate": row[4] if len(row) > 4 else '',
                 "actress": row[5] if len(row) > 5 else '',
@@ -1236,6 +1238,8 @@ def get_related():
 @app.route('/api/media', methods=['GET'])
 def get_media():
     vid_id = request.args.get('id', '')
+    if not vid_id:
+        return Response(status=404)
     
     with memory_lock:
         media_in_buffer = db_buffer['media'].get(vid_id)
@@ -1250,10 +1254,39 @@ def get_media():
     if row:
         return Response(row[0], mimetype=row[1] or 'image/jpeg', headers={'Cache-Control': 'public, max-age=31536000'})
     else:
+        # 1. Tra cứu trực tiếp từ Segment Bin file (cover_bin_id, cover_offset, cover_length)
+        try:
+            with db_lock:
+                cursor = db_conn_instance.cursor()
+                cursor.execute(f"SELECT cover_bin_id, cover_offset, cover_length FROM {VIDEOS_TABLE} WHERE id = ? OR upper(dvd) = ?", (vid_id, vid_id.upper()))
+                bin_row = cursor.fetchone()
+            if bin_row and bin_row[0] is not None and bin_row[1] is not None and bin_row[2] and bin_row[2] > 0:
+                bin_id, offset, length = bin_row[0], bin_row[1], bin_row[2]
+                db_dir = os.path.dirname(os.path.abspath(app_args.sqlite3)) if app_args and app_args.sqlite3 else '.'
+                source_name = getattr(scraper_instance, 'source_name', app_args.source if app_args else 'missav').lower()
+                
+                # Tìm file bin tương ứng (ví dụ: missav_covers_0001.bin, javtiful_covers_0001.bin, v.v.)
+                bin_patterns = [
+                    os.path.join(db_dir, f"{source_name}_covers_{bin_id:04d}.bin"),
+                    os.path.join(db_dir, f"{source_name}_posters_{bin_id:04d}.bin"),
+                    os.path.join(db_dir, f"{source_name}_covers_{bin_id}.bin"),
+                    os.path.join(db_dir, f"covers_{bin_id:04d}.bin")
+                ]
+                for bp in bin_patterns:
+                    if os.path.exists(bp):
+                        with open(bp, 'rb') as bf:
+                            bf.seek(offset)
+                            bin_data = bf.read(length)
+                            if len(bin_data) == length:
+                                return Response(bin_data, mimetype='image/jpeg', headers={'Cache-Control': 'public, max-age=31536000'})
+        except Exception as e:
+            custom_log("API", f"⚠️ Lỗi đọc cover từ Segment Bin cho {vid_id}: {e}")
+
+        # 2. Fallback: tải từ cover URL gốc nếu chưa có trong bin
         cover_url = None
         with db_lock:
             cursor = db_conn_instance.cursor()
-            cursor.execute(f"SELECT cover FROM {VIDEOS_TABLE} WHERE id = ?", (vid_id,))
+            cursor.execute(f"SELECT cover FROM {VIDEOS_TABLE} WHERE id = ? OR upper(dvd) = ?", (vid_id, vid_id.upper()))
             vrow = cursor.fetchone()
             
         if vrow and vrow[0]:
@@ -1296,10 +1329,17 @@ def proxy_video():
     target_url = request.args.get('url', '')
     if not target_url:
         return Response(status=400)
-        
     target_url = target_url.split('#')[0]
     client_range = request.headers.get('Range')
-    headers = {"Referer": getattr(scraper_instance, 'referer', '')}
+    
+    # Thiết lập Referer phù hợp theo CDN đích
+    parsed_target = urlparse(target_url)
+    ref = getattr(scraper_instance, 'referer', '')
+    if 'playergo.top' in parsed_target.netloc or 'sixyik.com' in parsed_target.netloc:
+        ref = 'https://missav99.com/'
+    elif 'surrit.com' in parsed_target.netloc:
+        ref = 'https://missav.ws/'
+    headers = {"Referer": ref}
         
     try:
         is_m3u8 = target_url.split('?')[0].endswith('.m3u8') or target_url.split('?')[0].endswith('.vl')
@@ -1350,7 +1390,7 @@ def proxy_video():
             return Response(body, status=res.status_code, headers=resp_headers)
 
         # Bước 1: Request 2 byte đầu tiên để lấy Content-Length và kiểm tra HTTP Range
-        head_req = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": "bytes=0-1"}, timeout=app_args.parsed_timeout)
+        head_req = scraper_instance.session.get(target_url, headers=dict(headers, Range="bytes=0-1"), timeout=app_args.parsed_timeout)
         
         total_size = 0
         is_range_supported = False
@@ -1425,7 +1465,9 @@ def proxy_video():
                     return None
                 try:
                     # Dùng stream=True để ngắt kết nối lập tức (I/O Blocking fix) khi client hủy
-                    res = scraper_instance.session.get(target_url, headers={"Referer": getattr(scraper_instance, 'referer', ''), "Range": f"bytes={r[0]}-{r[1]}"}, timeout=app_args.parsed_timeout, stream=True)
+                    req_hdrs = dict(headers)
+                    req_hdrs["Range"] = f"bytes={r[0]}-{r[1]}"
+                    res = scraper_instance.session.get(target_url, headers=req_hdrs, timeout=app_args.parsed_timeout, stream=True)
                     if res.status_code in (200, 206):
                         data = bytearray()
                         for chunk in res.iter_content(chunk_size=app_args.chunk_size_bytes): 
@@ -1541,6 +1583,8 @@ def video_details_api():
         has_gd = code_val in has_gdrive_set
         in_q = code_val in in_queue_set
 
+        dummy_uuid = "bc21a4fe-5e9b-4936-a844-b3e5f04c4cdc"
+        stream_val = row[3] if (row[3] and dummy_uuid not in row[3] and 'failed' not in row[3]) else None
         vid_data = {
             "id": row[0],
             "code": code_val,
@@ -1550,8 +1594,8 @@ def video_details_api():
             "cover_url": f"/api/media?id={row[0]}",
             "coverUrl": f"/api/media?id={row[0]}",
             "poster_url": f"/api/media?id={row[0]}",
-            "url": row[3],
-            "stream_url": row[3] or f"/api/video_url?id={row[0]}",
+            "url": stream_val or "",
+            "stream_url": stream_val or f"/api/video_url?id={row[0]}",
             "release_date": row[4] if row[4] else '',
             "releaseDate": row[4] if row[4] else '',
             "actress": row[5] if row[5] else '',
@@ -1589,7 +1633,13 @@ def api_oneplayer_video_detail(code):
 
     with db_lock:
         cursor = db_conn_instance.cursor()
-        cursor.execute(f"SELECT id, title, cover, url, release_date, actress, genre, maker, details, dvd FROM {VIDEOS_TABLE} WHERE upper(dvd) = ? OR upper(id) = ? OR upper(title) LIKE ? LIMIT 1", (code_clean, code_clean.lower(), f"%{code_clean}%"))
+        code_low = code_clean.lower()
+        cursor.execute(f"""
+            SELECT id, title, cover, url, release_date, actress, genre, maker, details, dvd 
+            FROM {VIDEOS_TABLE} 
+            WHERE id = ? OR upper(id) = ? OR dvd = ? OR upper(dvd) = ? OR upper(title) LIKE ? 
+            LIMIT 1
+        """, (code_low, code_clean, code_low, code_clean, f"%{code_clean}%"))
         row = cursor.fetchone()
 
     if not row:
@@ -1600,8 +1650,9 @@ def api_oneplayer_video_detail(code):
     has_gd = code_val in has_gdrive_set
     in_q = code_val in in_queue_set
 
-    # Tự động nạp stream URL nếu chưa có sẵn
-    stream_url = row[3]
+    # Tự động nạp stream URL nếu chưa có sẵn hoặc nếu URL cũ là dummy UUID
+    dummy_uuid = "bc21a4fe-5e9b-4936-a844-b3e5f04c4cdc"
+    stream_url = row[3] if (row[3] and dummy_uuid not in row[3] and 'failed' not in row[3]) else None
     if not stream_url:
         try:
             stream_url = scraper_instance.get_video_url(row[0])
