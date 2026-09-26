@@ -954,8 +954,16 @@ def get_videos():
                 where_clauses = []
                 params = []
                 from_clause = f"{VIDEOS_TABLE} v"
+
+                # Đảm bảo CHỈ lấy những video đã cào hoàn tất
+                # (details_fetched = 1 hoặc cover_fetched = 1 hoặc có link url / surrit_id hợp lệ)
+                dummy_uuid = "bc21a4fe-5e9b-4936-a844-b3e5f04c4cdc"
+                where_clauses.append(f"""(
+                    (v.details_fetched = 1 OR v.cover_fetched = 1)
+                    OR (v.url IS NOT NULL AND v.url != '' AND v.url NOT LIKE '%{dummy_uuid}%' AND v.url != 'failed')
+                    OR (v.surrit_id IS NOT NULL AND v.surrit_id != '' AND v.surrit_id NOT IN ('404', 'failed', 'no_surrit'))
+                )""")
                 
-                        
                 if tab == 'favorites':
                     if not identifier:
                         return jsonify({"items": [], "total": 0, "page": page})
@@ -1112,6 +1120,14 @@ def get_videos():
 
             dummy_uuid = "bc21a4fe-5e9b-4936-a844-b3e5f04c4cdc"
             stream_val = row[3] if (row[3] and dummy_uuid not in row[3] and 'failed' not in row[3]) else None
+            if stream_val and (stream_val.startswith('http://') or stream_val.startswith('https://')):
+                if '.m3u8' in stream_val or '.vl' in stream_val:
+                    stream_play_url = f"/api/proxy?url={quote(stream_val)}"
+                else:
+                    stream_play_url = stream_val
+            else:
+                stream_play_url = stream_val or f"/api/video_url?id={row[0]}"
+
             vid_item = {
                 "id": row[0],
                 "code": code_val,
@@ -1122,7 +1138,7 @@ def get_videos():
                 "coverUrl": f"/api/media?id={row[0]}",
                 "poster_url": f"/api/media?id={row[0]}",
                 "url": stream_val or "",
-                "stream_url": stream_val or f"/api/video_url?id={row[0]}",
+                "stream_url": stream_play_url,
                 "release_date": row[4] if len(row) > 4 else '',
                 "releaseDate": row[4] if len(row) > 4 else '',
                 "actress": row[5] if len(row) > 5 else '',
@@ -1339,7 +1355,10 @@ def proxy_video():
         ref = 'https://missav99.com/'
     elif 'surrit.com' in parsed_target.netloc:
         ref = 'https://missav.ws/'
-    headers = {"Referer": ref}
+    headers = {
+        "Referer": ref,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
         
     try:
         is_m3u8 = target_url.split('?')[0].endswith('.m3u8') or target_url.split('?')[0].endswith('.vl')
@@ -1585,6 +1604,16 @@ def video_details_api():
 
         dummy_uuid = "bc21a4fe-5e9b-4936-a844-b3e5f04c4cdc"
         stream_val = row[3] if (row[3] and dummy_uuid not in row[3] and 'failed' not in row[3]) else None
+        
+        # Nếu là link m3u8 ngoại vi (surrit, cdn...) thì proxy qua server để bypass CORS và Referer 403
+        if stream_val and (stream_val.startswith('http://') or stream_val.startswith('https://')):
+            if '.m3u8' in stream_val or '.vl' in stream_val:
+                stream_play_url = f"/api/proxy?url={quote(stream_val)}"
+            else:
+                stream_play_url = stream_val
+        else:
+            stream_play_url = stream_val or f"/api/video_url?id={row[0]}"
+
         vid_data = {
             "id": row[0],
             "code": code_val,
@@ -1595,7 +1624,7 @@ def video_details_api():
             "coverUrl": f"/api/media?id={row[0]}",
             "poster_url": f"/api/media?id={row[0]}",
             "url": stream_val or "",
-            "stream_url": stream_val or f"/api/video_url?id={row[0]}",
+            "stream_url": stream_play_url,
             "release_date": row[4] if row[4] else '',
             "releaseDate": row[4] if row[4] else '',
             "actress": row[5] if row[5] else '',
@@ -1659,6 +1688,14 @@ def api_oneplayer_video_detail(code):
         except Exception:
             pass
 
+    if stream_url and (stream_url.startswith('http://') or stream_url.startswith('https://')):
+        if '.m3u8' in stream_url or '.vl' in stream_url:
+            stream_play_url = f"/api/proxy?url={quote(stream_url)}"
+        else:
+            stream_play_url = stream_url
+    else:
+        stream_play_url = stream_url or f"/api/video_url?id={row[0]}"
+
     vid_data = {
         "id": row[0],
         "code": code_val,
@@ -1669,7 +1706,7 @@ def api_oneplayer_video_detail(code):
         "coverUrl": f"/api/media?id={row[0]}",
         "poster_url": f"/api/media?id={row[0]}",
         "url": stream_url or "",
-        "stream_url": stream_url or f"/api/video_url?id={row[0]}",
+        "stream_url": stream_play_url,
         "release_date": row[4] if row[4] else '',
         "releaseDate": row[4] if row[4] else '',
         "actress": row[5] if row[5] else '',
@@ -2117,6 +2154,14 @@ def api_oneplayer_adjacent_video():
 
     with db_lock:
         cursor = db_conn_instance.cursor()
+        # Điều kiện CHỈ lấy video đã cào xong hợp lệ
+        dummy_uuid = "bc21a4fe-5e9b-4936-a844-b3e5f04c4cdc"
+        crawled_cond = f"""(
+            (details_fetched = 1 OR cover_fetched = 1)
+            OR (url IS NOT NULL AND url != '' AND url NOT LIKE '%{dummy_uuid}%' AND url != 'failed')
+            OR (surrit_id IS NOT NULL AND surrit_id != '' AND surrit_id NOT IN ('404', 'failed', 'no_surrit'))
+        )"""
+
         # Tìm rowid và release_date hiện tại
         cursor.execute(f"SELECT rowid, id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE upper(dvd) = ? OR upper(id) = ? OR upper(title) LIKE ? LIMIT 1", (code, code.lower(), f"%{code}%"))
         cur_row = cursor.fetchone()
@@ -2128,27 +2173,35 @@ def api_oneplayer_adjacent_video():
             # Khớp theo thứ tự sắp xếp của Explorer (mặc định release_date DESC, rowid DESC)
             if direction == "next":
                 if sort_asc:
-                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE (release_date > ? OR (release_date = ? AND rowid > ?)) ORDER BY release_date ASC, rowid ASC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
+                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE {crawled_cond} AND (release_date > ? OR (release_date = ? AND rowid > ?)) ORDER BY release_date ASC, rowid ASC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
                 else:
-                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE (release_date < ? OR (release_date = ? AND rowid < ?)) ORDER BY release_date DESC, rowid DESC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
+                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE {crawled_cond} AND (release_date < ? OR (release_date = ? AND rowid < ?)) ORDER BY release_date DESC, rowid DESC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
                 adj = cursor.fetchone()
             else:
                 if sort_asc:
-                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE (release_date < ? OR (release_date = ? AND rowid < ?)) ORDER BY release_date DESC, rowid DESC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
+                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE {crawled_cond} AND (release_date < ? OR (release_date = ? AND rowid < ?)) ORDER BY release_date DESC, rowid DESC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
                 else:
-                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE (release_date > ? OR (release_date = ? AND rowid > ?)) ORDER BY release_date ASC, rowid ASC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
+                    cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE {crawled_cond} AND (release_date > ? OR (release_date = ? AND rowid > ?)) ORDER BY release_date ASC, rowid ASC LIMIT 1", (cur_rel, cur_rel, cur_rowid))
                 adj = cursor.fetchone()
 
         if not adj:
             order_clause = "ORDER BY release_date DESC, rowid DESC" if not sort_asc else "ORDER BY release_date ASC, rowid ASC"
-            cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} {order_clause} LIMIT 1")
+            cursor.execute(f"SELECT id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE {crawled_cond} {order_clause} LIMIT 1")
             adj = cursor.fetchone()
 
     if not adj:
         return jsonify({"success": False, "has_adjacent": False})
 
     adj_code = (adj[1] or '').strip().upper() or adj[0]
-    stream_url = adj[4] or f"/api/video_url?id={adj[0]}"
+    raw_stream_url = adj[4] or f"/api/video_url?id={adj[0]}"
+    if raw_stream_url and (raw_stream_url.startswith('http://') or raw_stream_url.startswith('https://')):
+        if '.m3u8' in raw_stream_url or '.vl' in raw_stream_url:
+            stream_url = f"/api/proxy?url={quote(raw_stream_url)}"
+        else:
+            stream_url = raw_stream_url
+    else:
+        stream_url = raw_stream_url
+
     poster_url = f"/api/media?id={adj[0]}"
 
     has_gdrive_set, in_queue_set = get_nextdjav_status_maps([adj_code])
@@ -2531,6 +2584,16 @@ def api_history_view():
 def api_user_interaction():
     return jsonify({"success": True})
 
+@app.route('/favicon.ico')
+def serve_favicon():
+    frontend_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend'))
+    src = getattr(app_args, 'source', 'missav').lower()
+    specific_ico = f"favicon_{src}.ico"
+    specific_path = os.path.join(frontend_dir, 'static', specific_ico)
+    if os.path.exists(specific_path):
+        return send_from_directory(os.path.join(frontend_dir, 'static'), specific_ico, mimetype='image/x-icon')
+    return send_from_directory(frontend_dir, 'favicon.ico', mimetype='image/x-icon')
+
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_html(path):
@@ -2548,9 +2611,20 @@ def serve_html(path):
         with open(html_path, 'rb') as f:
             content = f.read()
 
+        src = getattr(app_args, 'source', 'vod').lower()
         if app_args and hasattr(app_args, 'source'):
-            new_title = "VOD - Video On Demand"
+            new_title = f"{src.upper()} - Video On Demand"
             content = re.sub(b'<title>.*?</title>', f'<title>{new_title}</title>'.encode('utf-8'), content, count=1, flags=re.IGNORECASE)
+
+        # Gắn favicon riêng biệt cho từng port / source
+        favicon_url = f"/static/favicon_{src}.ico"
+        content = re.sub(
+            rb'<link[^>]*rel=["\'](?:shortcut )?icon["\'][^>]*>',
+            f'<link rel="icon" href="{favicon_url}" type="image/x-icon">'.encode('utf-8'),
+            content,
+            count=1,
+            flags=re.IGNORECASE
+        )
 
         return Response(content, mimetype='text/html; charset=utf-8')
     except Exception as e:
