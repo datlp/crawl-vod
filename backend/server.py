@@ -956,13 +956,19 @@ def get_videos():
                 from_clause = f"{VIDEOS_TABLE} v"
 
                 # Đảm bảo CHỈ lấy những video đã cào hoàn tất
-                # (details_fetched = 1 hoặc cover_fetched = 1 hoặc có link url / surrit_id hợp lệ)
                 dummy_uuid = "bc21a4fe-5e9b-4936-a844-b3e5f04c4cdc"
-                where_clauses.append(f"""(
-                    (v.details_fetched = 1 OR v.cover_fetched = 1)
-                    OR (v.url IS NOT NULL AND v.url != '' AND v.url NOT LIKE '%{dummy_uuid}%' AND v.url != 'failed')
-                    OR (v.surrit_id IS NOT NULL AND v.surrit_id != '' AND v.surrit_id NOT IN ('404', 'failed', 'no_surrit'))
-                )""")
+                # Kiểm tra xem bảng hiện tại có cột surrit_id không (chỉ missav mới có)
+                cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE})")
+                col_names = [col[1] for col in cursor.fetchall()]
+                
+                cond_parts = [
+                    "(v.details_fetched = 1 OR v.cover_fetched = 1)",
+                    f"(v.url IS NOT NULL AND v.url != '' AND v.url NOT LIKE '%{dummy_uuid}%' AND v.url != 'failed')"
+                ]
+                if "surrit_id" in col_names:
+                    cond_parts.append("(v.surrit_id IS NOT NULL AND v.surrit_id != '' AND v.surrit_id NOT IN ('404', 'failed', 'no_surrit'))")
+                
+                where_clauses.append(f"({' OR '.join(cond_parts)})")
                 
                 if tab == 'favorites':
                     if not identifier:
@@ -1355,6 +1361,10 @@ def proxy_video():
         ref = 'https://missav99.com/'
     elif 'surrit.com' in parsed_target.netloc:
         ref = 'https://missav.ws/'
+    elif 'qooglevideo.com' in parsed_target.netloc or 'googleusercontent.com' in parsed_target.netloc:
+        ref = f"https://{getattr(scraper_instance, 'domain', 'vlxx.phd')}/"
+    elif 'youtubepro.me' in parsed_target.netloc:
+        ref = f"https://{getattr(scraper_instance, 'domain', 'sextop1.buzz')}/"
     headers = {
         "Referer": ref,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -2156,11 +2166,17 @@ def api_oneplayer_adjacent_video():
         cursor = db_conn_instance.cursor()
         # Điều kiện CHỈ lấy video đã cào xong hợp lệ
         dummy_uuid = "bc21a4fe-5e9b-4936-a844-b3e5f04c4cdc"
-        crawled_cond = f"""(
-            (details_fetched = 1 OR cover_fetched = 1)
-            OR (url IS NOT NULL AND url != '' AND url NOT LIKE '%{dummy_uuid}%' AND url != 'failed')
-            OR (surrit_id IS NOT NULL AND surrit_id != '' AND surrit_id NOT IN ('404', 'failed', 'no_surrit'))
-        )"""
+        cursor.execute(f"PRAGMA table_info({VIDEOS_TABLE})")
+        col_names = [col[1] for col in cursor.fetchall()]
+        
+        cond_parts = [
+            "(details_fetched = 1 OR cover_fetched = 1)",
+            f"(url IS NOT NULL AND url != '' AND url NOT LIKE '%{dummy_uuid}%' AND url != 'failed')"
+        ]
+        if "surrit_id" in col_names:
+            cond_parts.append("(surrit_id IS NOT NULL AND surrit_id != '' AND surrit_id NOT IN ('404', 'failed', 'no_surrit'))")
+            
+        crawled_cond = f"({' OR '.join(cond_parts)})"
 
         # Tìm rowid và release_date hiện tại
         cursor.execute(f"SELECT rowid, id, dvd, title, cover, url, release_date FROM {VIDEOS_TABLE} WHERE upper(dvd) = ? OR upper(id) = ? OR upper(title) LIKE ? LIMIT 1", (code, code.lower(), f"%{code}%"))

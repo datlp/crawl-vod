@@ -339,6 +339,10 @@ class Scraper:
                                         break 
                                         
                 if mp4_url:
+                    with self.db_lock:
+                        cursor = self.db_conn.cursor()
+                        cursor.execute(f"UPDATE {self.table_name} SET url = ? WHERE id = ?", (mp4_url, vid_id))
+                        self.db_conn.commit()
                     with self.memory_lock:
                         self.db_buffer['video_urls'][vid_id] = mp4_url
                     return mp4_url

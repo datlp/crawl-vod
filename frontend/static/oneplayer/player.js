@@ -378,8 +378,9 @@ class VODPlayer {
         const urlLower = (this.streamUrl || '').toLowerCase();
         const isTs = urlLower.endsWith('.ts') || urlLower.includes('.ts?') || urlLower.includes('.ts&') || urlLower.includes('.ts%3f') ||
                      urlLower.endsWith('.datts') || urlLower.includes('.datts?') || urlLower.includes('.datts&') || urlLower.includes('.datts%3f');
-        const isM3u8 = urlLower.endsWith('.m3u8') || urlLower.includes('.m3u8?') ||
-                       urlLower.endsWith('.datm3u8') || urlLower.includes('.datm3u8?');
+        const isM3u8 = urlLower.endsWith('.m3u8') || urlLower.includes('.m3u8?') || urlLower.includes('.m3u8%23') ||
+                       urlLower.endsWith('.datm3u8') || urlLower.includes('.datm3u8?') ||
+                       urlLower.endsWith('.vl') || urlLower.includes('.vl?') || urlLower.includes('.vl%23') || urlLower.includes('.vl#');
         const isHls = isTs || isM3u8;
 
         if (this.hlsPlayer) {

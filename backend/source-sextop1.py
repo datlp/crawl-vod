@@ -140,11 +140,14 @@ class Scraper:
             import os
             
             options = Options()
-            options.add_argument('--headless')
+            options.add_argument('--headless=new')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
             options.add_argument(f'user-agent={self.user_agent}')
-            options.add_argument('--window-size=1280,720')
+            options.add_argument('--window-size=1920,1080')
             
             if "TERMUX_VERSION" in os.environ:
                 options.binary_location = '/data/data/com.termux/files/usr/bin/chromium-browser'
@@ -157,6 +160,9 @@ class Scraper:
             else:
                 driver = webdriver.Chrome(options=options)
                 
+            driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+                "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            })
             driver.get(target_url)
             time.sleep(5) 
             
@@ -386,6 +392,7 @@ class Scraper:
                             with self.db_lock:
                                 cursor = self.db_conn.cursor()
                                 cursor.execute("INSERT OR REPLACE INTO play_configs (video_id, jwplayer_key, server) VALUES (?, ?, ?)", (vid_id, jw_key, str(server_num)))
+                                cursor.execute(f"UPDATE {self.table_name} SET url = ? WHERE id = ?", (m3u8_url, vid_id))
                                 self.db_conn.commit()
                                 
                             with self.memory_lock:
