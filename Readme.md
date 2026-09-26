@@ -71,24 +71,30 @@ crawl-vod/
 
 ### 3. Lệnh chạy mẫu
 
+#### 🌐 Danh sách Cổng (Ports) chuẩn hệ sinh thái:
+- `3010`: `nextdjav-admin` (Admin server / Watchdog)
+- `3011`: `nextdjav` (Dedicated GDrive OnePlayer)
+- `3012`: `crawl-vod` - Javtiful (`javtiful.com`)
+- `3013`: `crawl-vod` - MissAV (`missav.ws`)
+- `3014`: `crawl-vod` - VLXX (`vlxx.phd`)
+- `3015`: `crawl-vod` - Sextop1 (`sextop1.spa`)
+
 #### 💻 Trên Windows (PC)
 ```powershell
-python backend/server.py -source javtiful -port 5004 -domain javtiful.com -news-threads 1 -detail-threads 1
+python backend/server.py -source javtiful -port 3012 -domain javtiful.com -news-threads 1 -detail-threads 1
 ```
 
 #### 📱 Trên Android (Tab S8 / Termux)
 ```bash
 cd "/sdcard/Projects/crawl-vod"
-git checkout sources
 
-# Chạy đa nguồn background
-python backend/server.py -source javtiful -domain javtiful.com -detail-threads 1 -news-threads 1 -port 5004 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" &
-
-python backend/server.py -source missav -domain missav.ws -detail-threads 1 -news-threads 1 -port 5003 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" &
-
-python backend/server.py -source vlxx -domain vlxx.moi -detail-threads 1 -news-threads 1 -port 5002 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" &
-
-python backend/server.py -source sextop1 -domain sextop1.cool -detail-threads 1 -news-threads 1 -port 5001 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" &
+# Chạy toàn bộ hệ sinh thái background
+python /sdcard/Projects/nextdjav-admin/start.py --sqlite3 "/sdcard/Database/nextdjav.db" --port 3010 &
+python /sdcard/Projects/nextdjav/start.py       --sqlite3 "/sdcard/Database/nextdjav.db" --port 3011 &
+python /sdcard/Projects/crawl-vod/backend/server.py -source javtiful -domain javtiful.com -detail-threads 1 -news-threads 1 -port 3012 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" & 
+python /sdcard/Projects/crawl-vod/backend/server.py -source missav -domain missav.ws -detail-threads 1 -news-threads 1 -port 3013 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" & 
+python /sdcard/Projects/crawl-vod/backend/server.py -source vlxx -domain vlxx.phd -detail-threads 1 -news-threads 1 -port 3014 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" & 
+python /sdcard/Projects/crawl-vod/backend/server.py -source sextop1 -domain sextop1.spa -detail-threads 1 -news-threads 1 -port 3015 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" & 
 ```
 
 ---

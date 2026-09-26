@@ -56,3 +56,26 @@ feat(drawer): nâng cấp cử chỉ và tối ưu hiệu năng bảng chi tiế
 - KHÔNG dùng tiếng Anh cho phần mô tả commit.
 - Không thêm dấu chấm ở cuối dòng tiêu đề.
 
+---
+
+## 📍 Danh Sách Cổng (Ports) & Khởi Chạy Chuẩn Toàn Hệ Sinh Thái
+
+### 🌐 Cổng tiêu chuẩn hệ thống (Standard Ecosystem Ports):
+- `3010`: `nextdjav-admin` (Admin server / Watchdog)
+- `3011`: `nextdjav` (Dedicated GDrive OnePlayer)
+- `3012`: `crawl-vod` - Javtiful (`javtiful.com`)
+- `3013`: `crawl-vod` - MissAV (`missav.ws`)
+- `3014`: `crawl-vod` - VLXX (`vlxx.phd`)
+- `3015`: `crawl-vod` - Sextop1 (`sextop1.spa`)
+
+### 🚀 Lệnh chạy mẫu trên Termux (Android):
+```bash
+python /sdcard/Projects/nextdjav-admin/start.py --sqlite3 "/sdcard/Database/nextdjav.db" --port 3010 &
+python /sdcard/Projects/nextdjav/start.py       --sqlite3 "/sdcard/Database/nextdjav.db" --port 3011 &
+python /sdcard/Projects/crawl-vod/backend/server.py -source javtiful -domain javtiful.com -detail-threads 1 -news-threads 1 -port 3012 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" & 
+python /sdcard/Projects/crawl-vod/backend/server.py -source missav -domain missav.ws -detail-threads 1 -news-threads 1 -port 3013 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" & 
+python /sdcard/Projects/crawl-vod/backend/server.py -source vlxx -domain vlxx.phd -detail-threads 1 -news-threads 1 -port 3014 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" & 
+python /sdcard/Projects/crawl-vod/backend/server.py -source sextop1 -domain sextop1.spa -detail-threads 1 -news-threads 1 -port 3015 -proxy-threads 7 -chunk_size 512KB -max_connections 30 -max_keepalive 10 -timeout "connect=3.0,read=None" & 
+```
+
+
