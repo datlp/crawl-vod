@@ -422,18 +422,16 @@ def get_nextdjav_conn():
     if not NEXTDJAV_DB_PATH:
         candidates = [
             getattr(app_args, 'nextdjav_db', None) if app_args else None,
-            "D:\\Dat\\Database\\nextdjav.db",
-            "D:\\Database\\nextdjav.db",
-            "/sdcard/Database/nextdjav.db",
-            "/sdcard/Projects/Database/nextdjav.db",
-            os.path.expanduser("~/Database/nextdjav.db")
+            "D:\\Dat\\Database\\nextdjav\\nextdjav.db",
+            "/sdcard/Database/nextdjav/nextdjav.db",
+            os.path.expanduser("~/Database/nextdjav/nextdjav.db")
         ]
         for c in candidates:
             if c and os.path.exists(c):
                 NEXTDJAV_DB_PATH = c
                 break
         if not NEXTDJAV_DB_PATH:
-            NEXTDJAV_DB_PATH = "D:\\Dat\\Database\\nextdjav.db" if os.name == 'nt' else "/sdcard/Database/nextdjav.db"
+            NEXTDJAV_DB_PATH = "D:\\Dat\\Database\\nextdjav\\nextdjav.db" if os.name == 'nt' else "/sdcard/Database/nextdjav/nextdjav.db"
 
     try:
         os.makedirs(os.path.dirname(os.path.abspath(NEXTDJAV_DB_PATH)) or '.', exist_ok=True)
@@ -2930,9 +2928,17 @@ def main():
 
     if args.sqlite3 is None:
         if os.name == 'nt':
-            args.sqlite3 = f"D:\\Database\\{args.source}.db"
+            cand = f"D:\\Dat\\Database\\{args.source}\\{args.source}.db"
+            if os.path.exists(cand):
+                args.sqlite3 = cand
+            else:
+                args.sqlite3 = f"D:\\Database\\{args.source}.db"
         else:
-            args.sqlite3 = f"/sdcard/Projects/Database/{args.source}.db"
+            cand = f"/sdcard/Database/{args.source}/{args.source}.db"
+            if os.path.exists(cand):
+                args.sqlite3 = cand
+            else:
+                args.sqlite3 = f"/sdcard/Projects/Database/{args.source}.db"
             
     chunk_str = args.chunk_size.upper().replace('B', '')
     if chunk_str.endswith('M'):
