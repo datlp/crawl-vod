@@ -2776,6 +2776,18 @@ def serve_favicon():
         return send_from_directory(os.path.join(frontend_dir, 'static'), specific_ico, mimetype='image/x-icon')
     return send_from_directory(frontend_dir, 'favicon.ico', mimetype='image/x-icon')
 
+@app.route('/manifest.json')
+def serve_manifest():
+    frontend_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend'))
+    return send_from_directory(os.path.join(frontend_dir, 'static'), 'manifest.json', mimetype='application/manifest+json')
+
+@app.route('/<name>.png')
+def serve_pwa_icons(name):
+    if name in ('icon-192', 'icon-512', 'apple-icon'):
+        frontend_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend'))
+        return send_from_directory(os.path.join(frontend_dir, 'static'), f"{name}.png", mimetype='image/png')
+    return "Not Found", 404
+
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_html(path):
