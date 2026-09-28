@@ -17,13 +17,11 @@ if not hasattr(builtins, 'custom_log'):
         print(f"[{category}] {msg}")
     builtins.custom_log = custom_log
 
-# Tự động cài đặt Selenium nếu hệ thống chưa có
+# Selenium chỉ load khi cần vượt Cloudflare, không ép pip install khi khởi động làm treo tiến trình
 try:
     from selenium import webdriver
 except ImportError:
-    custom_log("System", "Đang cài đặt thư viện Selenium để vượt rào Cloudflare cho Sextop1...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "selenium"])
-    from selenium import webdriver
+    webdriver = None
 
 def parse_release_date(date_str):
     if not date_str:

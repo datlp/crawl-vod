@@ -528,52 +528,54 @@ def load_tags_cache_if_needed(cursor):
             custom_log("System", f"❌ Load tags cache error: {e}")
 
 def rebuild_tags_fts(db_conn):
-    custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker...")
-    cursor = db_conn.cursor()
-    cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE}")
-    rows = cursor.fetchall()
-    
-    actress_counts = {}
-    genre_counts = {}
-    maker_counts = {}
-    
-    for row in rows:
-        title = row[0]
-        actress = row[1]
-        genre = row[2]
-        maker = row[3]
+    try:
+        custom_log("System", "⏳ Đang tổng hợp dữ liệu actress, genre, maker...")
+        cursor = db_conn.cursor()
+        cursor.execute(f"SELECT title, actress, genre, maker FROM {VIDEOS_TABLE}")
+        rows = cursor.fetchall()
         
-        if actress:
-            for a in actress.split(','):
-                a = a.strip()
-                if a: actress_counts[a] = actress_counts.get(a, 0) + 1
-        if genre:
-            for g in genre.split(','):
-                g = g.strip()
-                if g: genre_counts[g] = genre_counts.get(g, 0) + 1
-        if maker:
-            for m in maker.split(','):
-                m = m.strip()
-                if m: maker_counts[m] = maker_counts.get(m, 0) + 1
-                
-                
-    cursor.execute("DROP TABLE IF EXISTS tags_summary")
-    cursor.execute("DROP TABLE IF EXISTS tags_fts")
-    
-    cursor.execute("CREATE TABLE tags_summary (keyword TEXT, type TEXT, count INTEGER)")
-    cursor.execute("CREATE VIRTUAL TABLE tags_fts USING fts5(keyword, type UNINDEXED, count UNINDEXED, content='tags_summary', content_rowid='rowid')")
-    
-    data = []
-    for k, c in actress_counts.items(): data.append((k, 'actress', c))
-    for k, c in genre_counts.items(): data.append((k, 'genre', c))
-    for k, c in maker_counts.items(): data.append((k, 'maker', c))
-    
-    cursor.executemany("INSERT INTO tags_summary (keyword, type, count) VALUES (?, ?, ?)", data)
-    cursor.execute("INSERT INTO tags_fts(tags_fts) VALUES('rebuild')")
-    db_conn.commit()
-    global tags_cache
-    tags_cache = []
-    custom_log("System", "✔️ Hoàn tất tổng hợp tags.")
+        actress_counts = {}
+        genre_counts = {}
+        maker_counts = {}
+        
+        for row in rows:
+            title = row[0]
+            actress = row[1]
+            genre = row[2]
+            maker = row[3]
+            
+            if actress:
+                for a in actress.split(','):
+                    a = a.strip()
+                    if a: actress_counts[a] = actress_counts.get(a, 0) + 1
+            if genre:
+                for g in genre.split(','):
+                    g = g.strip()
+                    if g: genre_counts[g] = genre_counts.get(g, 0) + 1
+            if maker:
+                for m in maker.split(','):
+                    m = m.strip()
+                    if m: maker_counts[m] = maker_counts.get(m, 0) + 1
+                    
+        cursor.execute("DROP TABLE IF EXISTS tags_summary")
+        cursor.execute("DROP TABLE IF EXISTS tags_fts")
+        
+        cursor.execute("CREATE TABLE tags_summary (keyword TEXT, type TEXT, count INTEGER)")
+        cursor.execute("CREATE VIRTUAL TABLE tags_fts USING fts5(keyword, type UNINDEXED, count UNINDEXED, content='tags_summary', content_rowid='rowid')")
+        
+        data = []
+        for k, c in actress_counts.items(): data.append((k, 'actress', c))
+        for k, c in genre_counts.items(): data.append((k, 'genre', c))
+        for k, c in maker_counts.items(): data.append((k, 'maker', c))
+        
+        cursor.executemany("INSERT INTO tags_summary (keyword, type, count) VALUES (?, ?, ?)", data)
+        cursor.execute("INSERT INTO tags_fts(tags_fts) VALUES('rebuild')")
+        db_conn.commit()
+        global tags_cache
+        tags_cache = []
+        custom_log("System", "✔️ Hoàn tất tổng hợp tags.")
+    except Exception as e:
+        custom_log("System", f"⚠️ Bỏ qua rebuild_tags_fts do SQLite không hỗ trợ FTS5 hoặc lỗi: {e}")
 
 class BackgroundScanner(threading.Thread):
     def __init__(self, scraper, upgrade_all=False, news_threads=0, detail_threads=0, videos_threads=0):
@@ -2867,6 +2869,9 @@ def migrate_old_database(db_conn, old_db_path):
         custom_log("System", f"❌ Lỗi trong quá trình migration: {e}")
 
 def start_reloader():
+    # Không chạy reloader trên Termux/Android vì mtime trên FUSE/SMB không ổn định gây loop execv
+    if "TERMUX_VERSION" in os.environ or os.path.exists("/data/data/com.termux") or os.environ.get("NO_RELOAD"):
+        return
     import glob
     def get_mtimes():
         base_dir = os.path.dirname(os.path.abspath(__file__)) or '.'
