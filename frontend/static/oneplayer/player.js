@@ -1218,16 +1218,16 @@ class VODPlayer {
             streamEndpoint = `/api/gdrive/stream/${encodeURIComponent(code)}.ts`;
         }
 
-        // Gửi 1 thread Range request 4MB với query param ?t=<targetTime> để server map ngay byte offset từ keyframes .idx
+        // Với Keyframes 1s interval: Chunk 1.5MB (thay vì 4MB) là quá đủ để bao trọn I-frame tức thời, giảm tải 60% data GDrive
         const targetFetchUrl = streamEndpoint + (streamEndpoint.includes('?') ? '&' : '?') + `t=${Math.max(0, targetTime).toFixed(2)}`;
         fetch(targetFetchUrl, {
             method: 'GET',
-            headers: { 'Range': 'bytes=0-4194303' },
+            headers: { 'Range': 'bytes=0-1572863' },
             signal: this.instantSeekAbortController.signal,
             credentials: 'include'
         }).then(res => {
             if (res.status === 206 || res.status === 200) {
-                console.log(`[OnePlayer] ⚡ Instant 1-Thread 4MB Seek chunk primed at ${targetTime.toFixed(1)}s (X-Cache: ${res.headers.get('X-Cache') || 'STREAM'})`);
+                console.log(`[OnePlayer] ⚡ Instant 1-Thread 1.5MB Seek chunk primed at ${targetTime.toFixed(1)}s (X-Cache: ${res.headers.get('X-Cache') || 'STREAM'})`);
             }
         }).catch(err => {
             if (err.name !== 'AbortError') {
@@ -1241,9 +1241,13 @@ class VODPlayer {
         this.seekDebounceTimeout = setTimeout(() => {
             if (this.video && !isNaN(targetTime) && isFinite(targetTime)) {
                 this.requestInstantSeekChunk(targetTime);
-                this.video.currentTime = targetTime;
+                if (typeof this.video.fastSeek === 'function') {
+                    this.video.fastSeek(targetTime);
+                } else {
+                    this.video.currentTime = targetTime;
+                }
             }
-        }, 40);
+        }, 30);
     }
 
     togglePlay() {
