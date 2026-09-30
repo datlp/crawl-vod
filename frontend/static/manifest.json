@@ -1,6 +1,6 @@
 {
-  "name": "NextDJAV Cinema (:3011)",
-  "short_name": "Cinema :3011",
+  "name": "NextDJAV Cinema",
+  "short_name": "NextDJAV Cinema",
   "description": "NextDJAV Cinema & Video Streamer",
   "start_url": "/",
   "display": "standalone",

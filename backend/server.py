@@ -2776,7 +2776,7 @@ def serve_favicon():
     specific_path = os.path.join(frontend_dir, 'static', specific_ico)
     if os.path.exists(specific_path):
         return send_from_directory(os.path.join(frontend_dir, 'static'), specific_ico, mimetype='image/x-icon')
-    return send_from_directory(frontend_dir, 'favicon.ico', mimetype='image/x-icon')
+    return send_from_directory(os.path.join(frontend_dir, 'static'), 'favicon.ico', mimetype='image/x-icon')
 
 @app.route('/manifest.json')
 def serve_manifest():
