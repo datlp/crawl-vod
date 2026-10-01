@@ -4097,7 +4097,7 @@ class VODExplorer {
                 if (hasGDrive) {
                     gdriveBadgeHtml = `<span class="badge-gdrive-status has-gdrive" title="Đã có trên Google Drive"><span class="material-symbols-outlined" style="font-size:11px;">cloud_done</span> DRIVE</span>`;
                 } else if (inQueue) {
-                    gdriveBadgeHtml = `<button class="badge-gdrive-status in-queue btn-queue-action" data-code="${itemCode}" data-action="remove-queue" title="Đang trong hàng đợi tải (Bấm để hủy)"><span class="material-symbols-outlined" style="font-size:11px;">hourglass_top</span> Đang đợi</button>`;
+                    gdriveBadgeHtml = `<button class="badge-gdrive-status in-queue btn-queue-action" data-code="${itemCode}" data-action="remove-queue" title="Đang trong hàng đợi tải (Bấm để hủy)"><span class="material-symbols-outlined icon-default" style="font-size:11px;">hourglass_top</span><span class="material-symbols-outlined icon-hover" style="font-size:11px;">close</span><span class="lbl-default"> Đang đợi</span><span class="lbl-hover"> Bỏ qua</span></button>`;
                 } else {
                     gdriveBadgeHtml = `<button class="badge-gdrive-status btn-add-queue btn-queue-action" data-code="${itemCode}" data-action="add-queue" title="Bấm để thêm vào Hàng đợi tải Google Drive"><span class="material-symbols-outlined" style="font-size:11px;">add_to_photos</span> + Drive</button>`;
                 }
@@ -4902,7 +4902,7 @@ class VODExplorer {
                         buttonEl.className = 'badge-gdrive-status in-queue btn-queue-action in-queue';
                         buttonEl.setAttribute('data-action', 'remove-queue');
                         buttonEl.setAttribute('title', 'Đang trong hàng đợi tải (Bấm để hủy)');
-                        buttonEl.innerHTML = `<span class="material-symbols-outlined" style="font-size:11px;">hourglass_top</span> Đang đợi`;
+                        buttonEl.innerHTML = `<span class="material-symbols-outlined icon-default" style="font-size:11px;">hourglass_top</span><span class="material-symbols-outlined icon-hover" style="font-size:11px;">close</span><span class="lbl-default"> Đang đợi</span><span class="lbl-hover"> Bỏ qua</span>`;
                     } else {
                         buttonEl.className = 'badge-gdrive-status btn-add-queue btn-queue-action';
                         buttonEl.setAttribute('data-action', 'add-queue');

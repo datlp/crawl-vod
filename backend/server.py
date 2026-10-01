@@ -2097,7 +2097,12 @@ def api_oneplayer_queue():
                 break
 
         if request.method == 'DELETE':
-            cur.execute("DELETE FROM media_upload_queue WHERE upper(media_id) = ?", (code,))
+            cur.execute("""
+                DELETE FROM media_upload_queue 
+                WHERE upper(media_id) = ? 
+                   OR upper(media_id) LIKE ? 
+                   OR upper(file_name) LIKE ?
+            """, (code, f"%{code}%", f"{code}.%"))
             conn.commit()
             conn.close()
             custom_log("Queue", f"🗑️ Đã xóa {code} khỏi media_upload_queue")
